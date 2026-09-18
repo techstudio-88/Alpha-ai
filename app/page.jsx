@@ -26,4 +26,62 @@ function Auth({onBack}){const[email,setEmail]=useState(""),[password,setPassword
 
 function Head({title,sub,action}){return <div className="top"><div><div className="eyebrow">ALPHA.AI WORKSPACE</div><h1>{title}</h1><div className="muted">{sub}</div></div>{action}</div>}
 function Metric({t,v,icon}){return <div className="card s3"><div className="metricTop"><div className="muted">{t}</div>{icon}</div><div className="metric">{v}</div></div>}
-function App(){const[user,setUser]=useState(undefined),[view,setView]=useState("dashboard"),[projects,setProjects]=useState([]),[landing,setLanding]=useState(true),[upload,setUpload]=useState(false);useEffect(()=>{if(!supabase){setUser(null);return}supabase.auth.getUser().then(({data})=>setUser(data?.user||null)).catch(()=>setUser(null));const a=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null));return()=>a.data.subscription.unsubscribe()},[]);useEffect(()=>{if(user&&supabase)supabase.from("projects").select("*").order("created_at",{ascending:false}).then(r=>setProjects(r.data||[]))},[user]);if(user===undefined)return <div className="landing splash"><Logo/></div>;if(!user&&landing)return <Landing onStart={()=>setLanding(false)}/>;if(!user)return <Auth onBack={()=>setLanding(true)}/>;return <div className="app"><aside className="side"><Logo/><div className="nav">{NAV.map(([id,label,I])=><button className={view===id?"active":""} key={id} onClick={()=>setView(id)}><I size={17}/><span>{label}</span></button>)}</div><button className="signout" onClick={()=>supabase?.auth.signOut()}><LogOut size={17}/><span>Sign out</span></button></aside><main className="main">{view==="dashboard"&&<><Head title="Good to see you." sub="Your content pipeline, at a glance." action={<button className="btn primary" onClick={()=>setUpload(true)}><Plus size={17}/> New project</button>}/><div className="grid"><Metric t="Projects" v={projects.length} icon={<FolderKanban size={18}/>}/><Metric t="Clips created" v="0" icon={<Clapperboard size={18}/>}/><Metric t="Minutes processed" v="0" icon={<Clock size={18}/>}/><Metric t="Exports" v="0" icon={<Zap size={18}/>}/><div className="card s8"><h3>Long video → short-form</h3><div className="list">{["Upload source","Analyze moments","Edit & caption","Export & publish"].map((x,i)=><div className="item" key={x}><span>{String(i+1).padStart(2,"0")}</span>{x}</div>)}</div></div><div className="card s4 uploadCard" onClick={()=>setUpload(true)}><Upload size={28}/><h3>Start a project</h3><p className="muted">Upload a long video and begin your content workflow.</p></div></div></>}{view==="projects"&&<><Head title="Projects" sub="Your workspace projects." action={<button className="btn primary" onClick={()=>setUpload(true)}><Plus size={17}/> New project</button>}/><div className="grid">{projects.length?projects.map(p=><div className="card s4" key={p.id}><h3>{p.name}</h3><div className="muted">{p.status||"draft"}</div></div>):<div className="card s12"><p className="muted">No projects yet. Create one from the dashboard.</p></div>}</div></>}{view!=="dashboard"&&view!=="projects"&&<><Head title={NAV.find(x=>x[0]===view)?.[1]||"Alpha.ai"} sub="Alpha.ai workspace module."/><div className="card s12"><h3>{view==="editor"?"Edit your clips":"Module ready"}</h3><p className="muted">{view==="editor"?"The editing workspace is ready for connected media processing.":"This module is part of the Alpha.ai workspace and will use your workspace data."}</p></div></>}{upload&&<div className="modal"><div className="modalCard"><button className="close" onClick={()=>setUpload(false)}>×</button><Upload size={32}/><h2>New project</h2><p className="muted">Choose a source video to start.</p><input className="input" type="file" accept="video/*" onChange={e=>{if(e.target.files?.[0])setUpload(false)}}/><div className="message">Storage and processing configuration is required before a real upload can be processed.</div></div></div>}</main></div>}export default App;
+function App(){
+ const[user,setUser]=useState(undefined),[view,setView]=useState("dashboard"),[projects,setProjects]=useState([]),[workspace,setWorkspace]=useState(null),[landing,setLanding]=useState(true),[upload,setUpload]=useState(false),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[uploadMsg,setUploadMsg]=useState("");
+ async function loadWorkspace(u){
+  if(!supabase||!u)return;
+  let{data:members}=await supabase.from("workspace_members").select("workspace_id,role").eq("user_id",u.id).order("created_at",{ascending:true}).limit(1);
+  let w=members?.[0]?.workspace_id;
+  if(!w){
+   const r=await supabase.from("workspaces").insert({name:(u.user_metadata?.full_name||u.email?.split("@")[0]||"My")+" Workspace",owner_id:u.id}).select().single();
+   if(r.error){setUploadMsg(r.error.message);return}
+   w=r.data.id;
+   await supabase.from("workspace_members").insert({workspace_id:w,user_id:u.id,role:"owner"});
+   await supabase.from("subscriptions").insert({workspace_id:w,plan:"free",status:"active"});
+   await supabase.from("usage").insert({workspace_id:w,period_start:new Date().toISOString().slice(0,10)});
+  }
+  const{data:wd}=await supabase.from("workspaces").select("*").eq("id",w).single();
+  setWorkspace(wd||{id:w,name:"Workspace"});
+ }
+ async function loadProjects(wid){if(!wid||!supabase)return;const{data}=await supabase.from("projects").select("*").eq("workspace_id",wid).order("created_at",{ascending:false});setProjects(data||[])}
+ async function handleUpload(file){
+  if(!supabase||!user||!workspace||!file)return;
+  setBusy(true);setProgress(4);setUploadMsg("");
+  if(file.size>500*1024*1024){setUploadMsg("This free workspace upload is limited to 500 MB.");setBusy(false);return}
+  if(!file.type.startsWith("video/")){setUploadMsg("Please choose a video file.");setBusy(false);return}
+  const clean=file.name.replace(/[^a-zA-Z0-9._-]/g,"-");
+  const projectName=file.name.replace(/\.[^.]+$/,"").slice(0,80)||"Untitled video";
+  const pr=await supabase.from("projects").insert({workspace_id:workspace.id,owner_id:user.id,name:projectName,status:"uploading"}).select().single();
+  if(pr.error){setUploadMsg(pr.error.message);setBusy(false);return}
+  const project=pr.data;
+  const path=workspace.id+"/"+project.id+"/"+crypto.randomUUID()+"-"+clean;
+  setProgress(10);
+  const up=await supabase.storage.from("media").upload(path,file,{contentType:file.type,upsert:false});
+  if(up.error){await supabase.from("projects").update({status:"upload_failed"}).eq("id",project.id);setUploadMsg(up.error.message);setBusy(false);return}
+  setProgress(78);
+  const meta={name:file.name,size:file.size,mime_type:file.type};
+  const asset=await supabase.from("media_assets").insert({workspace_id:workspace.id,project_id:project.id,owner_id:user.id,name:file.name,storage_path:path,mime_type:file.type,size_bytes:file.size,status:"uploaded",metadata:meta}).select().single();
+  if(asset.error){setUploadMsg(asset.error.message);setBusy(false);return}
+  const video=await supabase.from("videos").insert({project_id:project.id,media_asset_id:asset.data.id,title:projectName,status:"ready"}).select().single();
+  if(video.error){setUploadMsg(video.error.message);setBusy(false);return}
+  const job=await supabase.from("processing_jobs").insert({workspace_id:workspace.id,project_id:project.id,type:"ingest",status:"queued",progress:0,payload:{media_asset_id:asset.data.id,video_id:video.data.id}}).select().single();
+  if(job.error){setUploadMsg(job.error.message);setBusy(false);return}
+  await supabase.from("projects").update({status:"processing"}).eq("id",project.id);
+  await supabase.from("processing_logs").insert({job_id:job.data.id,level:"info",message:"Source video uploaded; queued for processing."});
+  setProgress(100);setUploadMsg("Upload complete. Processing job queued.");
+  await loadProjects(workspace.id);setBusy(false);setTimeout(()=>{setUpload(false);setUploadMsg("")},1200);
+ }
+ useEffect(()=>{if(!supabase){setUser(null);return}supabase.auth.getUser().then(({data})=>setUser(data?.user||null)).catch(()=>setUser(null));const a=supabase.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null));return()=>a.data.subscription.unsubscribe()},[]);
+ useEffect(()=>{if(user)loadWorkspace(user)},[user]);
+ useEffect(()=>{if(workspace)loadProjects(workspace.id)},[workspace]);
+ if(user===undefined)return <div className="landing splash"><Logo/></div>;
+ if(!user&&landing)return <Landing onStart={()=>setLanding(false)}/>;
+ if(!user)return <Auth onBack={()=>setLanding(true)}/>;
+ const empty=projects.length===0;
+ return <div className="app"><aside className="side"><Logo/><div className="nav">{NAV.map(([id,label,I])=><button className={view===id?"active":""} key={id} onClick={()=>setView(id)}><I size={17}/><span>{label}</span></button>)}</div><div className="workspaceMini">{workspace?.name||"Workspace"}</div><button className="signout" onClick={()=>supabase?.auth.signOut()}><LogOut size={17}/><span>Sign out</span></button></aside>
+ <main className="main">{view==="dashboard"&&<><Head title="Good to see you." sub={workspace?.name||"Your content pipeline, at a glance."} action={<button className="btn primary" onClick={()=>{setUpload(true);setUploadMsg("")}}><Plus size={17}/> New project</button>}/><div className="grid"><Metric t="Projects" v={projects.length} icon={<FolderKanban size={18}/>}/><Metric t="Clips created" v="0" icon={<Clapperboard size={18}/>}/><Metric t="Minutes processed" v="0" icon={<Clock size={18}/>}/><Metric t="Exports" v="0" icon={<Zap size={18}/>}/><div className="card s8"><h3>Content pipeline</h3><div className="list">{["Upload source","Analyze moments","Edit & caption","Export & publish"].map((x,i)=><div className="item" key={x}><span>{String(i+1).padStart(2,"0")}</span>{x}<small className="pipelineState">{i===0&&!empty?"Ready":"Ready"}</small></div>)}</div></div><div className="card s4 uploadCard" onClick={()=>setUpload(true)}><Upload size={28}/><h3>Start a project</h3><p className="muted">Upload a long video and create the first processing job.</p></div></div></>}
+ {view==="projects"&&<><Head title="Projects" sub="Your workspace projects." action={<button className="btn primary" onClick={()=>setUpload(true)}><Plus size={17}/> New project</button>}/><div className="grid">{projects.length?projects.map(p=><div className="card s4 projectCard" key={p.id} onClick={()=>setView("editor")}><div className="projectTop"><Video size={20}/><span className="status">{p.status||"draft"}</span></div><h3>{p.name}</h3><div className="muted">{new Date(p.created_at).toLocaleDateString()}</div></div>):<div className="card s12"><p className="muted">No projects yet. Create one to upload your first long video.</p></div>}</div></>}
+ {view!=="dashboard"&&view!=="projects"&&<><Head title={NAV.find(x=>x[0]===view)?.[1]||"Alpha.ai"} sub="Workspace module."/><div className="card s12"><h3>{view==="editor"?"Editing workspace":"Module ready"}</h3><p className="muted">{view==="editor"?"Your uploaded media and processing jobs will appear here as the editing pipeline is connected.":"This module is connected to your Alpha.ai workspace and uses the same project data."}</p></div></>}
+ {upload&&<div className="modal"><div className="modalCard uploadModal"><button className="close" onClick={()=>!busy&&setUpload(false)}>×</button><div className="uploadIcon"><Upload size={28}/></div><h2>New project</h2><p className="muted">Upload a long-form video. Alpha.ai stores it privately in your workspace and queues the next processing step.</p><label className="fileDrop"><Upload size={22}/><strong>{busy?"Uploading…":"Choose video"}</strong><span>MP4, MOV, WebM · up to 500 MB</span><input disabled={busy} type="file" accept="video/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleUpload(f)}}/></label>{busy&&<div className="progressWrap"><div className="progressBar"><i style={{width:progress+"%"}}/></div><div className="progressText"><span>Uploading and preparing project</span><b>{progress}%</b></div></div>}{uploadMsg&&<div className="message">{uploadMsg}</div>}<div className="modalFoot"><ShieldCheck size={14}/> Private workspace storage · free-first architecture</div></div></div>}</main></div>
+}
+export default App;
