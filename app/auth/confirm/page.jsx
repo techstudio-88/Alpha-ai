@@ -21,7 +21,7 @@ export default function ConfirmEmailPage() {
 
       const url = new URL(window.location.href);
       const tokenHash = url.searchParams.get("token_hash");
-      const type = url.searchParams.get("type") || "email";
+      const type = url.searchParams.get("type") || "signup";
 
       if (tokenHash) {
         const { error } = await supabase.auth.verifyOtp({
