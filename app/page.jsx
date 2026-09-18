@@ -1,6 +1,6 @@
 "use client";
 import{useEffect,useState}from"react";
-import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Google,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp}from"lucide-react";
+import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp}from"lucide-react";
 import{supabase}from"../lib/supabase";
 const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
