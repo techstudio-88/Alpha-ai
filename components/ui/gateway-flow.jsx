@@ -152,7 +152,7 @@ export default function GatewayFlow({ className = "" }) {
       style={{
         position: "relative",
         width: "min(1200px, 94vw)",
-        height: "420px",
+        height: "clamp(230px, 34vw, 420px)",
         margin: "10px auto 34px",
         overflow: "hidden",
         border: "1px solid rgba(255,255,255,.12)",
