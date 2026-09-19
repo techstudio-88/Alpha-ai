@@ -281,3 +281,56 @@ body{background:#06070b!important}
 .workflowCard .workflowArrow{position:static}
 .workflowCard>span{align-self:center}
 @media(max-width:760px){.workflowCard{grid-template-columns:42px 44px 1fr 18px;gap:10px;padding:16px 13px}.workflowCard h3{font-size:15px}.workflowCard p{font-size:12px}}
+
+/* === Full-bleed cinematic hero === */
+html,body{width:100%;max-width:100%;overflow-x:hidden}
+.landing{width:100%;max-width:none;overflow-x:clip}
+.heroLarge{width:100%;max-width:none;margin:0;min-height:900px;overflow:hidden}
+.heroLarge .heroContent{width:min(1120px,100%);padding-left:24px;padding-right:24px;margin:0 auto}
+.heroLarge .heroGatewayBackground{position:absolute;inset:0;width:100vw;height:100%;max-width:none;margin:0;border:0!important;border-radius:0!important;box-shadow:none!important}
+.heroLarge .heroGatewayBackground canvas{width:100%!important;height:100%!important}
+.heroLarge .heroOrb{z-index:1}
+.heroLarge .productStage{width:min(1120px,calc(100% - 40px))}
+.heroLarge .heroContent,.heroLarge .productStage{position:relative}
+
+/* === Scroll-driven 3D workflow === */
+.workflow{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 15%,#17112d 0,transparent 35%),#07080d}
+.workflow:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 0,rgba(139,92,246,.025) 50%,transparent 100%);mask-image:linear-gradient(#000,transparent 90%)}
+.workflowJourney{width:min(920px,100%);max-width:none;margin:62px auto 0;position:relative;padding:0 8px 18px;perspective:1400px}
+.journeyRail{position:absolute;left:48px;top:20px;bottom:30px;width:3px;z-index:0;pointer-events:none}
+.journeyRailTrack{position:absolute;inset:0;border-radius:99px;background:linear-gradient(180deg,#272036,#151722);box-shadow:0 0 20px rgba(0,0,0,.5)}
+.journeyRailFill{position:absolute;left:0;top:0;width:100%;height:calc(var(--journey-progress,0) * 100%);border-radius:99px;background:linear-gradient(180deg,#a78bfa,#7c3aed 48%,#22d3ee);box-shadow:0 0 10px #8b5cf6,0 0 28px #7c3aed88;transition:height .12s linear}
+.workflowCard3d{display:grid;grid-template-columns:66px 58px 1fr 26px;align-items:center;gap:18px;min-height:126px;margin:12px 0;padding:22px 24px 22px 14px;position:relative;isolation:isolate;transform-style:preserve-3d;transform:rotateX(0deg) translateZ(0);border:1px solid rgba(167,139,250,.12);border-radius:22px;background:linear-gradient(115deg,rgba(19,16,32,.96),rgba(9,11,17,.97) 60%,rgba(15,19,27,.96));box-shadow:0 18px 35px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.035);transition:transform .55s cubic-bezier(.2,.8,.2,1),box-shadow .45s,border-color .45s,filter .45s;animation:workflowBreath 7s ease-in-out infinite;animation-delay:var(--step-delay)}
+.workflowCard3d:before{content:"";position:absolute;inset:1px;border-radius:21px;background:linear-gradient(115deg,rgba(139,92,246,.10),transparent 32%,rgba(34,211,238,.045) 72%,transparent);opacity:.65;pointer-events:none;z-index:-1}
+.workflowCard3d:after{content:"";position:absolute;left:10%;right:10%;bottom:-18px;height:28px;background:radial-gradient(ellipse,#7c3aed22,transparent 70%);filter:blur(10px);opacity:.5;pointer-events:none}
+.workflowCard3d:hover{transform:translate3d(9px,-6px,34px) rotateX(2deg) rotateY(-2deg) scale(1.012);border-color:rgba(167,139,250,.35);box-shadow:0 34px 75px rgba(0,0,0,.58),0 0 42px rgba(124,58,237,.11),inset 0 1px 0 rgba(255,255,255,.07)}
+.workflowCard3d.isActive{border-color:rgba(139,92,246,.22);box-shadow:0 22px 48px rgba(0,0,0,.42),0 0 28px rgba(124,58,237,.08)}
+.workflowCardNumber{position:relative;z-index:3;color:#8f7fe1;font-size:11px;font-weight:800;letter-spacing:.15em;text-align:center;transform:translateZ(28px)}
+.workflowIcon3d{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;position:relative;color:#bbaeff;background:radial-gradient(circle at 35% 25%,#2b2154,#141127 65%,#0b0d13);border:1px solid rgba(167,139,250,.28);box-shadow:0 12px 26px rgba(0,0,0,.35),0 0 22px rgba(124,58,237,.18),inset 0 0 22px rgba(167,139,250,.09);transform:translateZ(42px);animation:iconFloat3d 4.6s ease-in-out infinite}
+.workflowIcon3d:before{content:"";position:absolute;inset:-5px;border-radius:19px;border:1px solid rgba(34,211,238,.08);box-shadow:0 0 18px rgba(34,211,238,.12);animation:iconRing 3.4s ease-in-out infinite}
+.workflowIcon3d span{position:absolute;width:5px;height:5px;border-radius:50%;right:4px;top:4px;background:#67e8f9;box-shadow:0 0 12px #22d3ee;animation:iconSpark 2s ease-in-out infinite}
+.workflowCardCopy{position:relative;z-index:2;transform:translateZ(24px)}
+.workflowCardCopy h3{font-size:19px;letter-spacing:-.025em;margin:0 0 8px;color:#f1f3f8}
+.workflowCardCopy p{font-size:13px;line-height:1.7;color:#818b9d;margin:0;max-width:680px}
+.workflowArrow3d{color:#596277;transform:translateZ(28px);transition:.35s}
+.workflowCard3d:hover .workflowArrow3d{color:#b8aaff;transform:translate3d(5px,0,30px)}
+.cardSheen{position:absolute;inset:-40% auto -40% -30%;width:38%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent);transform:translateX(-120%) rotate(12deg);filter:blur(2px);pointer-events:none;animation:workflowSheen 6s ease-in-out infinite;animation-delay:calc(var(--step-delay) + 1s)}
+@keyframes workflowBreath{0%,100%{transform:translateZ(0) rotateX(.2deg)}50%{transform:translateY(-2px) translateZ(8px) rotateX(-.4deg)}}
+@keyframes iconFloat3d{0%,100%{transform:translateZ(42px) rotateX(0) rotateY(0)}50%{transform:translateZ(52px) rotateX(7deg) rotateY(-8deg)}}
+@keyframes iconRing{0%,100%{transform:scale(.92);opacity:.35}50%{transform:scale(1.08);opacity:.9}}
+@keyframes iconSpark{0%,100%{transform:scale(.7);opacity:.5}50%{transform:scale(1.25);opacity:1}}
+@keyframes workflowSheen{0%,55%,100%{transform:translateX(-120%) rotate(12deg);opacity:0}65%{transform:translateX(380%) rotate(12deg);opacity:1}75%{opacity:0}}
+
+/* Consistent dimensional treatment for all feature cards/icons */
+.featureTile{position:relative;overflow:hidden;transform-style:preserve-3d;perspective:900px;background:linear-gradient(145deg,#11131c,#090b10);border-color:rgba(167,139,250,.10);box-shadow:0 18px 45px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.035);transition:transform .5s cubic-bezier(.2,.8,.2,1),box-shadow .45s,border-color .45s}
+.featureTile:before{content:"";position:absolute;inset:-1px;background:radial-gradient(circle at 20% 0,rgba(139,92,246,.12),transparent 38%),radial-gradient(circle at 90% 100%,rgba(34,211,238,.06),transparent 32%);pointer-events:none}
+.featureTile:hover{transform:translate3d(0,-8px,25px) rotateX(2deg) rotateY(-2deg);border-color:rgba(167,139,250,.28);box-shadow:0 32px 70px rgba(0,0,0,.5),0 0 35px rgba(124,58,237,.10)}
+.tileIcon{position:relative;z-index:2;background:radial-gradient(circle at 35% 25%,#2a2050,#121022 68%,#0a0c11)!important;color:#bcaeff!important;border:1px solid rgba(167,139,250,.25);box-shadow:0 0 22px rgba(124,58,237,.18),inset 0 0 20px rgba(167,139,250,.08);transform:translateZ(24px);animation:iconFloat3d 5.2s ease-in-out infinite}
+.tileIcon:after{content:"";position:absolute;inset:-4px;border-radius:15px;border:1px solid rgba(34,211,238,.09);box-shadow:0 0 15px rgba(34,211,238,.10);animation:iconRing 3.8s ease-in-out infinite}
+.featureTile h3,.featureTile p{position:relative;z-index:2}
+
+/* Auth visual remains slow and dimensional */
+.authVisual{overflow:hidden;transform-style:preserve-3d}
+.authVisual .visualRibbon,.authVisual .visualGlow,.authVisual:after{will-change:transform;animation-duration:32s}
+.authVisual .visualCopy{transform:translateZ(30px)}
+@media(max-width:760px){.heroLarge{min-height:860px}.heroLarge .heroContent{padding-left:18px;padding-right:18px}.heroLarge .productStage{width:calc(100% - 24px)}.workflowJourney{padding:0}.journeyRail{left:27px}.workflowCard3d{grid-template-columns:38px 50px 1fr 18px;gap:10px;padding:18px 13px 18px 8px;min-height:120px}.workflowIcon3d{width:46px;height:46px}.workflowCardCopy h3{font-size:16px}.workflowCardCopy p{font-size:12px}.workflowCard3d:hover{transform:translate3d(3px,-3px,18px)}}
