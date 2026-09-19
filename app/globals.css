@@ -30,38 +30,3 @@ html{scroll-behavior:smooth}.landing{min-height:100vh;background:#06070b;color:#
 @keyframes ringFloat{0%,100%{margin-top:0}50%{margin-top:-8px}}
 @media(max-width:600px){.hero3d{height:130px;transform:scale(.82);margin:-2px auto 2px}.depthLabel{display:none}}
 
-/* Animated gateway field used in the landing hero. */
-.heroGateway{
-  position:relative;
-  width:min(1200px,94vw);
-  height:420px;
-  margin:10px auto 34px;
-  overflow:hidden;
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:16px;
-  background:#020202;
-  box-shadow:0 35px 110px rgba(0,0,0,.55),inset 0 1px rgba(255,255,255,.035);
-}
-.heroGateway canvas{display:block;width:100%;height:100%}
-.gatewayVignette{
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  background:
-    linear-gradient(90deg,rgba(0,0,0,.22),transparent 18%,transparent 82%,rgba(0,0,0,.22)),
-    radial-gradient(ellipse at center,transparent 34%,rgba(0,0,0,.28) 100%);
-}
-.heroGateway:after{
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  border-radius:inherit;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.025);
-}
-@media(max-width:900px){
-  .heroGateway{height:330px;width:min(1200px,96vw)}
-}
-@media(max-width:600px){
-  .heroGateway{height:230px;width:calc(100vw - 28px);margin:8px auto 25px;border-radius:13px}
-}
