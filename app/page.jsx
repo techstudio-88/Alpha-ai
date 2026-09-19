@@ -1,4 +1,5 @@
 "use client";
+// Landing renders immediately; auth is hydrated in the background.
 import{useEffect,useState,useRef}from"react";
 import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity}from"lucide-react";
 import{supabase}from"../lib/supabase";
