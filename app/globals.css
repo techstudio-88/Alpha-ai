@@ -273,3 +273,11 @@ body{background:#06070b!important}
   .workflowStepCopy h3{font-size:15px}.workflowStepCopy p{font-size:12px}
   .appDesignIntro{display:block}.liveBadge{display:inline-flex;margin-top:14px}.appDesignGrid{grid-template-columns:1fr}.appDesignPanel{padding:18px}
 }
+
+/* Public workflow: vertical product journey */
+.workflowGrid{grid-template-columns:1fr;max-width:900px;gap:10px}
+.workflowCard{min-height:0;display:grid;grid-template-columns:72px 52px 1fr 22px;align-items:center;gap:18px;padding:18px 20px;border-radius:18px}
+.workflowCard .workflowIcon{margin:0}
+.workflowCard .workflowArrow{position:static}
+.workflowCard>span{align-self:center}
+@media(max-width:760px){.workflowCard{grid-template-columns:42px 44px 1fr 18px;gap:10px;padding:16px 13px}.workflowCard h3{font-size:15px}.workflowCard p{font-size:12px}}
