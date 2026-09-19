@@ -334,3 +334,71 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .authVisual .visualRibbon,.authVisual .visualGlow,.authVisual:after{will-change:transform;animation-duration:32s}
 .authVisual .visualCopy{transform:translateZ(30px)}
 @media(max-width:760px){.heroLarge{min-height:860px}.heroLarge .heroContent{padding-left:18px;padding-right:18px}.heroLarge .productStage{width:calc(100% - 24px)}.workflowJourney{padding:0}.journeyRail{left:27px}.workflowCard3d{grid-template-columns:38px 50px 1fr 18px;gap:10px;padding:18px 13px 18px 8px;min-height:120px}.workflowIcon3d{width:46px;height:46px}.workflowCardCopy h3{font-size:16px}.workflowCardCopy p{font-size:12px}.workflowCard3d:hover{transform:translate3d(3px,-3px,18px)}}
+
+/* === Next interaction pass: larger workflow icons + visible scroll rail === */
+.journeyRail{left:46px;width:5px;top:14px;bottom:24px}
+.journeyRailTrack{background:linear-gradient(180deg,#3a3154,#24283a);box-shadow:0 0 10px rgba(139,92,246,.18),inset 0 0 4px rgba(255,255,255,.08)}
+.journeyRailFill{background:linear-gradient(180deg,#c4b5fd 0%,#8b5cf6 42%,#22d3ee 100%);box-shadow:0 0 14px rgba(139,92,246,.95),0 0 34px rgba(34,211,238,.35);min-height:8px}
+.workflowCard3d{cursor:pointer;padding-left:12px}
+.workflowIcon3d{width:68px;height:68px;border-radius:20px;font-size:25px;background:radial-gradient(circle at 32% 22%,#3b2b70,#17142d 62%,#0a0c12);box-shadow:0 16px 34px rgba(0,0,0,.5),0 0 30px rgba(124,58,237,.25),inset 0 0 28px rgba(167,139,250,.13)}
+.workflowIcon3d:before{inset:-7px;border-radius:24px;box-shadow:0 0 24px rgba(34,211,238,.16),0 0 45px rgba(124,58,237,.12)}
+.workflowIcon3d span{width:7px;height:7px;right:3px;top:3px}
+.workflowCard3d:hover .workflowIcon3d{box-shadow:0 22px 46px rgba(0,0,0,.55),0 0 42px rgba(124,58,237,.38),inset 0 0 34px rgba(167,139,250,.17)}
+.workflowCard3d.isActive .workflowIcon3d{border-color:rgba(196,181,253,.5);box-shadow:0 0 28px rgba(139,92,246,.34),0 0 65px rgba(34,211,238,.12),inset 0 0 30px rgba(167,139,250,.13)}
+.workflowCard3d,.featureTile,.productStage,.closingCard{cursor:pointer}
+
+/* === Cinematic 3D preview container === */
+.productStage{position:relative;transform-style:preserve-3d;will-change:transform;transform-origin:50% 12%;transition:box-shadow .5s;cursor:pointer}
+.productStage:before{content:"";position:absolute;inset:-14%;background:radial-gradient(circle at 50% 40%,rgba(124,58,237,.20),transparent 42%),radial-gradient(circle at 30% 70%,rgba(34,211,238,.08),transparent 34%);filter:blur(35px);opacity:calc(.45 + var(--preview-progress,0)*.35);pointer-events:none;transform:translateZ(-80px)}
+.productWindow{transform-style:preserve-3d;box-shadow:0 45px 100px rgba(0,0,0,.58),0 0 80px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.08)}
+.productWindow:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(115deg,rgba(255,255,255,.08),transparent 18%,transparent 70%,rgba(139,92,246,.06));mix-blend-mode:screen}
+.stageFloat{position:absolute;right:-22px;top:14%;display:flex;flex-direction:column;gap:8px;z-index:8;transform:translateZ(90px);pointer-events:none}
+.stageFloat span{padding:9px 12px;border:1px solid rgba(167,139,250,.22);border-radius:999px;background:rgba(11,12,19,.82);backdrop-filter:blur(14px);font-size:10px;color:#bfb4ef;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 20px rgba(124,58,237,.12);animation:floatChip 4.5s ease-in-out infinite}
+.stageFloat span:nth-child(2){animation-delay:-1.5s}.stageFloat span:nth-child(3){animation-delay:-3s}
+.posterAvatar{position:absolute;left:17%;top:21%;width:74px;height:74px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#8b5cf6,#1e293b 50%,#0f172a);box-shadow:0 0 28px rgba(139,92,246,.3);animation:posterPulse 4s ease-in-out infinite}
+.posterTag{position:absolute;left:12px;top:12px;padding:6px 8px;border-radius:7px;background:rgba(8,10,15,.78);border:1px solid rgba(255,255,255,.1);font-size:8px;color:#d7cdfb;letter-spacing:.08em}
+.previewChips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.previewChips span{font-size:8px;color:#9da7b9;border:1px solid rgba(255,255,255,.08);background:#0b0f16;padding:5px 7px;border-radius:999px}
+.aiMiniFeed{display:flex;gap:5px;margin-top:12px}.aiMiniFeed span{height:4px;border-radius:99px;background:linear-gradient(90deg,#7c3aed,#22d3ee);animation:feedPulse 2.6s ease-in-out infinite}.aiMiniFeed span:nth-child(1){width:30%;animation-delay:0s}.aiMiniFeed span:nth-child(2){width:18%;animation-delay:.3s}.aiMiniFeed span:nth-child(3){width:24%;animation-delay:.6s}.aiMiniFeed span:nth-child(4){width:14%;animation-delay:.9s}
+@keyframes floatChip{0%,100%{transform:translate3d(0,0,0) rotateX(0)}50%{transform:translate3d(5px,-8px,12px) rotateX(5deg)}}
+@keyframes posterPulse{0%,100%{transform:translateZ(20px) scale(1);filter:saturate(.9)}50%{transform:translateZ(35px) scale(1.06);filter:saturate(1.2)}}
+@keyframes feedPulse{0%,100%{opacity:.35;transform:scaleX(.8)}50%{opacity:1;transform:scaleX(1)}}
+
+/* === Workspace CTA: moving DNA / energy curl === */
+.closingCard{overflow:hidden;position:relative;min-height:250px;transform-style:preserve-3d}
+.closingCard:before{content:"";position:absolute;inset:-30%;background:radial-gradient(circle at 72% 50%,rgba(124,58,237,.18),transparent 28%),radial-gradient(circle at 88% 60%,rgba(34,211,238,.10),transparent 22%);animation:ctaAura 9s ease-in-out infinite alternate;pointer-events:none}
+.dnaVisual{position:absolute;right:7%;top:50%;width:270px;height:190px;transform:translateY(-50%) translateZ(20px);pointer-events:none;opacity:.9}
+.dnaVisual:before,.dnaVisual:after{content:"";position:absolute;inset:10% 0;border:2px solid transparent;border-top-color:#a78bfa;border-bottom-color:#22d3ee;border-radius:50%;transform:rotate(18deg) skewY(-10deg);filter:drop-shadow(0 0 8px rgba(139,92,246,.55));animation:dnaWave 5s ease-in-out infinite}
+.dnaVisual:after{transform:rotate(-18deg) skewY(10deg);border-top-color:#22d3ee;border-bottom-color:#a78bfa;animation-delay:-2.5s}
+.dnaVisual i{position:absolute;width:7px;height:7px;border-radius:50%;background:#e9d5ff;box-shadow:0 0 15px #a78bfa,0 0 30px #22d3ee;animation:dnaDot 3.2s ease-in-out infinite}
+.dnaVisual i:nth-child(1){left:18%;top:25%}.dnaVisual i:nth-child(2){left:37%;top:57%;animation-delay:-.6s}.dnaVisual i:nth-child(3){left:57%;top:30%;animation-delay:-1.2s}.dnaVisual i:nth-child(4){left:73%;top:66%;animation-delay:-1.8s}.dnaVisual i:nth-child(5){left:88%;top:42%;animation-delay:-2.4s}
+@keyframes dnaWave{0%,100%{transform:rotate(18deg) scale(.92) translateX(-5px)}50%{transform:rotate(24deg) scale(1.06) translateX(8px)}}
+@keyframes dnaDot{0%,100%{transform:translate3d(0,0,0) scale(.7);opacity:.45}50%{transform:translate3d(10px,-18px,35px) scale(1.35);opacity:1}}
+@keyframes ctaAura{0%{transform:translate3d(-3%,0,0) scale(.95)}100%{transform:translate3d(5%,-4%,0) scale(1.1)}}
+
+/* === Dense, useful visual detail around video cards === */
+.mockVideo,.mockAI,.mockStats>div{position:relative;overflow:hidden}
+.mockVideo:before,.mockAI:before,.mockStats>div:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(139,92,246,.06),transparent 38%,rgba(34,211,238,.035));pointer-events:none}
+.mockStats>div{padding:14px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 10px 24px rgba(0,0,0,.18)}
+.mockStats strong{display:block;text-shadow:0 0 20px rgba(167,139,250,.22)}
+.mockAI{box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 16px 32px rgba(0,0,0,.2)}
+.videoPoster{transform-style:preserve-3d}
+.playCircle{box-shadow:0 0 0 8px rgba(139,92,246,.06),0 0 35px rgba(139,92,246,.28);animation:playPulse 3s ease-in-out infinite}
+@keyframes playPulse{0%,100%{transform:translate(-50%,-50%) scale(.96);box-shadow:0 0 0 8px rgba(139,92,246,.05),0 0 25px rgba(139,92,246,.22)}50%{transform:translate(-50%,-50%) scale(1.08);box-shadow:0 0 0 12px rgba(139,92,246,.08),0 0 45px rgba(34,211,238,.25)}}
+
+/* === Animated auth image / atmosphere === */
+.authVisual{position:relative;isolation:isolate;perspective:1000px;background:radial-gradient(circle at 20% 20%,#3b0764 0,transparent 34%),radial-gradient(circle at 80% 75%,#082f49 0,transparent 36%),#080b14!important}
+.authVisual:before{content:"";position:absolute;inset:-25%;background:conic-gradient(from 0deg,transparent 0 28%,rgba(139,92,246,.18),transparent 42%,rgba(34,211,238,.12),transparent 58%,rgba(236,72,153,.12),transparent 74%);filter:blur(28px);animation:authAurora 28s linear infinite;z-index:0}
+.authVisual:after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.15) 1px,transparent 1px);background-size:22px 22px;opacity:.09;mask-image:linear-gradient(135deg,#000,transparent 75%);animation:authStars 18s linear infinite}
+.authVisual .visualRibbon{filter:blur(.2px) drop-shadow(0 0 22px rgba(139,92,246,.22));transform-style:preserve-3d}
+.authVisual .visualCopy{animation:authCopyFloat 8s ease-in-out infinite}
+@keyframes authAurora{to{transform:rotate(360deg) scale(1.08)}}
+@keyframes authStars{to{transform:translate3d(22px,22px,0)}}
+@keyframes authCopyFloat{0%,100%{transform:translate3d(0,0,30px)}50%{transform:translate3d(4px,-8px,46px)}}
+
+/* === Footer === */
+.siteFooter{display:grid;grid-template-columns:1.4fr 1fr;gap:30px;padding:70px max(28px,calc((100vw - 1120px)/2)) 26px;border-top:1px solid rgba(255,255,255,.07);background:linear-gradient(180deg,#07080d,#05060a);position:relative;overflow:hidden}
+.siteFooter:before{content:"";position:absolute;left:10%;right:10%;top:-1px;height:1px;background:linear-gradient(90deg,transparent,#8b5cf6,#22d3ee,transparent);box-shadow:0 0 25px #7c3aed;opacity:.55}
+.footerBrand p{color:#697386;max-width:340px;line-height:1.7;margin:12px 0 0}.footerLinks{display:flex;justify-content:flex-end;align-items:flex-start;gap:22px;flex-wrap:wrap}.footerLinks a,.footerLinks button{color:#818b9d;background:none;border:0;font:inherit;cursor:pointer;text-decoration:none}.footerLinks a:hover,.footerLinks button:hover{color:#d8d2ff}.footerBottom{grid-column:1/-1;display:flex;justify-content:space-between;gap:20px;padding-top:22px;margin-top:16px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:#4f5869}
+.authSwitch{margin-top:20px;text-align:center;color:#7e889b;font-size:12px}.authSwitch button{background:none;border:0;color:#b7a8ff;font-weight:700;cursor:pointer}.authSwitch button:hover{text-decoration:underline}
+@media(max-width:760px){.workflowJourney{padding:0}.journeyRail{left:29px}.workflowCard3d{grid-template-columns:34px 62px 1fr 18px}.workflowIcon3d{width:58px;height:58px}.stageFloat{right:4px;top:-12px;transform:translateZ(55px) scale(.85)}.dnaVisual{opacity:.45;right:-55px}.closingCard{padding-right:24px}.siteFooter{grid-template-columns:1fr;padding-left:22px;padding-right:22px}.footerLinks{justify-content:flex-start}.footerBottom{flex-direction:column}.authVisual:before{animation-duration:34s}}
