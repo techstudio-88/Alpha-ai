@@ -30,3 +30,47 @@ html{scroll-behavior:smooth}.landing{min-height:100vh;background:#06070b;color:#
 @keyframes ringFloat{0%,100%{margin-top:0}50%{margin-top:-8px}}
 @media(max-width:600px){.hero3d{height:130px;transform:scale(.82);margin:-2px auto 2px}.depthLabel{display:none}}
 
+
+/* Auth split-screen + quantum cloud loader */
+.authWrap{min-height:100vh;padding:28px;background:#050507;position:relative;overflow:hidden}
+.authCardPro{position:relative;width:min(1080px,100%);min-height:650px;padding:0;display:grid;grid-template-columns:1.08fr .92fr;overflow:hidden;border:1px solid #ffffff14;border-radius:28px;background:#090a0d;box-shadow:0 45px 140px #000c,0 0 0 1px #ffffff04}
+.authVisual{position:relative;min-height:650px;overflow:hidden;background:#11133c}
+.visualGlow{position:absolute;width:70%;height:70%;left:10%;top:10%;border-radius:50%;background:#566cff;filter:blur(85px);opacity:.32}
+.visualRibbon{position:absolute;border-radius:999px;filter:blur(2px);transform:rotate(-34deg);box-shadow:0 0 45px #ffffff22}
+.ribbonA{width:125%;height:135px;left:-25%;top:8%;background:linear-gradient(100deg,#f05b7f 0%,#6f55d9 38%,#6a8fff 72%,#f3a0d4 100%)}
+.ribbonB{width:130%;height:170px;left:-28%;top:34%;background:linear-gradient(100deg,#5133b7 0%,#8bb6ff 36%,#d7e4ff 56%,#6b64d9 100%);transform:rotate(29deg)}
+.ribbonC{width:125%;height:110px;left:-10%;top:64%;background:linear-gradient(100deg,#ca3f78,#6254d7 45%,#92b7ff 75%,#f48cad);transform:rotate(-34deg)}
+.ribbonD{width:115%;height:78px;left:0;top:78%;background:linear-gradient(100deg,#3e3db7,#a9c5ff 42%,#f06eaa 75%,#5435a9);transform:rotate(29deg)}
+.visualNoise{position:absolute;inset:0;background:radial-gradient(circle at 20% 20%,#ffffff18 0 1px,transparent 1.5px),linear-gradient(120deg,#0000,#0006);background-size:18px 18px,100% 100%;mix-blend-mode:soft-light;opacity:.45}
+.visualCopy{position:absolute;left:44px;bottom:42px;z-index:2;display:grid;gap:10px;color:#fff;text-shadow:0 2px 24px #0008}
+.visualCopy span{font-size:11px;letter-spacing:.18em;color:#ffffffb8}
+.visualCopy strong{font-size:clamp(30px,4vw,48px);line-height:.98;letter-spacing:-.05em}
+.visualCopy small{font-size:12px;color:#ffffff9e}
+.authPanel{position:relative;display:flex;flex-direction:column;justify-content:center;padding:48px 56px;background:#090a0d}
+.authPanel>.brand{margin-bottom:28px}
+.authPanel .authHeading{text-align:left}
+.authPanel .authHeading h1{font-size:40px}
+.authPanel .authHeading p{max-width:360px}
+.authPanel .socialStack{margin-top:4px}
+.authLoading{position:absolute;inset:0;z-index:10;display:grid;place-items:center;align-content:center;gap:8px;background:#050507d9;backdrop-filter:blur(10px);color:#aeb6c8;font-size:12px}
+.cloudLoader{width:176px;height:98px;display:grid;place-items:center}
+.cloudLoaderCore{position:relative;width:176px;height:98px}
+.quantumDot{position:absolute;left:50%;top:50%;display:grid;place-items:center;will-change:transform,opacity}
+.quantumDot span{display:block;border-radius:50%}
+.quantumRed{width:16px;height:16px;animation:quantumRed 3.8s cubic-bezier(.37,0,.63,1) infinite}
+.quantumRed span{width:100%;height:100%;background:#f87171;box-shadow:0 0 12px #f87171bf,0 0 24px #f871714d}
+.quantumBlue{width:24px;height:24px;animation:quantumBlue 5.6s cubic-bezier(.37,0,.63,1) infinite}
+.quantumBlue span{width:100%;height:100%;background:#60a5fa;box-shadow:0 0 16px #60a5fab3,0 0 30px #60a5fa40}
+.quantumYellow{width:20px;height:20px;animation:quantumYellow 3.1s cubic-bezier(.37,0,.63,1) infinite}
+.quantumYellow span{width:100%;height:100%;background:#facc15;box-shadow:0 0 14px #facc15bf,0 0 26px #facc154d}
+.quantumGreen{width:14px;height:14px;animation:quantumGreen 6.4s cubic-bezier(.37,0,.63,1) infinite alternate}
+.quantumGreen span{width:100%;height:100%;background:#4ade80;box-shadow:0 0 12px #4ade80bf,0 0 24px #4ade804d}
+.splash{display:grid;place-items:center;align-content:center;gap:2px}
+.splashText{color:#697386;font-size:11px;letter-spacing:.05em}
+@keyframes quantumRed{0%{transform:translate3d(-46px,7px,0) scale(.72);opacity:.45}25%{transform:translate3d(-23px,-7px,0) scale(.95);opacity:.78}50%{transform:translate3d(46px,0,0) scale(1.18);opacity:1}75%{transform:translate3d(23px,7px,0) scale(.95);opacity:.78}100%{transform:translate3d(-46px,7px,0) scale(.72);opacity:.45}}
+@keyframes quantumBlue{0%{transform:translate3d(38px,-4px,0) scale(1);opacity:.95}25%{transform:translate3d(19px,7px,0) scale(.88);opacity:.72}50%{transform:translate3d(-38px,3px,0) scale(.68);opacity:.42}75%{transform:translate3d(-19px,-7px,0) scale(.88);opacity:.72}100%{transform:translate3d(38px,-4px,0) scale(1);opacity:.95}}
+@keyframes quantumYellow{0%{transform:translate3d(-27px,2px,0) scale(.82);opacity:.65}20%{transform:translate3d(-17px,-5px,0) scale(.94);opacity:.82}50%{transform:translate3d(27px,0,0) scale(1.08);opacity:1}80%{transform:translate3d(17px,5px,0) scale(.94);opacity:.82}100%{transform:translate3d(-27px,2px,0) scale(.82);opacity:.65}}
+@keyframes quantumGreen{0%{transform:translate3d(64px,6px,0) scale(.52);opacity:.25}20%{transform:translate3d(43px,-5px,0) scale(.68);opacity:.45}50%{transform:translate3d(0,3px,0) scale(1);opacity:.9}80%{transform:translate3d(-43px,-5px,0) scale(.68);opacity:.45}100%{transform:translate3d(-64px,6px,0) scale(.52);opacity:.25}}
+@media(prefers-reduced-motion:reduce){.quantumDot{animation:none}.productWindow,.heroOrb{animation:none}}
+@media(max-width:800px){.authCardPro{grid-template-columns:1fr;max-width:620px}.authVisual{min-height:300px;height:300px}.visualCopy{left:28px;bottom:28px}.authPanel{padding:36px 30px}.authPanel .authHeading{text-align:left}}
+@media(max-width:600px){.authWrap{padding:12px}.authCardPro{border-radius:20px}.authVisual{min-height:230px;height:230px}.authPanel{padding:28px 20px}.authPanel .authHeading h1{font-size:32px}.visualCopy strong{font-size:32px}}
