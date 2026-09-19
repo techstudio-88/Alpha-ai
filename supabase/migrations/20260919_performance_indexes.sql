@@ -37,3 +37,8 @@ create index if not exists idx_ai_providers_workspace_id on public.ai_providers(
 create index if not exists idx_audit_logs_workspace_id on public.audit_logs(workspace_id);
 create index if not exists idx_subscriptions_workspace_id on public.subscriptions(workspace_id);
 create index if not exists idx_brand_kit_exports_clip_id on public.brand_kit_exports(clip_id);
+create index if not exists idx_analytics_post_id on public.analytics(post_id);
+create index if not exists idx_audit_logs_user_id on public.audit_logs(user_id);
+create index if not exists idx_brand_kit_exports_brand_kit_id on public.brand_kit_exports(brand_kit_id);
+create index if not exists idx_captions_style_id on public.captions(style_id);
+create index if not exists idx_notifications_user_id on public.notifications(user_id);
