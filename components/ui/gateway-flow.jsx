@@ -146,9 +146,32 @@ export default function GatewayFlow({ className = "" }) {
   }, []);
 
   return (
-    <div className={`gatewayFlow ${className}`} aria-hidden="true">
-      <canvas ref={canvasRef} />
-      <div className="gatewayVignette" />
+    <div
+      className={className}
+      aria-hidden="true"
+      style={{
+        position: "relative",
+        width: "min(1200px, 94vw)",
+        height: "420px",
+        margin: "10px auto 34px",
+        overflow: "hidden",
+        border: "1px solid rgba(255,255,255,.12)",
+        borderRadius: "16px",
+        background: "#020202",
+        boxShadow: "0 35px 110px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.035)",
+      }}
+    >
+      <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          borderRadius: "inherit",
+          background:
+            "linear-gradient(90deg,rgba(0,0,0,.22),transparent 18%,transparent 82%,rgba(0,0,0,.22)), radial-gradient(ellipse at center,transparent 34%,rgba(0,0,0,.28) 100%)",
+        }}
+      />
     </div>
   );
 }
