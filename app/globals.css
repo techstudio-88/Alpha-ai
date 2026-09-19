@@ -402,3 +402,42 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .footerBrand p{color:#697386;max-width:340px;line-height:1.7;margin:12px 0 0}.footerLinks{display:flex;justify-content:flex-end;align-items:flex-start;gap:22px;flex-wrap:wrap}.footerLinks a,.footerLinks button{color:#818b9d;background:none;border:0;font:inherit;cursor:pointer;text-decoration:none}.footerLinks a:hover,.footerLinks button:hover{color:#d8d2ff}.footerBottom{grid-column:1/-1;display:flex;justify-content:space-between;gap:20px;padding-top:22px;margin-top:16px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:#4f5869}
 .authSwitch{margin-top:20px;text-align:center;color:#7e889b;font-size:12px}.authSwitch button{background:none;border:0;color:#b7a8ff;font-weight:700;cursor:pointer}.authSwitch button:hover{text-decoration:underline}
 @media(max-width:760px){.workflowJourney{padding:0}.journeyRail{left:29px}.workflowCard3d{grid-template-columns:34px 62px 1fr 18px}.workflowIcon3d{width:58px;height:58px}.stageFloat{right:4px;top:-12px;transform:translateZ(55px) scale(.85)}.dnaVisual{opacity:.45;right:-55px}.closingCard{padding-right:24px}.siteFooter{grid-template-columns:1fr;padding-left:22px;padding-right:22px}.footerLinks{justify-content:flex-start}.footerBottom{flex-direction:column}.authVisual:before{animation-duration:34s}}
+
+
+/* === Feature wall: denser product cards around the video === */
+.featureWall{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
+.featureTile{min-height:292px;padding:22px;display:flex;flex-direction:column;justify-content:flex-start}
+.featureTile.tile1,.featureTile.tile4{min-height:604px}
+.tileTop{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:3}
+.tileIcon{width:50px;height:50px;margin:0!important;border-radius:15px}
+.tileIndex{font:700 10px/1 ui-monospace,SFMono-Regular,monospace;color:#555f72;letter-spacing:.12em}
+.tileContent{position:relative;z-index:3;margin-top:17px}
+.featureTile h3{font-size:19px;line-height:1.2;margin:0 0 8px}
+.featureTile p{font-size:13px;line-height:1.6;max-width:360px}
+.tileVisual{position:relative;z-index:1;height:92px;margin:18px -2px 15px;border:1px solid rgba(255,255,255,.07);border-radius:15px;background:linear-gradient(145deg,#17142a,#0b0e15);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 14px 28px rgba(0,0,0,.22)}
+.tileVisualCore{position:absolute;left:12%;top:50%;width:58px;height:58px;border-radius:50%;transform:translateY(-50%);background:radial-gradient(circle at 35% 30%,#d8d0ff,#8b5cf6 30%,#151229 68%);box-shadow:0 0 30px rgba(139,92,246,.38);animation:tileCoreFloat 4s ease-in-out infinite}
+.tileVisualLine{position:absolute;left:37%;right:10%;height:7px;border-radius:99px;background:#242a38}
+.tileVisualLine:nth-child(2){top:26%;width:48%}.tileVisualLine:nth-child(3){top:46%;width:38%}.tileVisualLine:nth-child(4){top:66%;width:54%}
+.tileVisualLine:after{content:"";display:block;width:65%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#22d3ee);box-shadow:0 0 12px rgba(139,92,246,.3)}
+.tileVisual2 .tileVisualCore{width:72px;height:72px;left:10%;background:conic-gradient(#22d3ee,#8b5cf6,#ec4899,#22d3ee);filter:saturate(.9)}
+.tileVisual2 .tileVisualCore:after{content:"Aa";position:absolute;inset:11px;border-radius:50%;display:grid;place-items:center;background:#111321;color:#fff;font-weight:800;font-size:18px}
+.tileVisual3 .tileVisualCore{width:38px;height:62px;border-radius:10px;left:14%;background:linear-gradient(180deg,#22d3ee,#8b5cf6);box-shadow:0 0 30px rgba(34,211,238,.3)}
+.tileVisual3:after{content:"9:16";position:absolute;left:27%;top:28%;padding:7px 9px;border:1px solid #ffffff12;border-radius:7px;background:#0a0d14;color:#aeb7ca;font-size:9px}
+.tileVisual4 .tileVisualCore{width:110px;height:28px;border-radius:8px;left:9%;background:linear-gradient(90deg,#8b5cf6,#22d3ee);box-shadow:none}
+.tileVisual4 .tileVisualLine:nth-child(2){left:10%;right:auto;top:28%;width:25%;height:4px}.tileVisual4 .tileVisualLine:nth-child(3){left:42%;top:28%;width:18%;height:4px}.tileVisual4 .tileVisualLine:nth-child(4){left:65%;top:28%;width:24%;height:4px}
+.tileVisual5 .tileVisualCore{width:74px;height:74px;left:9%;background:conic-gradient(from 180deg,#22d3ee 0 24%,#8b5cf6 24% 48%,#2b3243 48% 100%);box-shadow:0 0 28px rgba(34,211,238,.22)}
+.tileVisual5 .tileVisualCore:after{content:"";position:absolute;inset:13px;border-radius:50%;background:#10131c}
+.tileVisual6 .tileVisualCore{width:88px;height:52px;border-radius:14px;left:8%;background:linear-gradient(135deg,#262043,#111523);border:1px solid #ffffff14}
+.tileVisual6 .tileVisualCore:after{content:"✦";position:absolute;inset:0;display:grid;place-items:center;color:#b9a9ff;font-size:24px;text-shadow:0 0 18px #8b5cf6}
+.tileMeta{position:relative;z-index:3;margin-top:auto;padding-top:13px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between;align-items:center;gap:10px;color:#697487;font-size:10px}
+.tileMeta span,.tileMeta b{display:flex;align-items:center;gap:6px;font-weight:600}
+.tileMeta span i{width:5px;height:5px;border-radius:50%;background:#61e7c1;box-shadow:0 0 8px #61e7c1}
+.tileMeta b{color:#a9b0c0;font-weight:700}
+.tileMeta svg{color:#6d7890;transition:.25s}
+.featureTile:hover .tileMeta svg{transform:translateX(3px);color:#b8aaff}
+.tileSheen{position:absolute;inset:-50% auto -50% -35%;width:32%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);transform:rotate(12deg) translateX(-160%);animation:featureSheen 8s ease-in-out infinite;pointer-events:none}
+.tile2 .tileSheen{animation-delay:-1.3s}.tile3 .tileSheen{animation-delay:-2.6s}.tile4 .tileSheen{animation-delay:-3.9s}.tile5 .tileSheen{animation-delay:-5.2s}.tile6 .tileSheen{animation-delay:-6.5s}
+@keyframes tileCoreFloat{0%,100%{transform:translateY(-50%) translateZ(0) scale(.96)}50%{transform:translateY(calc(-50% - 5px)) translateZ(16px) scale(1.04)}}
+@keyframes featureSheen{0%,55%,100%{transform:rotate(12deg) translateX(-160%);opacity:0}66%{transform:rotate(12deg) translateX(500%);opacity:1}76%{opacity:0}}
+@media(max-width:900px){.featureWall{grid-template-columns:repeat(2,minmax(0,1fr))}.featureTile.tile1,.featureTile.tile4{min-height:292px}}
+@media(max-width:600px){.featureWall{grid-template-columns:1fr}.featureTile.tile1,.featureTile.tile4{min-height:292px}.tileVisual{height:82px}}
