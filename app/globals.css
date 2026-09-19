@@ -480,3 +480,39 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 @media(max-width:760px){.authWrap{padding:14px}.authCardPro{grid-template-columns:1fr;min-height:0;border-radius:24px}.authVisual{min-height:190px;height:190px;border-right:0;border-bottom:1px solid rgba(255,255,255,.08)}.authVisual .visualRibbon{width:360px;height:105px;top:45%}.authVisual .visualCopy{left:24px;bottom:22px}.authVisual .visualCopy strong{font-size:23px}.authPanel{padding:26px 22px 28px}.authPanel>.brand{display:none}.authHeading h1{font-size:32px}.authPanel .socialStack{grid-template-columns:1fr}.authPanel .backBtn{margin-bottom:18px}}
 
 .clipLibraryGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.clipLibraryCard{display:grid;grid-template-columns:180px 1fr;gap:18px;min-height:180px;overflow:hidden}.clipThumb{display:grid;place-items:center;min-height:180px;background:linear-gradient(145deg,#161a26,#0b0d13);border-right:1px solid rgba(255,255,255,.07);color:#8b7cf6}.clipLibraryBody{padding:18px 18px 18px 0;min-width:0}.clipLibraryBody h3{margin:7px 0 6px;font-size:17px}.clipLibraryBody p{font-size:12px;min-height:36px}.clipLibraryMeta{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:15px}.btn.small{height:34px;padding:0 11px;font-size:11px}@media(max-width:900px){.clipLibraryGrid{grid-template-columns:1fr}}@media(max-width:600px){.clipLibraryCard{grid-template-columns:110px 1fr}.clipThumb{min-height:150px}.clipLibraryBody{padding:14px 14px 14px 0}.clipLibraryMeta{align-items:flex-end;flex-direction:column}}
+
+/* New project v3 */
+.uploadModal{width:min(680px,100%);padding:30px;background:linear-gradient(145deg,#151923,#0d1017);border-color:#ffffff12}
+.uploadHeader{display:flex;gap:15px;align-items:flex-start;padding-right:34px}
+.uploadHeader h2{margin:3px 0 6px;font-size:28px;letter-spacing:-.035em}
+.uploadHeader p{margin:0;line-height:1.55;font-size:12px}
+.uploadHeader .uploadIcon{flex:0 0 54px;margin:0}
+.sourceTabs{display:flex;gap:7px;padding:5px;margin-top:24px;border:1px solid #ffffff0d;background:#090c12;border-radius:14px}
+.sourceTabs button{flex:1;height:38px;border:1px solid transparent;border-radius:10px;background:transparent;color:#727c90;display:flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:700;cursor:pointer}
+.sourceTabs button:hover{color:#cfd4df;background:#ffffff05}
+.sourceTabs button.selected{color:#f5f4ff;background:linear-gradient(180deg,#27233b,#1b1930);border-color:#8b7cf633;box-shadow:0 8px 24px #0004}
+.fileDrop{margin-top:16px;min-height:205px;border:1px dashed #454d62;border-radius:19px;background:radial-gradient(circle at 50% 20%,#8b5cf610,transparent 42%),#ffffff02;display:grid;place-items:center;align-content:center;gap:7px;color:#dce0e9;text-align:center;cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+.fileDrop:before{content:"";position:absolute;inset:10px;border:1px solid #ffffff05;border-radius:14px;pointer-events:none}
+.fileDrop:hover,.fileDrop.dragging{border-color:#8b7cf6;background:radial-gradient(circle at 50% 20%,#8b5cf61b,transparent 48%),#ffffff04;box-shadow:inset 0 0 45px #8b5cf60b,0 0 35px #8b5cf60b}
+.fileDrop .dropVisual{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;color:#b7aaff;background:#8b5cf612;border:1px solid #8b7cf625;box-shadow:0 12px 30px #0005}
+.fileDrop .dropVisual span{display:none}
+.fileDrop strong{font-size:14px}
+.fileDrop span{font-size:11px;color:#7f899b}
+.fileDrop small{font-size:10px;color:#555f72}
+.fileDrop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.linkImportPanel{margin-top:16px;min-height:205px;border:1px solid #ffffff0d;border-radius:19px;background:#090c12;padding:25px;display:grid;grid-template-columns:auto 1fr;gap:10px 14px;align-content:center}
+.linkIcon{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#8b5cf614;color:#a99cff;border:1px solid #8b7cf624}
+.linkImportPanel b{display:block;font-size:14px;margin-top:4px}
+.linkImportPanel>div:nth-child(2) span{display:block;color:#687286;font-size:11px;margin-top:4px}
+.linkImportPanel .urlImport{grid-column:1/-1;margin-top:12px}
+.urlImport{display:flex;gap:8px}
+.urlImport input{flex:1;min-width:0;height:44px;border:1px solid #ffffff10;border-radius:11px;background:#05070b;color:#f2f3f7;padding:0 13px;outline:none;font-size:12px}
+.urlImport input:focus{border-color:#8b7cf655;box-shadow:0 0 0 3px #8b7cf612}
+.urlImport .btn{height:44px;white-space:nowrap}
+.uploadSteps{display:flex;justify-content:space-between;margin-top:19px;padding:0 4px;color:#596276;font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.uploadSteps span{display:flex;align-items:center;gap:6px}
+.uploadSteps i{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;border:1px solid #ffffff12;background:#ffffff04;font-style:normal}
+.uploadSteps .active{color:#bdb6ff}
+.uploadSteps .active i{color:#d9d4ff;border-color:#8b7cf633;background:#8b5cf614}
+.uploadMessage{margin-top:14px}
+@media(max-width:600px){.uploadModal{padding:22px}.uploadHeader h2{font-size:24px}.sourceTabs{overflow:auto}.sourceTabs button{min-width:92px}.linkImportPanel{padding:18px}.urlImport{flex-direction:column}.urlImport .btn{width:100%}.uploadSteps{gap:7px}.uploadSteps span{font-size:8px}}
