@@ -30,8 +30,7 @@ export async function GET(request) {
     access_token: data.session.access_token,
     refresh_token: data.session.refresh_token,
     expires_in: String(data.session.expires_in ?? 3600),
-    token_type: data.session.token_type || "bearer",
-    type: "recovery"
+    token_type: data.session.token_type || "bearer"
   }).toString();
   return NextResponse.redirect(target);
 }
