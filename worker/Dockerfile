@@ -1,0 +1,10 @@
+FROM node:20-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --break-system-packages yt-dlp faster-whisper
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev
+COPY server.js ./
+ENV PORT=8080
+EXPOSE 8080
+CMD ["npm","start"]
