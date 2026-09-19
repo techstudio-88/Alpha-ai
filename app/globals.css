@@ -144,3 +144,77 @@ html{scroll-behavior:smooth}.landing{min-height:100vh;background:#06070b;color:#
 @media(max-width:900px){.designMasonry{columns:2 300px}.heroLarge{min-height:980px}.pricingMini{grid-template-columns:1fr}.showContact{grid-template-columns:1fr}}
 @media(max-width:600px){.navTools .themeToggle span{display:none}.themeToggle{width:38px;padding:0;justify-content:center}.appTheme{right:12px;top:10px}.authTheme{right:12px;top:12px}.heroLarge{min-height:860px;padding-top:145px}.heroGatewayBackground{opacity:.48}.heroObject{transform:scale(.78);margin:0 auto -8px}.hero3d .heroCube{display:none}.designMasonry{columns:1}.showContact{grid-template-columns:1fr}.showLaptop{height:260px}.showCard:hover{transform:translateY(-3px)}}
 @media(prefers-reduced-motion:reduce){.heroObject,.laptop,.planet,.miniBars i,.statusPulse i,.visualRibbon,.visualGlow,.authVisual:after{animation:none!important}.heroGatewayBackground canvas{display:none}}
+
+/* === THEME CONSISTENCY OVERRIDES === */
+html[data-theme="dark"]{color-scheme:dark;background:#06070b}
+html[data-theme="light"]{color-scheme:light;background:#f4f5f8}
+[data-theme="dark"] body{background:#06070b;color:#f4f6fb}
+[data-theme="dark"] .landing{background:#06070b;color:#f4f6fb}
+[data-theme="dark"] .landingNav.navScrolled{background:rgba(8,10,15,.94);border-color:#ffffff10}
+[data-theme="dark"] .card,[data-theme="dark"] .modalCard,[data-theme="dark"] .authCardPro{background:linear-gradient(145deg,#151923,#0b0e14);color:#f4f6fb;border-color:#272d3b}
+[data-theme="dark"] .authPanel{background:#0b0e14;color:#f4f6fb}
+[data-theme="dark"] .authVisual{background:#11133c}
+[data-theme="dark"] .input{background:#0b0e15;color:#f4f6fb;border-color:#2b3242}
+[data-theme="dark"] .socialBtn{background:#11151e;color:#edf0f5;border-color:#2a3040}
+[data-theme="dark"] .socialBtn:hover:not(:disabled){background:#181d28;border-color:#41495c}
+[data-theme="dark"] .message{background:#101520;color:#b8c0ce;border-color:#2a3344}
+[data-theme="dark"] .side{background:rgba(7,9,13,.96);color:#f4f6fb;border-color:#242a38}
+[data-theme="dark"] .nav button,[data-theme="dark"] .signout{color:#9ba5b7}
+[data-theme="dark"] .nav button:hover,[data-theme="dark"] .nav button.active,[data-theme="dark"] .signout:hover{background:#171b26;color:#fff}
+[data-theme="dark"] .muted{color:#8f99aa}
+[data-theme="dark"] .sectionIntro p,[data-theme="dark"] .workflowCard p,[data-theme="dark"] .featureTile p{color:#818b9d}
+[data-theme="dark"] .workflow{background:#080a0f}
+[data-theme="dark"] .workflowCard,[data-theme="dark"] .featureTile,[data-theme="dark"] .showCard{background:linear-gradient(145deg,#11141c,#0b0d12);border-color:#ffffff0e;color:#edf0f5}
+[data-theme="dark"] .designShowcase,[data-theme="dark"] .featureSection{background:radial-gradient(circle at 50% 0,#19152e 0,transparent 38%),#06070b}
+[data-theme="dark"] .showTable .tr{color:#b7bfcc;border-color:#252b37}
+[data-theme="dark"] .showTable .tr.th{color:#727d90}
+[data-theme="dark"] .showSearch .commandSearch{background:#11151e;color:#aeb7c6;border-color:#2a3040}
+[data-theme="dark"] .commandSearch kbd{background:#1b202b;color:#9da7b7}
+[data-theme="dark"] .showFAQ .faqRow,[data-theme="dark"] .timelineRow{color:#b5bdca;border-color:#252b37}
+[data-theme="dark"] .toastItem{background:#11151e;color:#e8ebf1;border-color:#2b3240}
+[data-theme="dark"] .showToast{background:#0d1016}
+[data-theme="dark"] .fakeForm input,[data-theme="dark"] .fakeForm textarea{background:#080a0e;color:#e3e7ee;border-color:#2a3040}
+[data-theme="dark"] .fakeForm button{background:#f2f3f5;color:#111}
+[data-theme="dark"] .show3D{background:radial-gradient(circle at 30% 50%,#241b4d,#0a0b10 55%)}
+[data-theme="dark"] .showBreadcrumb .crumb{color:#747f91}
+[data-theme="dark"] .showBreadcrumb .crumb b{color:#b8c0cd}
+[data-theme="dark"] .outlineBtn{background:#11151e;color:#dfe4ec;border-color:#303747}
+[data-theme="dark"] .closingCard{background:radial-gradient(circle at 70% 30%,#1c1b42,#0e1118 55%);border-color:#ffffff12}
+[data-theme="dark"] footer{background:#06070b;color:#596274;border-color:#ffffff0b}
+[data-theme="dark"] footer .brand{color:#dfe4ed}
+[data-theme="dark"] .themeToggle{background:#ffffff08;color:#cbd0db;border-color:#ffffff15}
+[data-theme="dark"] .btn{background:#171a25;color:#fff;border-color:#343a4d}
+[data-theme="dark"] .btn:hover{background:#202536;color:#fff}
+[data-theme="dark"] .primary{color:#fff;background:linear-gradient(135deg,#7c3aed,#06b6d4)}
+[data-theme="dark"] .productWindow{background:#0d1017ee;border-color:#ffffff18}
+[data-theme="dark"] .windowBar{background:#11141c;border-color:#ffffff0b}
+[data-theme="dark"] .mockStats>div,[data-theme="dark"] .mockAI,[data-theme="dark"] .mockVideo{background:#11151e;border-color:#ffffff0c;color:#edf0f5}
+[data-theme="dark"] .authWrap{background:radial-gradient(circle at 50% 10%,#21173c,transparent 38%),#07080d}
+[data-theme="dark"] .authHeading h1{color:#f4f6fb}
+[data-theme="dark"] .authHeading p,[data-theme="dark"] .authSwitch,[data-theme="dark"] .legal{color:#7e889b}
+[data-theme="dark"] .authKicker{color:#8f99ad;border-color:#ffffff10;background:#ffffff06}
+[data-theme="dark"] .backBtn{color:#687286}
+[data-theme="dark"] .divider{color:#596274}
+[data-theme="dark"] .forgotLink{color:#9b8df4}
+[data-theme="dark"] .authCardPro .brand{color:#f4f6fb}
+[data-theme="dark"] .authPanel .brand span{color:#f4f6fb}
+[data-theme="dark"] .app{background:#06070b;color:#f4f6fb}
+[data-theme="dark"] .main{color:#f4f6fb}
+[data-theme="dark"] .top h1{color:#f4f6fb}
+[data-theme="dark"] .uploadCard{background:linear-gradient(145deg,#151923,#0b0e14)}
+[data-theme="dark"] .modal{background:rgba(0,0,0,.62)}
+[data-theme="light"] .app{background:#f4f5f8;color:#171a21}
+[data-theme="light"] .main{color:#171a21}
+[data-theme="light"] .top h1{color:#171a21}
+[data-theme="light"] .card{background:linear-gradient(145deg,#fff,#f7f8fa);color:#171a21;border-color:#dfe3e9;box-shadow:0 20px 55px #1d253014}
+[data-theme="light"] .side{background:rgba(248,249,251,.96);color:#171a21;border-color:#e1e4e9}
+[data-theme="light"] .nav button,[data-theme="light"] .signout{color:#697386}
+[data-theme="light"] .nav button:hover,[data-theme="light"] .nav button.active,[data-theme="light"] .signout:hover{background:#eceef3;color:#171a21}
+[data-theme="light"] .muted{color:#697386}
+[data-theme="light"] .metric{color:#171a21}
+[data-theme="light"] .modal{background:rgba(18,24,34,.32)}
+[data-theme="light"] .modalCard{background:#fff;color:#171a21;border-color:#dfe3e9;box-shadow:0 30px 90px #1b223025}
+[data-theme="light"] .uploadCard{background:linear-gradient(145deg,#fff,#f7f8fa)}
+[data-theme="light"] .authCardPro{background:#fff;color:#171a21}
+[data-theme="light"] .authPanel{background:#fff;color:#171a21}
+[data-theme="light"] .authVisual{background:#11133c}
