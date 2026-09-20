@@ -10,7 +10,7 @@ export async function POST(request){
     const body=await request.json();
     const{url,sourceType,workspaceId,projectId,sourceId,jobId,mediaAssetId}=body||{};
     if(!workspaceId||!projectId||!jobId)return Response.json({error:"Missing processing job context."},{status:400});
-    const client=createClient(supabaseUrl,publicKey,{auth:{persistSession:false}});
+    const client=createClient(supabaseUrl,publicKey,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:auth}}});
     const{data:{user},error:userError}=await client.auth.getUser(auth.slice(7));
     if(userError||!user)return Response.json({error:"Invalid session."},{status:401});
     const{data:isMember,error:memberError}=await client.rpc("is_workspace_member",{wid:workspaceId});
