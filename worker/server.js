@@ -48,6 +48,18 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret"};
+  const ticket=req.get("x-import-ticket")||"";
+  if(ticket&&SUPA&&PUBLIC_KEY){
+    try{
+      const r=await fetch(SUPA+"/rest/v1/rpc/validate_processing_ticket",{method:"POST",headers:{apikey:PUBLIC_KEY,Authorization:"Bearer "+PUBLIC_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_ticket:ticket})});
+      const rows=await r.json().catch(()=>[]);
+      const row=Array.isArray(rows)?rows[0]:null;
+      if(r.ok&&row?.user_id){
+        if(String(row.job_id)!==String(req.body?.jobId)||String(row.workspace_id)!==String(req.body?.workspaceId)||String(row.project_id)!==String(req.body?.projectId))return null;
+        return {id:row.user_id,mode:"processing-ticket"};
+      }
+    }catch(e){console.warn("processing ticket validation failed:",e.message)}
+  }
   const bearer=req.get("authorization")||"";
   if(!bearer.startsWith("Bearer ")||!PUBLIC_KEY)return null;
   const r=await fetch(SUPA+"/auth/v1/user",{headers:{apikey:PUBLIC_KEY,Authorization:bearer}});
@@ -62,12 +74,13 @@ app.post("/process",async(req,res)=>{
     if(identity.mode==="supabase-jwt"&&req.body?.requestedBy&&identity.id!==req.body.requestedBy)return res.status(403).json({error:"Requested user does not match access token."});
     const job=await db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}});
     if(!job?.[0])return res.status(404).json({error:"Processing job not found."});
-    if(identity.mode==="supabase-jwt"){
+    if(identity.mode==="supabase-jwt"||identity.mode==="processing-ticket"){
       const member=await db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}});
       if(!member?.[0])return res.status(403).json({error:"Workspace access denied."});
     }
     res.status(202).json({accepted:true,jobId:req.body?.jobId});
-    authStore.run((req.get("authorization")||"").replace(/^Bearer\s+/i,""),()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
+    const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
+    authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
 app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
