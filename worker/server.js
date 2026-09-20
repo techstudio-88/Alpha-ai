@@ -11,6 +11,21 @@ const authStore=new AsyncLocalStorage();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
 function cmd(command,args){return new Promise((resolve,reject)=>{const p=spawn(command,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("close",c=>c?reject(new Error(err.slice(-7000)||command+" failed")):resolve(out))})}
+let transcriberPromise=null;
+async function transcribeAudio(file){
+  if(!transcriberPromise){
+    transcriberPromise=pipeline("automatic-speech-recognition",process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",{dtype:"q4"});
+  }
+  const transcriber=await transcriberPromise;
+  const wav=new WaveFile(await fsPromises.readFile(file));
+  wav.toBitDepth("32f");wav.toSampleRate(16000);
+  let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
+  const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
+  return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
+    const t=x.timestamp||[0,0];
+    return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
+  }).filter(x=>x.text&&x.end>x.start);
+}
 async function patchJob(id,body){return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id},body})}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
 async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download uploaded source: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)})}
@@ -57,7 +72,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
     let chunkSegments;
     try{
-      chunkSegments=JSON.parse(await cmd("node",["transcribe.mjs",chunkAudio,process.env.WHISPER_MODEL||"onnx-community/whisper-tiny"]));
+      chunkSegments=await transcribeAudio(chunkAudio);
     }catch(e){
       throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
     }
