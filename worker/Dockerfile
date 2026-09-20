@@ -1,13 +1,13 @@
-FROM ghcr.io/ggml-org/whisper.cpp:main AS whisper
-FROM node:20-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
-COPY --from=whisper /app /opt/whisper.cpp
-WORKDIR /app
+FROM ghcr.io/ggml-org/whisper.cpp:main
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates curl ffmpeg xz-utils && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-x64.tar.xz | tar -xJ --strip-components=1 -C /usr/local
+RUN command -v whisper-cli || command -v main || (find /app -maxdepth 5 -type f -name 'whisper-cli' -o -name 'main'; exit 1)
+WORKDIR /app-alpha
 COPY package.json ./
 RUN npm install --omit=dev
 COPY server.js transcribe.py ./
 ENV PORT=8080
 ENV WHISPER_MODEL=tiny
-ENV PATH=/opt/whisper.cpp/build/bin:$PATH
 EXPOSE 8080
 CMD ["npm","start"]
