@@ -2,23 +2,27 @@ import json,os,subprocess,sys,tempfile
 audio=sys.argv[1]
 model_name=sys.argv[2] if len(sys.argv)>2 else "tiny"
 model_path="/opt/whisper.cpp/models/ggml-tiny-q5_1.bin" if model_name=="tiny" else "/opt/whisper.cpp/models/ggml-"+model_name+".bin"
+
 if not os.path.exists(model_path):
     os.makedirs(os.path.dirname(model_path),exist_ok=True)
     url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true"
     subprocess.run(["curl","-L","--fail","--retry","3","-o",model_path,url],check=True)
+
 if not os.path.exists(model_path):
     raise SystemExit("Whisper model not found: "+model_path)
+
 with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
     out=os.path.join(d,"result")
     binary="/opt/whisper.cpp/build/bin/whisper-cli"
-if not os.path.exists(binary):
-    binary="/opt/whisper.cpp/build/bin/main"
-if not os.path.exists(binary):
-    raise SystemExit("Whisper CLI binary not found")
-cmd=[binary,"-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
+    if not os.path.exists(binary):
+        binary="/opt/whisper.cpp/build/bin/main"
+    if not os.path.exists(binary):
+        raise SystemExit("Whisper CLI binary not found")
+    cmd=[binary,"-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
     subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     with open(out+".json","r",encoding="utf-8") as f:
         data=json.load(f)
+
 segments=[]
 for s in data.get("transcription",[]):
     off=s.get("offsets") or {}
