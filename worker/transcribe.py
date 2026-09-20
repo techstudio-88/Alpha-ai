@@ -1,4 +1,6 @@
-import json,os,sys,wave
+import json,os,sys,wave,glob
+for p in glob.glob("/usr/local/lib/python*/site-packages") + glob.glob("/usr/local/lib/python*/dist-packages"):
+    if p not in sys.path: sys.path.insert(0,p)
 from vosk import Model,KaldiRecognizer
 
 audio=sys.argv[1]
