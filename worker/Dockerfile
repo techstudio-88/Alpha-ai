@@ -1,6 +1,6 @@
 FROM node:20-bookworm-slim AS whisper-build
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git make g++ cmake build-essential && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git /opt/whisper.cpp && make -C /opt/whisper.cpp -j2
+RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git /opt/whisper.cpp && cmake -S /opt/whisper.cpp -B /opt/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF && cmake --build /opt/whisper.cpp/build --config Release -j2
 RUN mkdir -p /opt/whisper.cpp/models && curl -L --fail --retry 3 -o /opt/whisper.cpp/models/ggml-tiny-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true
 RUN test -x /opt/whisper.cpp/build/bin/whisper-cli && cp -L /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper-cli
 
