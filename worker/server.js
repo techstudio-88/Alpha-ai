@@ -37,7 +37,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
   await patchJob(p.jobId,{progress:35});
   await cmd("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",audio]);
-  let segments=[];try{segments=JSON.parse(await cmd("python3",["transcribe.py",audio,process.env.WHISPER_MODEL||"small"]))}catch(e){console.warn("Whisper failed:",e.message)}
+  let segments=[];try{segments=JSON.parse(await cmd("python3",["transcribe.py",audio,process.env.WHISPER_MODEL||"tiny"]))}catch(e){console.warn("Whisper failed:",e.message)}
   const transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:segments.map(s=>s.text).join(" "),provider:"faster-whisper",status:segments.length?"completed":"failed"}}))[0];
   for(const s of segments)await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round(s.start*1000),end_ms:Math.round(s.end*1000),text:s.text,speaker:null,confidence:null}});
   await patchJob(p.jobId,{progress:62});
