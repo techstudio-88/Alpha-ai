@@ -8,6 +8,7 @@ RUN npm install --omit=dev
 COPY server.js transcribe.py ./
 ENV PORT=8080
 ENV VOSK_MODEL_DIR=/opt/vosk-model
+ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages
 ENV WHISPER_MODEL=tiny
 EXPOSE 8080
 CMD ["npm","start"]
