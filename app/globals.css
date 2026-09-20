@@ -533,3 +533,42 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .uploadSuccessCard{text-align:center;padding:34px;width:min(520px,100%)}.uploadSuccessCard .eyebrow{margin-top:12px}.uploadSuccessCard h2{font-size:30px;letter-spacing:-.04em;margin:10px 0 8px}.uploadSuccessCard p{font-size:12px;margin:0 auto;max-width:390px}.successCheck{width:76px;height:76px;margin:0 auto 4px;border-radius:24px;display:grid;place-items:center;color:#70f0c8;background:#61e7c10d;border:1px solid #61e7c12d;box-shadow:0 0 60px #61e7c116;animation:successPop .55s cubic-bezier(.2,1.4,.4,1)}.successFlow{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:24px 0}.successFlow span{padding:10px 5px;border-radius:10px;background:#ffffff04;border:1px solid #ffffff08;color:#626c7d;font-size:9px}.successFlow span.done{color:#9eeed6;border-color:#61e7c122;background:#61e7c109}.uploadSuccessCard .full{width:100%;margin-top:4px}@media(max-width:600px){.uploadSuccessCard{padding:28px 20px}.successFlow{grid-template-columns:repeat(2,1fr)}}
 
 .driveBrowser{margin-top:18px;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(10,12,18,.72);overflow:hidden}.driveConnect,.driveSetup{padding:42px 24px;text-align:center}.driveLogo{width:54px;height:54px;margin:0 auto 14px;border-radius:16px;display:grid;place-items:center;background:rgba(139,92,246,.14);color:#a78bfa}.driveConnect h3,.driveSetup h3{margin:0 0 8px}.driveConnect p,.driveSetup p{max-width:520px;margin:0 auto 20px;color:var(--muted,#9ca3af)}.driveToolbar{display:flex;gap:10px;padding:14px;border-bottom:1px solid rgba(255,255,255,.07)}.driveSearch{flex:1;display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:0 12px}.driveSearch input{width:100%;border:0;outline:0;background:transparent;color:inherit;padding:11px 0}.driveMeta{display:flex;justify-content:space-between;padding:10px 14px;color:#8f96a8;font-size:12px}.driveFiles{max-height:330px;overflow:auto;padding:8px 14px}.driveFile{width:100%;display:flex;align-items:center;gap:12px;padding:12px;border:1px solid transparent;background:transparent;color:inherit;border-radius:12px;text-align:left;cursor:pointer}.driveFile:hover,.driveFile.selected{background:rgba(139,92,246,.09);border-color:rgba(139,92,246,.25)}.driveFileIcon{width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:rgba(255,255,255,.05);color:#a78bfa}.driveFile div:nth-child(2){flex:1;min-width:0}.driveFile b,.driveFile small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.driveFile small{margin-top:4px;color:#858b9a;font-size:11px}.driveEmpty{display:grid;place-items:center;gap:8px;padding:38px;color:#8f96a8}.driveFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border-top:1px solid rgba(255,255,255,.07);font-size:12px;color:#8f96a8}.driveFooter span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.driveFooter b{color:#e5e7eb}.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:640px){.driveToolbar,.driveFooter{flex-direction:column;align-items:stretch}.driveMeta{gap:8px;flex-direction:column}}
+
+.settingsExport{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:16px;padding:20px}.settingsExport h3{margin:6px 0 5px}.settingsExport p{max-width:600px;margin:0;font-size:12px;line-height:1.55}
+@media(max-width:600px){
+  .modal{padding:8px;align-items:center;overflow:hidden}
+  .modalCard{width:100%;max-width:100%;max-height:calc(100dvh - 16px);overflow-y:auto;overflow-x:hidden;padding:18px;border-radius:20px}
+  .uploadModal{width:100%;max-width:none;padding:18px}
+  .uploadHeader{display:grid;grid-template-columns:46px minmax(0,1fr);gap:11px;padding-right:28px}
+  .uploadHeader .uploadIcon{width:46px;height:46px}
+  .uploadHeader h2{font-size:23px;line-height:1.08;margin:2px 0 7px}
+  .uploadHeader p{font-size:11px;line-height:1.45}
+  .sourceTabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:5px;margin-top:17px}
+  .sourceTabs button{min-width:0;width:100%;height:42px;font-size:10px}
+  .fileDrop{min-height:190px;margin-top:13px;padding:20px 12px}
+  .fileDrop strong{font-size:13px}
+  .fileDrop span{font-size:10px}
+  .fileDrop small{font-size:9px}
+  .linkImportPanel{min-height:190px;margin-top:13px;padding:17px;grid-template-columns:42px minmax(0,1fr);gap:8px 11px}
+  .linkIcon{width:42px;height:42px}
+  .linkImportPanel b{font-size:13px}
+  .linkImportPanel>div:nth-child(2) span{font-size:10px;line-height:1.4}
+  .urlImport{flex-direction:column;gap:8px}
+  .urlImport input,.urlImport .btn{width:100%;height:43px}
+  .driveBrowser{margin-top:13px;border-radius:16px}
+  .driveConnect,.driveSetup{padding:28px 16px}
+  .driveToolbar{padding:10px;gap:7px}
+  .driveMeta{padding:9px 11px}
+  .driveFiles{max-height:280px;padding:6px 9px}
+  .driveFile{padding:10px 8px;gap:9px}
+  .driveFile b{font-size:11px}
+  .driveFile small{font-size:9px}
+  .driveFooter{padding:11px}
+  .uploadSteps{margin-top:14px}
+  .uploadSteps span{font-size:7px;letter-spacing:.04em}
+  .uploadSteps i{width:19px;height:19px}
+  .modalFoot{margin-top:14px;padding-top:13px;font-size:9px;line-height:1.35}
+  .uploadMessage{font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+  .settingsExport{display:flex;flex-direction:column;align-items:stretch;padding:16px}
+  .settingsExport .btn{width:100%;justify-content:center}
+}
