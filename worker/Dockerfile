@@ -3,7 +3,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js transcribe.mjs ./
+COPY server.js transcribe.mjs /app/
+RUN test -f /app/transcribe.mjs
 ENV PORT=8080
 ENV WHISPER_MODEL=onnx-community/whisper-tiny
 ENV HF_HOME=/tmp/huggingface
