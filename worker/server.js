@@ -98,7 +98,7 @@ async function resumeQueuedJobs(){
   if(activeJobs.size)return;
   try{
     const [queued,stale]=await Promise.all([
-      db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
+      db("processing_jobs",{params:{status:"eq.queued",select:"id,status,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
       db("processing_jobs",{params:{status:"eq.processing",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
     ]);
     const cutoff=Date.now()-90000;
