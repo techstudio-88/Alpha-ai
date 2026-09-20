@@ -13,7 +13,10 @@ if not os.path.exists(model_path):
 
 with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
     out=os.path.join(d,"result")
-    binary=shutil.which("whisper-cli") or shutil.which("main")
+    binary=None
+    if os.path.exists("/opt/whisper-bin-path"):
+        binary=open("/opt/whisper-bin-path","r",encoding="utf-8").read().strip()
+    binary=binary if binary and os.path.exists(binary) else (shutil.which("whisper-cli") or shutil.which("main"))
     if not binary:
         matches=glob.glob("/opt/whisper.cpp/**/whisper-cli",recursive=True)+glob.glob("/opt/whisper.cpp/**/main",recursive=True)
         binary=next((p for p in matches if os.path.isfile(p) and os.access(p,os.X_OK)),None)
