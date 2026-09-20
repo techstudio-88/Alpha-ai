@@ -1,12 +1,21 @@
-import json,sys
-from faster_whisper import WhisperModel
+import json,os,subprocess,sys,tempfile
 audio=sys.argv[1]
 model_name=sys.argv[2] if len(sys.argv)>2 else "tiny"
-model=WhisperModel(model_name,device="cpu",compute_type="int8",cpu_threads=1,num_workers=1)
-segments,_=model.transcribe(audio,language=None,vad_filter=True,word_timestamps=False,beam_size=1,condition_on_previous_text=False)
-out=[]
-for s in segments:
-    text=s.text.strip()
-    if text:
-        out.append({"start":s.start,"end":s.end,"text":text})
-print(json.dumps(out,ensure_ascii=False))
+model_path="/opt/whisper.cpp/models/ggml-"+model_name+".bin"
+if not os.path.exists(model_path):
+    raise SystemExit("Whisper model not found: "+model_path)
+with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
+    out=os.path.join(d,"result")
+    cmd=["/opt/whisper.cpp/build/bin/whisper-cli","-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
+    subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    with open(out+".json","r",encoding="utf-8") as f:
+        data=json.load(f)
+segments=[]
+for s in data.get("transcription",[]):
+    off=s.get("offsets") or {}
+    start=float(off.get("from",0))/1000.0
+    end=float(off.get("to",0))/1000.0
+    text=(s.get("text") or "").strip()
+    if text and end>start:
+        segments.append({"start":start,"end":end,"text":text})
+print(json.dumps(segments,ensure_ascii=False))
