@@ -57,9 +57,9 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
     let chunkSegments;
     try{
-      chunkSegments=JSON.parse(await cmd("python3",["transcribe.py",chunkAudio,process.env.WHISPER_MODEL||"tiny"]));
+      chunkSegments=JSON.parse(await cmd("node",["transcribe.mjs",chunkAudio,process.env.WHISPER_MODEL||"onnx-community/whisper-tiny"]));
     }catch(e){
-      throw new Error("Whisper chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
+      throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
     }
     for(const s of chunkSegments){
       await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round((s.start+start)*1000),end_ms:Math.round((s.end+start)*1000),text:s.text,speaker:null,confidence:null}});
