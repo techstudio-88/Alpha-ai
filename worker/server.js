@@ -5,7 +5,7 @@ import os from"node:os";
 import {spawn} from"node:child_process";
 import {randomUUID} from"node:crypto";
 const app=express();app.use(express.json({limit:"2mb"}));
-const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,SECRET=process.env.MEDIA_WORKER_SECRET||"";
+const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const auth={apikey:KEY,Authorization:"Bearer "+KEY,"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const r=await fetch(u,{method,headers:{...auth,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
 function cmd(command,args){return new Promise((resolve,reject)=>{const p=spawn(command,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("close",c=>c?reject(new Error(err.slice(-7000)||command+" failed")):resolve(out))})}
@@ -33,6 +33,29 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   for(let i=0;i<count;i++){const start=Math.min(maxStart,i*30),end=Math.min(duration,start+45),words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\\s+/).filter(Boolean).length,0),score=Math.min(99,Math.round(55+Math.min(40,words/2))),clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"ready"}}))[0];await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}})}
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker"}));
-app.post("/process",(req,res)=>{if(SECRET&&req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});res.status(202).json({accepted:true,jobId:req.body?.jobId});processJob(req.body).catch(e=>console.error(e))});
+app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
+async function authorize(req){
+  if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret"};
+  const bearer=req.get("authorization")||"";
+  if(!bearer.startsWith("Bearer ")||!PUBLIC_KEY)return null;
+  const r=await fetch(SUPA+"/auth/v1/user",{headers:{apikey:PUBLIC_KEY,Authorization:bearer}});
+  if(!r.ok)return null;
+  const u=await r.json();
+  return u?.id?{id:u.id,mode:"supabase-jwt"}:null;
+}
+app.post("/process",async(req,res)=>{
+  try{
+    const identity=await authorize(req);
+    if(!identity)return res.status(401).json({error:"Unauthorized"});
+    if(identity.mode==="supabase-jwt"&&req.body?.requestedBy&&identity.id!==req.body.requestedBy)return res.status(403).json({error:"Requested user does not match access token."});
+    const job=await db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}});
+    if(!job?.[0])return res.status(404).json({error:"Processing job not found."});
+    if(identity.mode==="supabase-jwt"){
+      const member=await db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}});
+      if(!member?.[0])return res.status(403).json({error:"Workspace access denied."});
+    }
+    res.status(202).json({accepted:true,jobId:req.body?.jobId});
+    processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy}).catch(e=>console.error(e));
+  }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+});
 app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
