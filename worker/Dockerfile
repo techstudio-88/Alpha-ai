@@ -1,15 +1,11 @@
 FROM node:20-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
-RUN python3 -m pip install --no-cache-dir --break-system-packages vosk && python3 -c "import vosk; print(vosk.__file__)"
-RUN mkdir -p /opt/vosk-model && curl -L --fail --retry 3 -o /tmp/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip && unzip -q /tmp/vosk.zip -d /opt && mv /opt/vosk-model-small-en-us-0.15/* /opt/vosk-model/ && rmdir /opt/vosk-model-small-en-us-0.15 && rm /tmp/vosk.zip
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js transcribe.py ./
+COPY server.js transcribe.mjs ./
 ENV PORT=8080
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:/usr/lib/python3/dist-packages
-ENV VOSK_MODEL_DIR=/opt/vosk-model
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages
-ENV WHISPER_MODEL=tiny
+ENV WHISPER_MODEL=onnx-community/whisper-tiny
+ENV HF_HOME=/tmp/huggingface
 EXPOSE 8080
-CMD ["sh","-c","python3 -c \"import vosk; print(vosk.__file__)\" && npm start"]
+CMD ["npm","start"]
