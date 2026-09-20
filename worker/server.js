@@ -91,19 +91,30 @@ app.post("/process",async(req,res)=>{
     authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
+const activeJobs=new Set();
 async function resumeQueuedJobs(){
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
+  if(activeJobs.size)return;
   try{
     const rows=await db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at",order:"created_at.asc",limit:"1"}});
-    const row=rows?.[0],payload=row?.payload||{},ticket=payload.processing_ticket;
-    if(!row||!ticket||!PUBLIC_KEY)return;
-    const r=await fetch(SUPA+"/rest/v1/rpc/validate_processing_ticket",{method:"POST",headers:{apikey:PUBLIC_KEY,Authorization:"Bearer "+PUBLIC_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_ticket:ticket})});
-    const validRows=await r.json().catch(()=>[]),valid=Array.isArray(validRows)?validRows[0]:null;
-    if(!r.ok||!valid||String(valid.job_id)!==String(row.id)||String(valid.workspace_id)!==String(row.workspace_id)||String(valid.project_id)!==String(row.project_id))return;
+    const row=rows?.[0],payload=row?.payload||{};
+    if(!row)return;
+    const normalized={
+      ...payload,
+      jobId:row.id,
+      workspaceId:row.workspace_id,
+      projectId:row.project_id,
+      sourceId:payload.sourceId||payload.source_id,
+      sourceType:payload.sourceType||payload.source_type,
+      mediaAssetId:payload.mediaAssetId||payload.media_asset_id,
+      driveFileId:payload.driveFileId||payload.drive_file_id,
+      driveAccessToken:payload.driveAccessToken||payload.drive_access_token
+    };
     const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,status:"eq.queued",select:"id"},body:{status:"processing",progress:1}});
     if(!claimed?.[0]?.id)return;
+    activeJobs.add(row.id);
     console.log("resuming queued job",row.id);
-    processJob({...payload,jobId:row.id,workspaceId:row.workspace_id,projectId:row.project_id,requestedBy:valid.user_id}).catch(e=>console.error("queued job",row.id,e));
+    processJob(normalized).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
 }
 console.log("Supabase server-side key configured:",!!KEY);
