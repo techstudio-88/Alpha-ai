@@ -37,12 +37,53 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
   await patchJob(p.jobId,{progress:35});
   await cmd("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",audio]);
-  let segments=[];try{segments=JSON.parse(await cmd("python3",["transcribe.py",audio,process.env.WHISPER_MODEL||"tiny"]))}catch(e){console.warn("Whisper failed:",e.message)}
-  const transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:segments.map(s=>s.text).join(" "),provider:"faster-whisper",status:segments.length?"completed":"failed"}}))[0];
-  for(const s of segments)await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round(s.start*1000),end_ms:Math.round(s.end*1000),text:s.text,speaker:null,confidence:null}});
-  await patchJob(p.jobId,{progress:62});
+  // Free-tier safe transcription: process short audio windows and checkpoint after every window.
+  // If Render restarts, recovery resumes from the last saved window instead of starting Whisper again.
+  let transcript=null;
+  if(p.transcriptId){
+    transcript=(await db("transcripts",{params:{id:"eq."+p.transcriptId,select:"*"}}))[0]||null;
+  }
+  if(!transcript){
+    transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:"",provider:"whisper.cpp",status:"processing"}}))[0];
+    await patchJob(p.jobId,{payload:{...p,transcriptId:transcript.id,transcribeChunk:0}});
+  }
+  const chunkSeconds=15;
+  const chunkCount=Math.max(1,Math.ceil(duration/chunkSeconds));
+  let nextChunk=Math.max(0,Number(p.transcribeChunk||0));
+  for(let i=nextChunk;i<chunkCount;i++){
+    const start=i*chunkSeconds, length=Math.min(chunkSeconds,Math.max(0,duration-start));
+    if(length<=0)break;
+    const chunkAudio=path.join(dir,"chunk-"+i+".wav");
+    await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
+    let chunkSegments;
+    try{
+      chunkSegments=JSON.parse(await cmd("python3",["transcribe.py",chunkAudio,process.env.WHISPER_MODEL||"tiny"]));
+    }catch(e){
+      throw new Error("Whisper chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
+    }
+    for(const s of chunkSegments){
+      await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round((s.start+start)*1000),end_ms:Math.round((s.end+start)*1000),text:s.text,speaker:null,confidence:null}});
+    }
+    const textRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"text,start_ms,end_ms",order:"start_ms.asc"}});
+    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:(textRows||[]).map(s=>s.text).join(" "),language:"auto",status:i+1>=chunkCount?"completed":"processing"}});
+    const progress=35+Math.round(((i+1)/chunkCount)*27);
+    await patchJob(p.jobId,{progress,payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1}});
+    console.log("transcription checkpoint",p.jobId,i+1,"/",chunkCount);
+  }
+  const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
+  const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
+  await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const maxStart=Math.max(0,duration-45),count=Math.min(12,Math.max(1,Math.floor(maxStart/30)+1));
-  for(let i=0;i<count;i++){const start=Math.min(maxStart,i*30),end=Math.min(duration,start+45),words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\\s+/).filter(Boolean).length,0),score=Math.min(99,Math.round(55+Math.min(40,words/2))),clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"ready"}}))[0];await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}})}
+  const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds"}});
+  const existingStarts=new Set((existingClips||[]).map(x=>Number(x.start_seconds).toFixed(3)));
+  for(let i=0;i<count;i++){
+    const start=Math.min(maxStart,i*30),end=Math.min(duration,start+45),key=start.toFixed(3);
+    if(existingStarts.has(key))continue;
+    const words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\\s+/).filter(Boolean).length,0);
+    const score=Math.min(99,Math.round(55+Math.min(40,words/2)));
+    const clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"ready"}}))[0];
+    await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}});
+  }
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
