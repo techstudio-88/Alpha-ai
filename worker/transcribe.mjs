@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { WaveFile } from "wavefile";
+import wavefile from "wavefile";
+const { WaveFile } = wavefile;
 import { pipeline } from "@huggingface/transformers";
 
 const audio=process.argv[2];
