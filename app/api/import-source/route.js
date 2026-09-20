@@ -15,9 +15,9 @@ export async function POST(request){
     if(userError||!user)return Response.json({error:"Invalid session."},{status:401});
     const{data:member}=await client.from("workspace_members").select("role").eq("workspace_id",workspaceId).eq("user_id",user.id).maybeSingle();
     if(!member)return Response.json({error:"Workspace access denied."},{status:403});
-    const worker=process.env.MEDIA_WORKER_URL;
+    const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
     if(!worker)return Response.json({error:"Media worker is not configured. Set MEDIA_WORKER_URL on Vercel so Alpha.ai can download and process linked videos."},{status:503});
-    const response=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","x-worker-secret":process.env.MEDIA_WORKER_SECRET||""},body:JSON.stringify({url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:user.id})});
+    const response=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","authorization":auth,"x-worker-secret":process.env.MEDIA_WORKER_SECRET||""},body:JSON.stringify({url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:user.id})});
     const result=await response.json().catch(()=>({}));
     if(!response.ok)return Response.json({error:result.error||"Media worker rejected the job."},{status:502});
     return Response.json({ok:true,jobId,worker:result});
