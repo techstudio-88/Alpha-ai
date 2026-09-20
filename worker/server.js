@@ -14,7 +14,8 @@ function cmd(command,args){return new Promise((resolve,reject)=>{const p=spawn(c
 let transcriberPromise=null;
 async function transcribeAudio(file){
   const {pipeline}=await import("@huggingface/transformers");
-  const {WaveFile}=await import("wavefile");
+  const wavefile=await import("wavefile");
+  const {WaveFile}=wavefile.default||wavefile;
   if(!transcriberPromise){
     const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
     transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
