@@ -16,7 +16,8 @@ async function transcribeAudio(file){
   const {pipeline}=await import("@huggingface/transformers");
   const {WaveFile}=await import("wavefile");
   if(!transcriberPromise){
-    transcriberPromise=pipeline("automatic-speech-recognition",process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",{dtype:"q4"});
+    const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
+    transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
   }
   const transcriber=await transcriberPromise;
   const wav=new WaveFile(fs.readFileSync(file));
