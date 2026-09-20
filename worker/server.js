@@ -98,7 +98,7 @@ async function resumeQueuedJobs(){
   try{
     const [queued,stale]=await Promise.all([
       db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
-      db("processing_jobs",{params:{status:"eq.processing",updated_at:"lt."+new Date(Date.now()-90000).toISOString(),select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
+      db("processing_jobs",{params:{status:"eq.processing",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
     ]);
     const rows=[...(queued||[]),...(stale||[])];
     const row=[...rows].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0];
