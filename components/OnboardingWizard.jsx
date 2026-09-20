@@ -30,7 +30,7 @@ export default function OnboardingWizard({user,workspace,onComplete}){
       await supabase.from("profiles").update({full_name:user.user_metadata?.full_name||name.trim()}).eq("id",user.id);
       localStorage.setItem("alpha:onboarded:"+user.id,"1");
       localStorage.setItem("alpha:preferences:"+user.id,JSON.stringify(preferences));
-      onComplete({...workspace,name:name.trim()+"'s Workspace"});
+      onComplete({...workspace,name:name.trim()+"'s Workspace",metadata:{...(workspace?.metadata||{}),onboarding:preferences}});
     }catch(e){setError(e?.message||"Could not save workspace details.")}finally{setBusy(false)}
   };
 
