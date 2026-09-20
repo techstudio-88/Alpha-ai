@@ -13,11 +13,13 @@ async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"
 function cmd(command,args){return new Promise((resolve,reject)=>{const p=spawn(command,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("close",c=>c?reject(new Error(err.slice(-7000)||command+" failed")):resolve(out))})}
 let transcriberPromise=null;
 async function transcribeAudio(file){
+  const {pipeline}=await import("@huggingface/transformers");
+  const {WaveFile}=await import("wavefile");
   if(!transcriberPromise){
     transcriberPromise=pipeline("automatic-speech-recognition",process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",{dtype:"q4"});
   }
   const transcriber=await transcriberPromise;
-  const wav=new WaveFile(await fsPromises.readFile(file));
+  const wav=new WaveFile(fs.readFileSync(file));
   wav.toBitDepth("32f");wav.toSampleRate(16000);
   let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
   const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
