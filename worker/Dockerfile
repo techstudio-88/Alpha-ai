@@ -1,8 +1,9 @@
 FROM node:20-bookworm-slim AS whisper-build
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /opt/whisper.cpp && curl -L --fail --retry 3 -o /tmp/whisper.tar.gz https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.4/whisper-bin-ubuntu-x64.tar.gz && tar -xzf /tmp/whisper.tar.gz -C /opt/whisper.cpp --strip-components=1 && rm /tmp/whisper.tar.gz
-RUN mkdir -p /opt/whisper.cpp/models && curl -L --fail --retry 3 -o /opt/whisper.cpp/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true
-RUN test -x /opt/whisper.cpp/whisper-cli && cp -L /opt/whisper.cpp/whisper-cli /opt/whisper-cli
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git cmake build-essential && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.git /opt/whisper.cpp
+RUN cd /opt/whisper.cpp && CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-fma -mno-f16c -mno-sse4.2 -mno-bmi2" CXXFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-fma -mno-f16c -mno-sse4.2 -mno-bmi2" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_AVX_VNNI=OFF -DGGML_AVX512=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=OFF && cmake --build build --config Release --target whisper-cli -j2
+RUN mkdir -p /opt/whisper.cpp/models && curl -L --fail --retry 3 -o /opt/whisper.cpp/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin?download=true
+RUN test -x /opt/whisper.cpp/build/bin/whisper-cli && cp -L /opt/whisper.cpp/build/bin/whisper-cli /opt/whisper-cli
 
 FROM node:20-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
