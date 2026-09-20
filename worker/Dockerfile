@@ -1,7 +1,7 @@
 FROM ghcr.io/ggml-org/whisper.cpp:main AS whisper
 FROM node:20-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
-COPY --from=whisper /app/build /opt/whisper.cpp/build
+COPY --from=whisper /app /opt/whisper.cpp
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
