@@ -1,7 +1,7 @@
 FROM node:20-bookworm-slim AS whisper-build
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/whisper.cpp && curl -L --fail --retry 3 -o /tmp/whisper.tar.gz https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.4/whisper-bin-ubuntu-x64.tar.gz && tar -xzf /tmp/whisper.tar.gz -C /opt/whisper.cpp --strip-components=1 && rm /tmp/whisper.tar.gz
-RUN mkdir -p /opt/whisper.cpp/models && curl -L --fail --retry 3 -o /opt/whisper.cpp/models/ggml-tiny-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true
+RUN mkdir -p /opt/whisper.cpp/models && curl -L --fail --retry 3 -o /opt/whisper.cpp/models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin?download=true
 RUN test -x /opt/whisper.cpp/whisper-cli && cp -L /opt/whisper.cpp/whisper-cli /opt/whisper-cli
 
 FROM node:20-bookworm-slim
