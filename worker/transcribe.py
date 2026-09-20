@@ -1,4 +1,4 @@
-import glob,json,os,subprocess,sys,tempfile
+import glob,json,os,shutil,subprocess,sys,tempfile
 audio=sys.argv[1]
 model_name=sys.argv[2] if len(sys.argv)>2 else "tiny"
 model_path="/opt/whisper.cpp/models/ggml-tiny-q5_1.bin" if model_name=="tiny" else "/opt/whisper.cpp/models/ggml-"+model_name+".bin"
@@ -13,8 +13,10 @@ if not os.path.exists(model_path):
 
 with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
     out=os.path.join(d,"result")
-    matches=glob.glob("/opt/whisper.cpp/**/whisper-cli",recursive=True)+glob.glob("/opt/whisper.cpp/**/main",recursive=True)
-    binary=next((p for p in matches if os.path.isfile(p) and os.access(p,os.X_OK)),None)
+    binary=shutil.which("whisper-cli") or shutil.which("main")
+    if not binary:
+        matches=glob.glob("/opt/whisper.cpp/**/whisper-cli",recursive=True)+glob.glob("/opt/whisper.cpp/**/main",recursive=True)
+        binary=next((p for p in matches if os.path.isfile(p) and os.access(p,os.X_OK)),None)
     if not binary:
         raise SystemExit("Whisper CLI binary not found")
     cmd=[binary,"-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
