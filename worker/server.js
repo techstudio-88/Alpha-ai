@@ -93,6 +93,7 @@ app.post("/process",async(req,res)=>{
 });
 const activeJobs=new Set();
 async function resumeQueuedJobs(){
+  console.log("job recovery scan started");
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
   if(activeJobs.size)return;
   try{
@@ -102,6 +103,7 @@ async function resumeQueuedJobs(){
     ]);
     const cutoff=Date.now()-90000;
     const rows=[...(queued||[]),...(stale||[])].filter(row=>row?.status==="queued"||new Date(row?.updated_at||row?.created_at||0).getTime()<cutoff);
+    console.log("job recovery scan found",JSON.stringify({queued:queued?.length||0,processing:stale?.length||0,candidates:rows.length}));
     const row=[...rows].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0];
     const payload=row?.payload||{};
     if(!row)return;
