@@ -74,11 +74,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const chunkAudio=path.join(dir,"chunk-"+i+".wav");
     await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
     let chunkSegments;
+    const heartbeat=setInterval(()=>patchJob(p.jobId,{progress:35+Math.round((i/chunkCount)*27)}).catch(()=>{}),20000);
     try{
       chunkSegments=await transcribeAudio(chunkAudio);
     }catch(e){
       throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
-    }
+    }finally{clearInterval(heartbeat)}
     for(const s of chunkSegments){
       await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round((s.start+start)*1000),end_ms:Math.round((s.end+start)*1000),text:s.text,speaker:null,confidence:null}});
     }
