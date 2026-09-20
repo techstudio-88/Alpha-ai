@@ -25,11 +25,11 @@ export default function OnboardingWizard({user,workspace,onComplete}){
     if(step<steps.length-1){setError("");setStep(step+1);return}
     setBusy(true);setError("");
     try{
-      const{error:e1}=await supabase.from("workspaces").update({name:name.trim()+"'s Workspace"}).eq("id",workspace.id);
+      const preferences={role,format,brand,completed_at:new Date().toISOString()};const{error:e1}=await supabase.from("workspaces").update({name:name.trim()+"'s Workspace",metadata:{...(workspace?.metadata||{}),onboarding:preferences}}).eq("id",workspace.id);
       if(e1)throw e1;
       await supabase.from("profiles").update({full_name:user.user_metadata?.full_name||name.trim()}).eq("id",user.id);
       localStorage.setItem("alpha:onboarded:"+user.id,"1");
-      localStorage.setItem("alpha:preferences:"+user.id,JSON.stringify({role,format,brand}));
+      localStorage.setItem("alpha:preferences:"+user.id,JSON.stringify(preferences));
       onComplete({...workspace,name:name.trim()+"'s Workspace"});
     }catch(e){setError(e?.message||"Could not save workspace details.")}finally{setBusy(false)}
   };
