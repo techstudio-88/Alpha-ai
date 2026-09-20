@@ -13,8 +13,8 @@ export async function POST(request){
     const body=await request.json().catch(()=>({}));
     const{workspaceId,projectId,sourceId,jobId,mediaAssetId}=body||{};
     if(!workspaceId||!projectId||!jobId)return Response.json({error:"Missing processing job context."},{status:400});
-    const{data,isMemberError}=await client.rpc("is_workspace_member",{wid:workspaceId});
-    if(isMemberError||!data)return Response.json({error:"Workspace access denied."},{status:403});
+    const{data:isMember,error:memberError}=await client.rpc("is_workspace_member",{wid:workspaceId});
+    if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
     const{data:ticketRows,error:ticketError}=await client.rpc("issue_processing_ticket",{
       p_workspace_id:workspaceId,p_project_id:projectId,p_source_id:sourceId||null,p_job_id:jobId,p_media_asset_id:mediaAssetId||null
     });
