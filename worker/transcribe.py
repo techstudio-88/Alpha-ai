@@ -10,7 +10,12 @@ if not os.path.exists(model_path):
     raise SystemExit("Whisper model not found: "+model_path)
 with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
     out=os.path.join(d,"result")
-    cmd=["/opt/whisper.cpp/build/bin/whisper-cli","-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
+    binary="/opt/whisper.cpp/build/bin/whisper-cli"
+if not os.path.exists(binary):
+    binary="/opt/whisper.cpp/build/bin/main"
+if not os.path.exists(binary):
+    raise SystemExit("Whisper CLI binary not found")
+cmd=[binary,"-m",model_path,"-f",audio,"-oj","-of",out,"-np","-ng","-t","1","-l","auto"]
     subprocess.run(cmd,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     with open(out+".json","r",encoding="utf-8") as f:
         data=json.load(f)
