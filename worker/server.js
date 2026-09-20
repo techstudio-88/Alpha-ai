@@ -62,7 +62,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     transcript=(await db("transcripts",{params:{id:"eq."+p.transcriptId,select:"*"}}))[0]||null;
   }
   if(!transcript){
-    transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:"",provider:"whisper.cpp",status:"processing"}}))[0];
+    transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:"",provider:"transformers-whisper",status:"processing"}}))[0];
     await patchJob(p.jobId,{payload:{...p,transcriptId:transcript.id,transcribeChunk:0}});
   }
   const chunkSeconds=15;
@@ -74,9 +74,11 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const chunkAudio=path.join(dir,"chunk-"+i+".wav");
     await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
     let chunkSegments;
+    const resultFile=path.join(dir,"chunk-"+i+".json");
     const heartbeat=setInterval(()=>patchJob(p.jobId,{progress:35+Math.round((i/chunkCount)*27)}).catch(()=>{}),20000);
     try{
-      chunkSegments=await transcribeAudio(chunkAudio);
+      await cmd("node",["transcribe.mjs",chunkAudio,process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",resultFile]);
+      chunkSegments=JSON.parse(fs.readFileSync(resultFile,"utf8"));
     }catch(e){
       throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
     }finally{clearInterval(heartbeat)}
