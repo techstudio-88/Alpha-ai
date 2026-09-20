@@ -6,7 +6,7 @@ export async function POST(request){
   if(!auth.startsWith("Bearer ")||!accessToken||!file?.id||!workspaceId)return Response.json({error:"Google Drive import context is incomplete."},{status:400});
   const supabase=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false}});
   const{data:{user},error}=await supabase.auth.getUser(auth.slice(7));if(error||!user||user.id!==userId)return Response.json({error:"Invalid session."},{status:401});
-  const{data:member}=await supabase.from("workspace_members").select("role").eq("workspace_id",workspaceId).eq("user_id",user.id).maybeSingle();if(!member)return Response.json({error:"Workspace access denied."},{status:403});
+  const{data:isMember,error:memberError}=await supabase.rpc("is_workspace_member",{wid:workspaceId});if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
   const meta=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(file.id)+"?fields=id,name,mimeType,size,modifiedTime,capabilities",{headers:{Authorization:"Bearer "+accessToken}});const md=await meta.json();if(!meta.ok)return Response.json({error:md.error?.message||"Unable to verify Drive file."},{status:400});
   if(!md.mimeType?.startsWith("video/"))return Response.json({error:"Selected Drive file is not a video."},{status:400});
   if(md.capabilities?.canDownload===false)return Response.json({error:"Google Drive does not allow this file to be downloaded."},{status:400});
