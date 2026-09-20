@@ -96,8 +96,8 @@ async function resumeQueuedJobs(){
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
   if(activeJobs.size)return;
   try{
-    const rows=await db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at",order:"created_at.asc",limit:"1"}});
-    const row=rows?.[0],payload=row?.payload||{};
+    const rows=await db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at",order:"created_at.asc",limit:"25"}});
+    const row=[...(rows||[])].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0],payload=row?.payload||{};
     if(!row)return;
     const normalized={
       ...payload,
