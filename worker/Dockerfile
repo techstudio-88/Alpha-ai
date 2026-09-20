@@ -17,4 +17,4 @@ ENV PORT=8080
 ENV WHISPER_MODEL=tiny
 ENV PATH=/opt/whisper.cpp/build/bin:$PATH
 EXPOSE 8080
-CMD ["npm","start"]
+CMD ["sh","-c","ls -l /usr/local/bin/whisper-cli /opt/whisper.cpp/build/bin/whisper-cli 2>&1 || true; npm start"]
