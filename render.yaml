@@ -18,4 +18,4 @@ services:
       - key: MEDIA_WORKER_SECRET
         generateValue: true
       - key: WHISPER_MODEL
-        value: small
+        value: tiny
