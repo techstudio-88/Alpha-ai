@@ -69,28 +69,24 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const chunkSeconds=15;
   const chunkCount=Math.max(1,Math.ceil(duration/chunkSeconds));
   let nextChunk=Math.max(0,Number(p.transcribeChunk||0));
-  for(let i=nextChunk;i<chunkCount;i++){
-    const start=i*chunkSeconds, length=Math.min(chunkSeconds,Math.max(0,duration-start));
-    if(length<=0)break;
-    const chunkAudio=path.join(dir,"chunk-"+i+".wav");
-    await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
-    let chunkSegments;
-    const resultFile=path.join(dir,"chunk-"+i+".json");
-    const heartbeat=setInterval(()=>patchJob(p.jobId,{progress:35+Math.round((i/chunkCount)*27)}).catch(()=>{}),20000);
-    try{
-      await cmd("node",[path.join(process.cwd(),"transcribe.mjs"),chunkAudio,process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",resultFile]);
-      chunkSegments=JSON.parse(fs.readFileSync(resultFile,"utf8"));
-    }catch(e){
-      throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
-    }finally{clearInterval(heartbeat)}
-    for(const s of chunkSegments){
-      await db("transcript_segments",{method:"POST",body:{transcript_id:transcript.id,start_ms:Math.round((s.start+start)*1000),end_ms:Math.round((s.end+start)*1000),text:s.text,speaker:null,confidence:null}});
+  let transcriptionChunks=Array.isArray(p.transcriptionChunks)?p.transcriptionChunks:[];
+  if(nextChunk<chunkCount && transcriptionChunks.length<chunkCount){
+    transcriptionChunks=[];
+    for(let i=0;i<chunkCount;i++){
+      const start=i*chunkSeconds, length=Math.min(chunkSeconds,Math.max(0,duration-start));
+      if(length<=0)break;
+      const chunkAudio=path.join(dir,"chunk-"+i+".wav");
+      await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
+      const storagePath=p.workspaceId+"/"+p.projectId+"/transcription/"+transcript.id+"/chunk-"+i+".wav";
+      await upload(chunkAudio,storagePath,"audio/wav");
+      transcriptionChunks.push({index:i,start,length,storagePath});
+      await patchJob(p.jobId,{progress:35+Math.round(((i+1)/chunkCount)*8),payload:{...p,transcriptId:transcript.id,transcribeChunk:0,transcriptionChunks}});
     }
-    const textRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"text,start_ms,end_ms",order:"start_ms.asc"}});
-    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:(textRows||[]).map(s=>s.text).join(" "),language:"auto",status:i+1>=chunkCount?"completed":"processing"}});
-    const progress=35+Math.round(((i+1)/chunkCount)*27);
-    await patchJob(p.jobId,{progress,payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1}});
-    console.log("transcription checkpoint",p.jobId,i+1,"/",chunkCount);
+  }
+  if(nextChunk<chunkCount){
+    await patchJob(p.jobId,{status:"awaiting_transcription",progress:43,payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}});
+    console.log("awaiting browser transcription",p.jobId,nextChunk,"/",chunkCount);
+    return;
   }
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
