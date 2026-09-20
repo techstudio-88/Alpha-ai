@@ -47,7 +47,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
 }catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
-  if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret"};
+  if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
   if(ticket&&SUPA&&PUBLIC_KEY){
     try{
@@ -56,7 +56,7 @@ async function authorize(req){
       const row=Array.isArray(rows)?rows[0]:null;
       if(r.ok&&row?.user_id){
         if(String(row.job_id)!==String(req.body?.jobId)||String(row.workspace_id)!==String(req.body?.workspaceId)||String(row.project_id)!==String(req.body?.projectId))return null;
-        return {id:row.user_id,mode:"processing-ticket"};
+        return {id:row.user_id,mode:"processing-ticket",jobId:row.job_id,workspaceId:row.workspace_id,projectId:row.project_id};
       }
     }catch(e){console.warn("processing ticket validation failed:",e.message)}
   }
@@ -72,10 +72,18 @@ app.post("/process",async(req,res)=>{
     const identity=await authorize(req);
     if(!identity)return res.status(401).json({error:"Unauthorized"});
     if(identity.mode==="supabase-jwt"&&req.body?.requestedBy&&identity.id!==req.body.requestedBy)return res.status(403).json({error:"Requested user does not match access token."});
-    const job=await db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}});
-    if(!job?.[0])return res.status(404).json({error:"Processing job not found."});
-    if(identity.mode==="supabase-jwt"||identity.mode==="processing-ticket"){
-      const member=await db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}});
+    let job;
+    if(identity.mode==="processing-ticket"||identity.mode==="worker-secret"){
+      const jobId=identity.jobId||req.body?.jobId,workspaceId=identity.workspaceId||req.body?.workspaceId,projectId=identity.projectId||req.body?.projectId;
+      job=jobId&&workspaceId&&projectId?[{id:jobId,workspace_id:workspaceId,project_id:projectId}]:[];
+    }else{
+      const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
+      job=await authStore.run(bearer,()=>db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}}));
+    }
+    if(!job?.[0]?.id)return res.status(404).json({error:"Processing job not found."});
+    if(identity.mode==="supabase-jwt"){
+      const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
+      const member=await authStore.run(bearer,()=>db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}}));
       if(!member?.[0])return res.status(403).json({error:"Workspace access denied."});
     }
     res.status(202).json({accepted:true,jobId:req.body?.jobId});
