@@ -4,7 +4,7 @@ RUN python3 -m pip install --break-system-packages yt-dlp gdown faster-whisper
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js ./
+COPY server.js transcribe.py ./
 ENV PORT=8080
 EXPOSE 8080
 CMD ["npm","start"]
