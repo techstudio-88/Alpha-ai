@@ -29,4 +29,3 @@ export async function POST(request){
     return Response.json({error:error?.message||"Unable to create processing ticket."},{status:500});
   }
 }
-export{verifyTicket};
