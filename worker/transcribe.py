@@ -16,9 +16,10 @@ with tempfile.TemporaryDirectory(prefix="alpha-whisper-") as d:
     binary=None
     if os.path.exists("/opt/whisper-bin-path"):
         binary=open("/opt/whisper-bin-path","r",encoding="utf-8").read().strip()
-    binary=binary if binary and os.path.exists(binary) else (shutil.which("whisper-cli") or shutil.which("main"))
+    candidates=[binary,"/app/main","/app/whisper-cli","/usr/local/bin/main","/usr/local/bin/whisper-cli",shutil.which("whisper-cli"),shutil.which("main")]
+    binary=next((p for p in candidates if p and os.path.isfile(p) and os.access(p,os.X_OK)),None)
     if not binary:
-        matches=glob.glob("/opt/whisper.cpp/**/whisper-cli",recursive=True)+glob.glob("/opt/whisper.cpp/**/main",recursive=True)
+        matches=glob.glob("/app/**/whisper-cli",recursive=True)+glob.glob("/app/**/main",recursive=True)+glob.glob("/opt/whisper.cpp/**/whisper-cli",recursive=True)+glob.glob("/opt/whisper.cpp/**/main",recursive=True)
         binary=next((p for p in matches if os.path.isfile(p) and os.access(p,os.X_OK)),None)
     if not binary:
         raise SystemExit("Whisper CLI binary not found")
