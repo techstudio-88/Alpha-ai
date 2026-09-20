@@ -96,9 +96,18 @@ async function resumeQueuedJobs(){
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
   if(activeJobs.size)return;
   try{
-    const rows=await db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at",order:"created_at.asc",limit:"25"}});
-    const row=[...(rows||[])].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0],payload=row?.payload||{};
+    const [queued,stale]=await Promise.all([
+      db("processing_jobs",{params:{status:"eq.queued",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
+      db("processing_jobs",{params:{status:"eq.processing",updated_at:"lt."+new Date(Date.now()-90000).toISOString(),select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
+    ]);
+    const rows=[...(queued||[]),...(stale||[])];
+    const row=[...rows].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0];
+    const payload=row?.payload||{};
     if(!row)return;
+    if(row.status==="processing"){
+      const reset=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,status:"eq.processing",select:"id"},body:{status:"queued",progress:Math.max(0,Number(row.progress||0)),error:null}});
+      if(!reset?.[0]?.id)return;
+    }
     const normalized={
       ...payload,
       jobId:row.id,
@@ -110,10 +119,10 @@ async function resumeQueuedJobs(){
       driveFileId:payload.driveFileId||payload.drive_file_id,
       driveAccessToken:payload.driveAccessToken||payload.drive_access_token
     };
-    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,status:"eq.queued",select:"id"},body:{status:"processing",progress:1}});
+    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,status:"eq.queued",select:"id"},body:{status:"processing",progress:Math.max(1,Number(row.progress||1))}});
     if(!claimed?.[0]?.id)return;
     activeJobs.add(row.id);
-    console.log("resuming queued job",row.id);
+    console.log("resuming queued/stale job",row.id);
     processJob(normalized).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
 }
