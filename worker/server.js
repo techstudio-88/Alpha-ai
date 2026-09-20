@@ -74,9 +74,11 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const chunkAudio=path.join(dir,"chunk-"+i+".wav");
     await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
     let chunkSegments;
+    const resultFile=path.join(dir,"chunk-"+i+".json");
     const heartbeat=setInterval(()=>patchJob(p.jobId,{progress:35+Math.round((i/chunkCount)*27)}).catch(()=>{}),20000);
     try{
-      chunkSegments=await transcribeAudio(chunkAudio);
+      await cmd("node",[path.join(process.cwd(),"transcribe.mjs"),chunkAudio,process.env.WHISPER_MODEL||"onnx-community/whisper-tiny",resultFile]);
+      chunkSegments=JSON.parse(fs.readFileSync(resultFile,"utf8"));
     }catch(e){
       throw new Error("Transcription chunk "+(i+1)+"/"+chunkCount+" failed: "+e.message);
     }finally{clearInterval(heartbeat)}
