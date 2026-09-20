@@ -127,7 +127,8 @@ async function resumeQueuedJobs(){
     processJob(normalized).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
 }
-console.log("Supabase server-side key configured:",!!KEY);
+try{console.log("Whisper executable check:",require("child_process").execSync("command -v whisper-cli || command -v main || ls -l /usr/local/bin/whisper-cli /opt/whisper.cpp/build/bin/whisper-cli 2>&1").toString().trim())}catch(e){console.log("Whisper executable check failed:",e.stdout?.toString()||e.message)}
+  console.log("Supabase server-side key configured:",!!KEY);
 setTimeout(resumeQueuedJobs,5000);
 setInterval(resumeQueuedJobs,15000);
 app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
