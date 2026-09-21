@@ -20,6 +20,7 @@ export default function EditorView({projects,supabase,onUpload}){
   const [zoom,setZoom]=useState(1);
   const [saved,setSaved]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
+  const [segments,setSegments]=useState([]);
   const [rendering,setRendering]=useState(false);
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null);
@@ -34,12 +35,17 @@ export default function EditorView({projects,supabase,onUpload}){
     let cancelled=false;
     async function load(){
       if(!project?.id||!supabase)return;
-      setLoading(true);setError("");setSourceUrl("");setAsset(null);setCurrent(0);setInPoint(0);setOutPoint(0);
+      setLoading(true);setError("");setSourceUrl("");setAsset(null);setSegments([]);setCurrent(0);setInPoint(0);setOutPoint(0);
       const {data,error:assetError}=await supabase.from("media_assets").select("id,name,storage_path,mime_type,duration_seconds,status").eq("project_id",project.id).not("storage_path","is",null).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(cancelled)return;
       if(assetError){setError(assetError.message);setLoading(false);return}
       if(!data?.storage_path){setError("This project has no uploaded media ready for editing.");setLoading(false);return}
       setAsset(data);
+      const {data:transcript}=await supabase.from("transcripts").select("id,language,status,created_at").eq("media_asset_id",data.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
+      if(transcript?.id){
+        const {data:rows}=await supabase.from("transcript_segments").select("id,start_ms,end_ms,text,speaker").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
+        if(!cancelled)setSegments(rows||[]);
+      }
       const signed=await supabase.storage.from("media").createSignedUrl(data.storage_path,3600);
       if(cancelled)return;
       if(signed.error||!signed.data?.signedUrl){setError(signed.error?.message||"Could not create a secure video preview.");setLoading(false);return}
@@ -193,7 +199,7 @@ export default function EditorView({projects,supabase,onUpload}){
           </div>
           <div className="editorTrack">
             <div className="editorTrackLabel"><span className="editorCaptionDot"/>Captions</div>
-            <div className="editorTrackBody editorTrackMuted"><span>Transcript/caption track will appear when transcription is ready.</span></div>
+            <div className="editorTrackBody editorCaptionTrack">{segments.length?segments.map(s=><button key={s.id} className="editorCaptionSegment" style={{left:(duration?Math.max(0,s.start_ms/1000)/duration*100:0)+"%",width:(duration?Math.max(.5,(s.end_ms-s.start_ms)/1000)/duration*100:0)+"%"}} onClick={()=>jump(s.start_ms/1000)} title={s.text}><span>{s.speaker?`${s.speaker}: `:""}{s.text}</span></button>):<span>No transcript segments are available for this source yet.</span>}</div>
           </div>
         </section>
       </main>
@@ -202,7 +208,7 @@ export default function EditorView({projects,supabase,onUpload}){
         <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
         <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
         <div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
-        <div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><div className="inspectorHint"><WandSparkles size={14}/> Prompt is ready for the AI editing pipeline.</div></div>
+        <div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>setRenderMessage("AI edit instructions saved to this draft. Rendering still uses the selected range.")}><WandSparkles size={14}/> Apply instruction</button></div>
         <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
       </aside>
     </div>
