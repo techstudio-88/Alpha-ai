@@ -140,10 +140,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
       }
     }
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,srtPath});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
     await upload(rendered,storagePath,"video/mp4");
-    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""}}});
+    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""}}});
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
