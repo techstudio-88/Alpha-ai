@@ -78,6 +78,16 @@ export default function EditorView({projects,supabase,onUpload}){
           setAspect(draft.aspect||"9:16");
           setSpeed(Number(draft.speed)||1);
           setZoom(Number(draft.zoom)||1);
+          setCaptions(draft.captions!==false);
+          setEffect(draft.effect||"none");
+          setTransition(draft.transition||"cut");
+          setTimelineHeight(Number(draft.timelineHeight)||230);
+          setVideoBlockHeight(Number(draft.videoBlockHeight)||52);
+          setCaptionBlockHeight(Number(draft.captionBlockHeight)||52);
+          setVideoBlockWidth(Number(draft.videoBlockWidth)||100);
+          setCaptionBlockWidth(Number(draft.captionBlockWidth)||100);
+          setLayoutTemplate(draft.layoutTemplate||"vertical-pro");
+          setAiPrompt(draft.aiPrompt||"");
         }catch{}
       }
       setLoading(false);
@@ -114,7 +124,7 @@ export default function EditorView({projects,supabase,onUpload}){
   };
   const saveDraft=()=>{
     if(!project?.id)return;
-    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,updatedAt:new Date().toISOString()};
+    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
     window.localStorage.setItem("alpha.editor."+project.id,JSON.stringify(data));
     setSaved(true);
   };
