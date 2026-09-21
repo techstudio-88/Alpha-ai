@@ -27,7 +27,7 @@ async function renderEditedClip(input,out,start,end,opts={}){
   const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
   const sw=Math.round(size[0]*zoom),sh=Math.round(size[1]*zoom);
   const captionFilter=opts.srtPath?`,subtitles=${String(opts.srtPath).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}:force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=70'`:"";
-  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${captionFilter}`;
+  const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="vintage"?",eq=contrast=1.04:saturation=.82:brightness=.02,hue=h=8":opts.effect==="sharpen"?",unsharp=5:5:0.65:5:5:0.0":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=.18":"";const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${captionFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(requested),"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",out]));
