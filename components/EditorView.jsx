@@ -138,7 +138,10 @@ export default function EditorView({projects,supabase,onUpload}){
         await new Promise(r=>setTimeout(r,2000));
         const {data:job,error}=await supabase.from("processing_jobs").select("status,progress,error,payload").eq("id",jobId).maybeSingle();
         if(error)throw new Error(error.message);
-        if(job?.payload?.aiEditStatus==="analyzing")setAiStatus("Gemini is analyzing your edit instruction…");\n        if(job?.payload?.aiEditStatus==="fallback")setAiStatus("Gemini could not apply the instruction; the original selection was rendered.");\n        if(job?.payload?.aiEditStatus==="applied")setAiStatus("Gemini applied the edit instruction.");\n        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
+        if(job?.payload?.aiEditStatus==="analyzing")setAiStatus("Gemini is analyzing your edit instruction…");
+        if(job?.payload?.aiEditStatus==="fallback")setAiStatus("Gemini could not apply the instruction; the original selection was rendered.");
+        if(job?.payload?.aiEditStatus==="applied")setAiStatus("Gemini applied the edit instruction.");
+        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
         if(job?.status==="failed"){throw new Error(job.error||"Render failed.")}
         setRenderMessage("Rendering… "+Math.max(0,Number(job?.progress)||0)+"%");
       }
@@ -146,7 +149,8 @@ export default function EditorView({projects,supabase,onUpload}){
     }catch(e){setRenderMessage(e.message||"Render failed.")}finally{setRendering(false)}
   };
 
-  return <div ref={editorRef} className="alphaEditor">\n    {fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
+  return <div ref={editorRef} className="alphaEditor">
+    {fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
     <div className="editorTopBar">
       <div className="editorTitleBlock">
         <div className="eyebrow">ALPHA.AI EDITOR</div>
@@ -216,11 +220,11 @@ export default function EditorView({projects,supabase,onUpload}){
           </div>
           <div className="editorTrack">
             <div className="editorTrackLabel"><Film size={14}/><span>Video</span></div>
-            <div className="editorTrackBody"><span className="editorClipBlock" style={{left:(duration?inPoint/duration*100:0)+"%",width:(duration?Math.min(videoBlockWidth,duration?Math.max(0,(outPoint-inPoint)/duration*100):100)+"%",minHeight:videoBlockHeight+"px"}}><b>{asset?.name||"Source video"}</b><small>{fmt(inPoint)} — {fmt(outPoint||duration)}</small></span></div>
+            <div className="editorTrackBody"><span className="editorClipBlock" style={{left:(duration?inPoint/duration*100:0)+"%",width:(duration?Math.min(videoBlockWidth,Math.max(0,(outPoint-inPoint)/duration*100)):100)+"%",minHeight:videoBlockHeight+"px"}}><b>{asset?.name||"Source video"}</b><small>{fmt(inPoint)} — {fmt(outPoint||duration)}</small></span></div>
           </div>
           <div className="editorTrack">
             <div className="editorTrackLabel"><span className="editorCaptionDot"/>Captions</div>
-            <div className="editorTrackBody editorCaptionTrack">{segments.length?segments.map(s=><button key={s.id} className="editorCaptionSegment" style={{minHeight:captionBlockHeight+"px",width:Math.min(captionBlockWidth,100)+"%",left:(duration?Math.max(0,s.start_ms/1000)/duration*100:0)+"%",width:(duration?Math.max(.5,(s.end_ms-s.start_ms)/1000)/duration*100:0)+"%"}} onClick={()=>jump(s.start_ms/1000)} title={s.text}><span>{s.speaker?`${s.speaker}: `:""}{s.text}</span></button>):<span>No transcript segments are available for this source yet.</span>}</div>
+            <div className="editorTrackBody editorCaptionTrack">{segments.length?segments.map(s=><button key={s.id} className="editorCaptionSegment" style={{minHeight:captionBlockHeight+"px",left:(duration?Math.max(0,s.start_ms/1000)/duration*100:0)+"%",width:(duration?Math.min(captionBlockWidth,Math.max(.5,(s.end_ms-s.start_ms)/1000)/duration*100):captionBlockWidth)+"%"}} onClick={()=>jump(s.start_ms/1000)} title={s.text}><span>{s.speaker?`${s.speaker}: `:""}{s.text}</span></button>):<span>No transcript segments are available for this source yet.</span>}</div>
           </div>
         </section>
       </main>
