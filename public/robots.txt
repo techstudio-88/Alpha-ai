@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /control-center/
+Disallow: /auth/
+
+Sitemap: https://alpha-ai-techstudio7808-4455.vercel.app/sitemap.xml
