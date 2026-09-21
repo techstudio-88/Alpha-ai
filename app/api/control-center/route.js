@@ -78,6 +78,9 @@ export async function POST(request){
    if(!userId||!message)return Response.json({error:"Recipient and message are required."},{status:400});
    const{data:owned}=await admin.from("workspaces").select("id").eq("owner_id",user.id);
    const workspaceId=owned?.[0]?.id||null;
+   if(!workspaceId)return Response.json({error:"No owned workspace is available for notifications."},{status:403});
+   const{data:recipient}=await admin.from("workspace_members").select("user_id").eq("workspace_id",workspaceId).eq("user_id",userId).maybeSingle();
+   if(!recipient)return Response.json({error:"That user is not a member of your workspace."},{status:403});
    const{error}=await admin.from("notifications").insert({workspace_id:workspaceId,user_id:userId,title,message});
    if(error)throw error;
    await admin.from("audit_logs").insert({user_id:user.id,workspace_id:workspaceId,action:"control_center_notification_sent",entity_type:"notification",metadata:{recipient:userId}});
