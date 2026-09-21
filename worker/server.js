@@ -5,6 +5,7 @@ import path from"node:path";
 import os from"node:os";
 import {spawn} from"node:child_process";
 import {randomUUID} from"node:crypto";
+import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-3.8-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
