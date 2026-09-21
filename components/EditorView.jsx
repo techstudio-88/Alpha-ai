@@ -25,6 +25,11 @@ export default function EditorView({projects,supabase,onUpload}){
   const [effect,setEffect]=useState("none");
   const [transition,setTransition]=useState("cut");
   const [timelineHeight,setTimelineHeight]=useState(230);
+  const [videoBlockHeight,setVideoBlockHeight]=useState(52);
+  const [captionBlockHeight,setCaptionBlockHeight]=useState(52);
+  const [videoBlockWidth,setVideoBlockWidth]=useState(100);
+  const [captionBlockWidth,setCaptionBlockWidth]=useState(100);
+  const [aiStatus,setAiStatus]=useState("");
   const [blockHeight,setBlockHeight]=useState(52);
   const [layoutTemplate,setLayoutTemplate]=useState("vertical-pro");
   const [fullscreenAsk,setFullscreenAsk]=useState(false);
@@ -120,7 +125,7 @@ export default function EditorView({projects,supabase,onUpload}){
   const fullscreen=()=>videoRef.current?.requestFullscreen?.();
   const renderSelection=async()=>{
     if(!project?.id||!asset?.id||!sourceUrl||rendering)return;
-    setRendering(true);setRenderMessage("Starting render…");
+    setRendering(true);setRenderMessage("Starting render…");setAiStatus("");
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
@@ -133,7 +138,7 @@ export default function EditorView({projects,supabase,onUpload}){
         await new Promise(r=>setTimeout(r,2000));
         const {data:job,error}=await supabase.from("processing_jobs").select("status,progress,error,payload").eq("id",jobId).maybeSingle();
         if(error)throw new Error(error.message);
-        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
+        if(job?.payload?.aiEditStatus==="analyzing")setAiStatus("Gemini is analyzing your edit instruction…");\n        if(job?.payload?.aiEditStatus==="fallback")setAiStatus("Gemini could not apply the instruction; the original selection was rendered.");\n        if(job?.payload?.aiEditStatus==="applied")setAiStatus("Gemini applied the edit instruction.");\n        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
         if(job?.status==="failed"){throw new Error(job.error||"Render failed.")}
         setRenderMessage("Rendering… "+Math.max(0,Number(job?.progress)||0)+"%");
       }
@@ -141,7 +146,7 @@ export default function EditorView({projects,supabase,onUpload}){
     }catch(e){setRenderMessage(e.message||"Render failed.")}finally{setRendering(false)}
   };
 
-  return <div ref={editorRef} className="alphaEditor">
+  return <div ref={editorRef} className="alphaEditor">\n    {fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
     <div className="editorTopBar">
       <div className="editorTitleBlock">
         <div className="eyebrow">ALPHA.AI EDITOR</div>
@@ -211,11 +216,11 @@ export default function EditorView({projects,supabase,onUpload}){
           </div>
           <div className="editorTrack">
             <div className="editorTrackLabel"><Film size={14}/><span>Video</span></div>
-            <div className="editorTrackBody"><span className="editorClipBlock" style={{left:(duration?inPoint/duration*100:0)+"%",width:(duration?Math.max(0,(outPoint-inPoint)/duration*100):100)+"%"}}><b>{asset?.name||"Source video"}</b><small>{fmt(inPoint)} — {fmt(outPoint||duration)}</small></span></div>
+            <div className="editorTrackBody"><span className="editorClipBlock" style={{left:(duration?inPoint/duration*100:0)+"%",width:(duration?Math.min(videoBlockWidth,duration?Math.max(0,(outPoint-inPoint)/duration*100):100)+"%",minHeight:videoBlockHeight+"px"}}><b>{asset?.name||"Source video"}</b><small>{fmt(inPoint)} — {fmt(outPoint||duration)}</small></span></div>
           </div>
           <div className="editorTrack">
             <div className="editorTrackLabel"><span className="editorCaptionDot"/>Captions</div>
-            <div className="editorTrackBody editorCaptionTrack">{segments.length?segments.map(s=><button key={s.id} className="editorCaptionSegment" style={{left:(duration?Math.max(0,s.start_ms/1000)/duration*100:0)+"%",width:(duration?Math.max(.5,(s.end_ms-s.start_ms)/1000)/duration*100:0)+"%"}} onClick={()=>jump(s.start_ms/1000)} title={s.text}><span>{s.speaker?`${s.speaker}: `:""}{s.text}</span></button>):<span>No transcript segments are available for this source yet.</span>}</div>
+            <div className="editorTrackBody editorCaptionTrack">{segments.length?segments.map(s=><button key={s.id} className="editorCaptionSegment" style={{minHeight:captionBlockHeight+"px",width:Math.min(captionBlockWidth,100)+"%",left:(duration?Math.max(0,s.start_ms/1000)/duration*100:0)+"%",width:(duration?Math.max(.5,(s.end_ms-s.start_ms)/1000)/duration*100:0)+"%"}} onClick={()=>jump(s.start_ms/1000)} title={s.text}><span>{s.speaker?`${s.speaker}: `:""}{s.text}</span></button>):<span>No transcript segments are available for this source yet.</span>}</div>
           </div>
         </section>
       </main>
@@ -223,9 +228,9 @@ export default function EditorView({projects,supabase,onUpload}){
       <aside className="editorInspector">
         <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
         <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
-        <div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
-        <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>setRenderMessage("AI instruction attached to the next render. Gemini-assisted editing will use this instruction when the render is processed.")}><WandSparkles size={14}/> Apply instruction</button></div>
-        <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
+        <div className="inspectorSection"><label>Layout templates</label><div className="editorTemplateGrid">{Object.entries(templates).map(([k,t])=><button key={k} className={layoutTemplate===k?"selected":""} onClick={()=>applyTemplate(k)}>{t.label}<small>{t.aspect}</small></button>)}</div></div><div className="inspectorSection"><label>Effects</label><select className="editorSelect wide" value={effect} onChange={e=>setEffect(e.target.value)}><option value="none">None</option><option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="mono">Monochrome</option><option value="vibrant">Vibrant</option></select></div><div className="inspectorSection"><label>Transitions</label><select className="editorSelect wide" value={transition} onChange={e=>setTransition(e.target.value)}><option value="cut">Hard cut</option><option value="fade">Fade</option><option value="dip">Dip to black</option><option value="zoom">Zoom</option></select></div><div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
+        <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>{setAiStatus("Instruction ready for Gemini on the next render.");setSaved(false)}}><WandSparkles size={14}/> Apply instruction</button></div>
+        <div className="inspectorSection"><label>AI status</label><div className="aiEditStatus">{aiStatus||"Ready"}</div></div><div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
       </aside>
     </div>
   </div>;
