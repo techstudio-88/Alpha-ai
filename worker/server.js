@@ -27,7 +27,7 @@ async function renderEditedClip(input,out,start,end,opts={}){
   const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
   const sw=Math.round(size[0]*zoom),sh=Math.round(size[1]*zoom);
   const captionFilter=opts.srtPath?`,subtitles=${String(opts.srtPath).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}:force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=70'`:"";
-  const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="vintage"?",eq=contrast=1.04:saturation=.82:brightness=.02,hue=h=8":opts.effect==="sharpen"?",unsharp=5:5:0.65:5:5:0.0":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=.18":"";const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${captionFilter}`;
+  const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=.18":opts.transition==="dip"?",fade=t=in:st=0:d=.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=.10":"";const transitionZoom=opts.transition==="zoom"?",zoompan=z=\"min(zoom+0.0008,1.08)\":s="+size[0]+"x"+size[1]+":d=1";\n  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(requested),"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",out]));
@@ -125,8 +125,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       await patchJob(p.jobId,{progress:25,payload:{...p,aiEditStatus:"analyzing"}});
       try{
         aiEdit=await applyEditInstructionWithGemini(input,duration,start,end,p.aiPrompt);
-        if(aiEdit){start=aiEdit.start_seconds;end=aiEdit.end_seconds;console.log("Gemini editor instruction applied",p.jobId,aiEdit.action)}
-      }catch(e){console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
+        if(aiEdit){start=aiEdit.start_seconds;end=aiEdit.end_seconds;await patchJob(p.jobId,{payload:{...p,aiEditStatus:"applied",aiEditAction:aiEdit.action,aiEditReason:aiEdit.reason}});console.log("Gemini editor instruction applied",p.jobId,aiEdit.action)}
+      }catch(e){aiEdit={action:"fallback_original_selection",reason:e.message};await patchJob(p.jobId,{payload:{...p,aiEditStatus:"fallback",aiEditError:e.message}});console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
     }
     if(end-start<0.25)throw new Error("Selected edit range is too short.");
     const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
