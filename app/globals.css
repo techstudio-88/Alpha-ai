@@ -616,3 +616,5 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .editorCaptionTrack{position:relative;overflow:hidden;min-height:48px;background:rgba(255,255,255,.025)}
 .editorCaptionSegment{position:absolute;top:7px;height:34px;min-width:28px;border:1px solid rgba(255,255,255,.14);border-radius:7px;background:rgba(139,92,246,.18);color:inherit;padding:0 7px;overflow:hidden;text-align:left;cursor:pointer}
 .editorCaptionSegment span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:32px}
+
+.pwaGate{z-index:80}.pwaGateCard{max-width:620px}.pwaGateRow{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 0;border-top:1px solid #ffffff10}.pwaGateRow>div{display:grid;gap:5px}.pwaGateRow span{color:#7f889b;font-size:13px;line-height:1.5}.pwaContinue{width:100%;justify-content:center;margin-top:12px}
