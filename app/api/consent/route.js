@@ -12,7 +12,7 @@ export async function POST(req){
   const{data:{user},error}=await client.auth.getUser(auth);if(error||!user)return Response.json({error:"Authentication expired."},{status:401});
   const body=await req.json().catch(()=>({}));const type=String(body.consentType||"");
   if(!["terms","privacy","cookies"].includes(type))return Response.json({error:"Invalid consent type."},{status:400});
-  const granted=Boolean(body.granted);
+  const granted=Boolean(body.granted);\n  if((type==="terms"||type==="privacy")&&!granted)return Response.json({error:"Terms and Privacy must be accepted to continue using Alpha.ai."},{status:400});
   const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
   const{error:insertError}=await admin.from("user_privacy_consents").insert({user_id:user.id,consent_type:type,policy_version:VERSIONS[type],granted,source:"app",metadata:{necessary_cookies:true,analytics_cookies:false}});
   if(insertError)throw insertError;
