@@ -137,12 +137,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(p.captions!==false){
       const tr=(await db("transcripts",{params:{media_asset_id:"eq."+asset.id,select:"id",order:"created_at.desc",limit:"1"}}))[0];
       if(tr?.id){const rows=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,text",order:"start_ms.asc"}}).catch(()=>[]);const usable=(rows||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms));
-        if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\
-"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\
-"+String(x.text||"").replace(/\\r?\
-/g," ")+"\
-").join("\
-"),"utf8")}
+        if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
       }
     }
     await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,srtPath});
@@ -299,11 +294,7 @@ app.post("/assistant",async(req,res)=>{
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
     const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.
-Workspace context:
-"+context+"
-User request:
-"+prompt});
+    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
 });
