@@ -11,6 +11,10 @@ const authStore=new AsyncLocalStorage();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
 function cmd(command,args){return new Promise((resolve,reject)=>{const p=spawn(command,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("close",c=>c?reject(new Error(err.slice(-7000)||command+" failed")):resolve(out))})}
+async function renderClip(input,out,start,end){
+  const duration=Math.max(0.25,Number(end)-Number(start));
+  await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(duration),"-map","0:v:0?","-map","0:a:0?","-c:v","libx264","-preset","ultrafast","-crf","28","-c:a","aac","-b:a","128k","-movflags","+faststart",out]);
+}
 let transcriberPromise=null;
 async function transcribeAudio(file){
   const {pipeline}=await import("@huggingface/transformers");
@@ -92,15 +96,36 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const maxStart=Math.max(0,duration-45),count=Math.min(12,Math.max(1,Math.floor(maxStart/30)+1));
-  const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds"}});
-  const existingStarts=new Set((existingClips||[]).map(x=>Number(x.start_seconds).toFixed(3)));
+  const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
+  const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
   for(let i=0;i<count;i++){
     const start=Math.min(maxStart,i*30),end=Math.min(duration,start+45),key=start.toFixed(3);
-    if(existingStarts.has(key))continue;
+    let clip=existingByStart.get(key);
     const words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\\s+/).filter(Boolean).length,0);
     const score=Math.min(99,Math.round(55+Math.min(40,words/2)));
-    const clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"ready"}}))[0];
-    await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}});
+    if(!clip){
+      clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"processing"}}))[0];
+      existingByStart.set(key,clip);
+    }else{
+      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"processing",score,end_seconds:end}});
+    }
+    const versions=await db("clip_versions",{params:{clip_id:"eq."+clip.id,version:"eq.1",select:"id,storage_path,render_status",limit:"1"}});
+    const existingVersion=versions?.[0];
+    if(!existingVersion?.storage_path){
+      const clipDir=path.join(dir,"clips");fs.mkdirSync(clipDir,{recursive:true});
+      const rendered=path.join(clipDir,clip.id+".mp4");
+      await renderClip(input,rendered,start,end);
+      const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";await upload(rendered,storagePath,"video/mp4");
+      if(existingVersion?.id){
+        await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{storage_path:storagePath,render_status:"ready",edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
+      }else{
+        await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
+      }
+    }
+    const scores=await db("clip_scores",{params:{clip_id:"eq."+clip.id,select:"id",limit:"1"}});
+    if(!scores?.[0])await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}});
+    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score}});
+    await patchJob(p.jobId,{progress:Math.min(98,62+Math.round(((i+1)/count)*36)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   }
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
