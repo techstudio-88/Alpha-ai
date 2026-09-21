@@ -237,6 +237,7 @@ app.post("/process",async(req,res)=>{
     const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
     authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+});
 const activeJobs=new Set();
 async function resumeQueuedJobs(){
   console.log("job recovery scan started");
