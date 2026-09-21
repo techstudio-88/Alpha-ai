@@ -20,6 +20,8 @@ export default function EditorView({projects,supabase,onUpload}){
   const [zoom,setZoom]=useState(1);
   const [saved,setSaved]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
+  const [rendering,setRendering]=useState(false);
+  const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null);
 
   const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
@@ -96,6 +98,26 @@ export default function EditorView({projects,supabase,onUpload}){
     const next=clamp(t,0,duration);v.currentTime=next;setCurrent(next);
   };
   const fullscreen=()=>videoRef.current?.requestFullscreen?.();
+  const renderSelection=async()=>{
+    if(!project?.id||!asset?.id||!sourceUrl||rendering)return;
+    setRendering(true);setRenderMessage("Starting render…");
+    try{
+      const {data:{session}}=await supabase.auth.getSession();
+      if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit"})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||"Could not start render.");
+      const jobId=result.jobId;
+      for(let i=0;i<60;i++){
+        await new Promise(r=>setTimeout(r,2000));
+        const {data:job,error}=await supabase.from("processing_jobs").select("status,progress,error,payload").eq("id",jobId).maybeSingle();
+        if(error)throw new Error(error.message);
+        if(job?.status==="completed"){setRenderMessage("Rendered clip is ready in Clip Library.");break}
+        if(job?.status==="failed"){throw new Error(job.error||"Render failed.")}
+        setRenderMessage("Rendering… "+Math.max(0,Number(job?.progress)||0)+"%");
+      }
+    }catch(e){setRenderMessage(e.message||"Render failed.")}finally{setRendering(false)}
+  };
 
   return <div className="alphaEditor">
     <div className="editorTopBar">
@@ -106,11 +128,11 @@ export default function EditorView({projects,supabase,onUpload}){
       </div>
       <div className="editorTopActions">
         <button className="btn" onClick={reset}><RotateCcw size={15}/> Reset</button>
-        <button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
+        <button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
       </div>
     </div>
 
-    <div className="editorWorkspace">
+    {renderMessage&&<div className="editorRenderStatus">{renderMessage}</div>}<div className="editorWorkspace">
       <aside className="editorProjectRail">
         <div className="editorRailHead"><b>Projects</b><span>{projects.length}</span></div>
         <div className="editorProjectList">
