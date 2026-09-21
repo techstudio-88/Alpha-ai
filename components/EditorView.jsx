@@ -21,6 +21,7 @@ export default function EditorView({projects,supabase,onUpload}){
   const [saved,setSaved]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
   const [segments,setSegments]=useState([]);
+  const [captions,setCaptions]=useState(true);
   const [rendering,setRendering]=useState(false);
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null);
@@ -110,7 +111,7 @@ export default function EditorView({projects,supabase,onUpload}){
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
-      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,aiPrompt})});
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,aiPrompt})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Could not start render.");
       const jobId=result.jobId;
@@ -208,7 +209,7 @@ export default function EditorView({projects,supabase,onUpload}){
         <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
         <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
         <div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
-        <div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>setRenderMessage("AI instruction attached to the next render. Gemini-assisted editing will use this instruction when the render is processed.")}><WandSparkles size={14}/> Apply instruction</button></div>
+        <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>setRenderMessage("AI instruction attached to the next render. Gemini-assisted editing will use this instruction when the render is processed.")}><WandSparkles size={14}/> Apply instruction</button></div>
         <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
       </aside>
     </div>
