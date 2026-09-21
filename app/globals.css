@@ -643,3 +643,4 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .alphaConsentLinks{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0}.alphaConsentLinks a{color:#fff;text-decoration:underline;font-size:12px}
 .alphaConsentActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:600px){.alphaConsentOverlay{padding:12px}.alphaConsentCard{padding:20px}.alphaConsentActions button{width:100%}}
+.policyPage{max-width:850px;margin:0 auto;padding:70px 24px;color:#eef1f7;line-height:1.7}.policyPage h1{font-size:42px;margin-bottom:8px}.policyPage h2{margin-top:34px;font-size:22px}.policyPage p{color:#b8bfcb}
