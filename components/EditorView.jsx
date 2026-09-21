@@ -22,15 +22,28 @@ export default function EditorView({projects,supabase,onUpload}){
   const [aiPrompt,setAiPrompt]=useState("");
   const [segments,setSegments]=useState([]);
   const [captions,setCaptions]=useState(true);
+  const [effect,setEffect]=useState("none");
+  const [transition,setTransition]=useState("cut");
+  const [timelineHeight,setTimelineHeight]=useState(230);
+  const [blockHeight,setBlockHeight]=useState(52);
+  const [layoutTemplate,setLayoutTemplate]=useState("vertical-pro");
+  const [fullscreenAsk,setFullscreenAsk]=useState(false);
   const [rendering,setRendering]=useState(false);
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null);
+  const editorRef=useRef(null);
 
   const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
 
   useEffect(()=>{
     if(project?.id)setSelectedId(project.id);
   },[project?.id]);
+
+  useEffect(()=>{if(typeof window!=="undefined"&&localStorage.getItem("alpha.editor.fullscreen.ask.v1")!=="1")setFullscreenAsk(true)},[]);
+  const templates={"vertical-pro":{label:"Vertical Pro",aspect:"9:16",zoom:1},"wide-cinema":{label:"Wide Cinema",aspect:"16:9",zoom:1},"square-social":{label:"Square Social",aspect:"1:1",zoom:1},"vertical-focus":{label:"Vertical Focus",aspect:"9:16",zoom:1.12}};
+  const applyTemplate=k=>{const t=templates[k];setLayoutTemplate(k);setAspect(t.aspect);setZoom(t.zoom);setSaved(false)};
+  const enterEditorFullscreen=async()=>{if(typeof window!=="undefined")localStorage.setItem("alpha.editor.fullscreen.ask.v1","1");setFullscreenAsk(false);await editorRef.current?.requestFullscreen?.().catch(()=>{})};
+  const dismissFullscreenAsk=()=>{if(typeof window!=="undefined")localStorage.setItem("alpha.editor.fullscreen.ask.v1","1");setFullscreenAsk(false)};
 
   useEffect(()=>{
     let cancelled=false;
@@ -111,22 +124,24 @@ export default function EditorView({projects,supabase,onUpload}){
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
-      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,aiPrompt})});
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,effect,transition,aiPrompt})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Could not start render.");
       const jobId=result.jobId;
-      for(let i=0;i<60;i++){
+      let finished=false;
+      for(let i=0;i<90;i++){
         await new Promise(r=>setTimeout(r,2000));
         const {data:job,error}=await supabase.from("processing_jobs").select("status,progress,error,payload").eq("id",jobId).maybeSingle();
         if(error)throw new Error(error.message);
-        if(job?.status==="completed"){setRenderMessage("Rendered clip is ready in Clip Library.");break}
+        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
         if(job?.status==="failed"){throw new Error(job.error||"Render failed.")}
         setRenderMessage("Rendering… "+Math.max(0,Number(job?.progress)||0)+"%");
       }
+      if(!finished)throw new Error("Render is taking longer than expected. The job is still running; check Clip Library shortly.");
     }catch(e){setRenderMessage(e.message||"Render failed.")}finally{setRendering(false)}
   };
 
-  return <div className="alphaEditor">
+  return <div ref={editorRef} className="alphaEditor">
     <div className="editorTopBar">
       <div className="editorTitleBlock">
         <div className="eyebrow">ALPHA.AI EDITOR</div>
