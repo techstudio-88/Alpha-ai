@@ -6,7 +6,7 @@ import os from"node:os";
 import {spawn} from"node:child_process";
 import {randomUUID} from"node:crypto";
 const app=express();app.use(express.json({limit:"2mb"}));
-const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
+const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-3.8-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
@@ -33,6 +33,30 @@ async function transcribeAudio(file){
     const t=x.timestamp||[0,0];
     return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
   }).filter(x=>x.text&&x.end>x.start);
+}
+async function analyzeVideoWithGemini(filePath,sourceDuration){
+  if(!GEMINI_API_KEY)return null;
+  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  let file=await ai.files.upload({file:filePath,config:{mimeType:"video/mp4"}});
+  for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
+  if(file?.state!=="ACTIVE")throw new Error("Gemini video analysis failed: "+String(file?.state||"unknown"));
+  const maxClip=Math.min(45,sourceDuration);
+  const schema={type:"object",properties:{candidates:{type:"array",items:{type:"object",properties:{
+    start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},
+    hook_score:{type:"number"},emotional_intensity:{type:"number"},information_density:{type:"number"},
+    story_completeness:{type:"number"},shareability_score:{type:"number"}
+  },required:["start_seconds","end_seconds","title","reason","hook_score","emotional_intensity","information_density","story_completeness","shareability_score"]},maxItems:8}},required:["candidates"]};
+  const prompt="You are Alpha.ai's clip-selection engine. Source duration is EXACTLY "+sourceDuration.toFixed(3)+" seconds. HARD RULES: 0 <= start_seconds < end_seconds <= "+sourceDuration.toFixed(3)+"; no clip may exceed "+maxClip.toFixed(3)+" seconds; never invent timestamps outside the source. Find the strongest complete short-form moments: hooks, surprising statements, useful insights, emotional peaks, punchlines, stories, Q&A, controversial claims, or CTAs. Prefer clean sentence boundaries and enough context. For a source shorter than the preferred clip length, use only the real source duration. Return up to 8 candidates ranked best-first. Scores 0-100. Do not create filler clips.";
+  const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(file.uri,file.mimeType),prompt]),config:{responseMimeType:"application/json",responseSchema:schema}});
+  let parsed;try{parsed=JSON.parse(result.text||"{}")}catch{throw new Error("Gemini returned invalid clip JSON.")};
+  return (Array.isArray(parsed.candidates)?parsed.candidates:[]).map(x=>{
+    const start=Math.max(0,Math.min(sourceDuration,Number(x.start_seconds)||0));
+    const end=Math.max(start,Math.min(sourceDuration,Number(x.end_seconds)||start));
+    return {...x,start_seconds:start,end_seconds:end};
+  }).filter(x=>x.end_seconds-x.start_seconds>=Math.min(2,sourceDuration)).sort((a,b)=>
+    ((Number(b.hook_score)||0)+(Number(b.information_density)||0)+(Number(b.story_completeness)||0)+(Number(b.shareability_score)||0))-
+    ((Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0))
+  ).slice(0,8);
 }
 async function patchJob(id,body){return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id},body})}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
@@ -95,19 +119,41 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
-  const maxStart=Math.max(0,duration-45),count=Math.min(12,Math.max(1,Math.floor(maxStart/30)+1));
+  const safeDuration=Math.max(0,Number(duration)||0);
+  if(!safeDuration)throw new Error("Source video duration could not be determined.");
+  let candidates=null;
+  if(GEMINI_API_KEY){
+    await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
+    try{candidates=await analyzeVideoWithGemini(input,safeDuration);console.log("Gemini clip candidates",p.jobId,candidates?.length||0)}
+    catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
+  }
+  if(!candidates?.length){
+    const count=safeDuration<=45?1:Math.min(12,Math.floor((safeDuration-1)/30)+1);
+    candidates=Array.from({length:count},(_,i)=>{
+      const start=Math.min(Math.max(0,safeDuration-45),i*30);
+      const end=Math.min(safeDuration,start+Math.min(45,safeDuration));
+      const words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\s+/).filter(Boolean).length,0);
+      const score=Math.min(99,Math.round(55+Math.min(40,words/2)));
+      return {start_seconds:start,end_seconds:end,title:"AI moment "+Math.round(start)+"s",reason:"Speech density and continuous context",hook_score:score,emotional_intensity:Math.max(0,score-3),information_density:score,story_completeness:score,shareability_score:Math.max(0,score-1)};
+    });
+  }
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
-  for(let i=0;i<count;i++){
-    const start=Math.min(maxStart,i*30),end=Math.min(duration,start+45),key=start.toFixed(3);
+  for(let i=0;i<candidates.length;i++){
+    const candidate=candidates[i];
+    const start=Math.max(0,Math.min(safeDuration,Number(candidate.start_seconds)||0));
+    const end=Math.max(start,Math.min(safeDuration,Number(candidate.end_seconds)||start));
+    if(end<=start)continue;
+    const key=start.toFixed(3);
     let clip=existingByStart.get(key);
-    const words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\\s+/).filter(Boolean).length,0);
-    const score=Math.min(99,Math.round(55+Math.min(40,words/2)));
+    const aiScore=Math.round((Number(candidate.hook_score)||0)*0.3+(Number(candidate.information_density)||0)*0.25+(Number(candidate.story_completeness)||0)*0.2+(Number(candidate.shareability_score)||0)*0.25);
+    const score=Math.max(1,Math.min(99,aiScore||55));
+    const title=String(candidate.title||("AI moment "+Math.round(start)+"s")).slice(0,180);
     if(!clip){
-      clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:"AI moment "+Math.round(start)+"s",start_seconds:start,end_seconds:end,score,status:"processing"}}))[0];
+      clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title,start_seconds:start,end_seconds:end,score,status:"processing"}}))[0];
       existingByStart.set(key,clip);
     }else{
-      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"processing",score,end_seconds:end}});
+      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"processing",score,start_seconds:start,end_seconds:end,title}});
     }
     const versions=await db("clip_versions",{params:{clip_id:"eq."+clip.id,version:"eq.1",select:"id,storage_path,render_status",limit:"1"}});
     const existingVersion=versions?.[0];
@@ -115,17 +161,15 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       const clipDir=path.join(dir,"clips");fs.mkdirSync(clipDir,{recursive:true});
       const rendered=path.join(clipDir,clip.id+".mp4");
       await renderClip(input,rendered,start,end);
-      const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";await upload(rendered,storagePath,"video/mp4");
-      if(existingVersion?.id){
-        await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{storage_path:storagePath,render_status:"ready",edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
-      }else{
-        await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
-      }
+      const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
+      await upload(rendered,storagePath,"video/mp4");
+      if(existingVersion?.id)await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{storage_path:storagePath,render_status:"ready",edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
+      else await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
     }
     const scores=await db("clip_scores",{params:{clip_id:"eq."+clip.id,select:"id",limit:"1"}});
-    if(!scores?.[0])await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:score,emotion_score:Math.max(0,score-3),clarity_score:Math.min(99,score+1),shareability_score:Math.max(0,score-1),reason:"Speech density and continuous context"}});
-    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score}});
-    await patchJob(p.jobId,{progress:Math.min(98,62+Math.round(((i+1)/count)*36)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
+    if(!scores?.[0])await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:Number(candidate.hook_score)||score,emotion_score:Number(candidate.emotional_intensity)||Math.max(0,score-3),clarity_score:Number(candidate.story_completeness)||score,shareability_score:Number(candidate.shareability_score)||Math.max(0,score-1),reason:String(candidate.reason||"AI-selected moment").slice(0,500)}});
+    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score,start_seconds:start,end_seconds:end,title}});
+    await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
