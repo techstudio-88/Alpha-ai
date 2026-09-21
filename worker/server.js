@@ -221,3 +221,33 @@ app.post("/process",async(req,res)=>{
     const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
     authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+const activeJobs=new Set();
+async function resumeQueuedJobs(){
+  console.log("job recovery scan started");
+  if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
+  if(activeJobs.size)return;
+  try{
+    const [queued,stale]=await Promise.all([
+      db("processing_jobs",{params:{status:"eq.queued",select:"id,status,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
+      db("processing_jobs",{params:{status:"eq.processing",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
+    ]);
+    const cutoff=Date.now()-600000;
+    const rows=[...(queued||[]),...(stale||[])].filter(row=>row?.status==="queued"||new Date(row?.updated_at||row?.created_at||0).getTime()<cutoff);
+    console.log("job recovery scan found",JSON.stringify({queued:queued?.length||0,processing:stale?.length||0,candidates:rows.length}));
+    const row=[...rows].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0];
+    const payload=row?.payload||{};
+    if(!row)return;
+    console.log("job recovery selected",row.id,row.status,row.progress);
+    const normalized={...payload,jobId:row.id,workspaceId:row.workspace_id,projectId:row.project_id,sourceId:payload.sourceId||payload.source_id,sourceType:payload.sourceType||payload.source_type,mediaAssetId:payload.mediaAssetId||payload.media_asset_id,driveFileId:payload.driveFileId||payload.drive_file_id,driveAccessToken:payload.driveAccessToken||payload.drive_access_token};
+    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,select:"id"},body:{status:"processing",progress:Math.max(1,Number(row.progress||1)),error:null}});
+    console.log("job recovery claim result",JSON.stringify(claimed));
+    if(!claimed?.[0]?.id)return;
+    activeJobs.add(row.id);
+    console.log("resuming queued/stale job",row.id);
+    processJob(normalized).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
+  }catch(e){console.warn("queued-job recovery failed:",e.message)}
+}
+console.log("Supabase server-side key configured:",!!KEY);
+setTimeout(resumeQueuedJobs,5000);
+setInterval(resumeQueuedJobs,15000);
+app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
