@@ -636,3 +636,10 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .alphaNotificationItem:hover{background:rgba(255,255,255,.04)}.alphaNotificationItem.unread{background:rgba(255,255,255,.035)}
 .alphaNotificationItem>div{min-width:0;flex:1}.alphaNotificationItem b{font-size:13px}.alphaNotificationItem p{margin:5px 0;color:#b7bdc9;font-size:12px;line-height:1.45}.alphaNotificationItem small{display:block}.alphaNotificationEmpty{padding:28px 18px;color:#8e94a3;text-align:center;font-size:13px}
 @media(max-width:760px){.alphaNotificationCenter{top:12px;right:58px}.alphaNotificationPanel{right:-8px}}
+
+.alphaConsentOverlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.58);backdrop-filter:blur(8px);display:grid;place-items:end center;padding:24px}
+.alphaConsentCard{width:min(760px,100%);border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#151821;color:#fff;box-shadow:0 30px 100px rgba(0,0,0,.5);padding:26px}
+.alphaConsentCard h3{margin:6px 0 8px;font-size:24px}.alphaConsentCard p{color:#aeb5c3;line-height:1.55;font-size:13px;max-width:680px}
+.alphaConsentLinks{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0}.alphaConsentLinks a{color:#fff;text-decoration:underline;font-size:12px}
+.alphaConsentActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:600px){.alphaConsentOverlay{padding:12px}.alphaConsentCard{padding:20px}.alphaConsentActions button{width:100%}}
