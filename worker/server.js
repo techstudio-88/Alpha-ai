@@ -18,6 +18,20 @@ async function renderClip(input,out,start,end){
   const actual=Number(probe.format?.duration||0);
   if(!actual||actual>requested+0.5)throw new Error("Rendered clip duration exceeded requested range.");
 }
+async function renderEditedClip(input,out,start,end,opts={}){
+  const requested=Math.max(0.25,Number(end)-Number(start));
+  const speed=Math.max(.5,Math.min(2,Number(opts.speed)||1));
+  const zoom=Math.max(.8,Math.min(1.4,Number(opts.zoom)||1));
+  const aspect=["9:16","16:9","1:1"].includes(opts.aspect)?opts.aspect:"9:16";
+  const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
+  const sw=Math.round(size[0]*zoom),sh=Math.round(size[1]*zoom);
+  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}`;
+  const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
+  await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(requested),"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
+  const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",out]));
+  const actual=Number(probe.format?.duration||0);
+  if(!actual||actual>requested/Math.max(.5,speed)+.75)throw new Error("Rendered edit duration exceeded requested range.");
+}
 let transcriberPromise=null;
 async function transcribeAudio(file){
   const {pipeline}=await import("@huggingface/transformers");
@@ -92,10 +106,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
     const clip=clips?.[0];if(!clip)throw new Error("Could not create edited clip.");
     const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
-    await renderClip(input,rendered,start,end);
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
     await upload(rendered,storagePath,"video/mp4");
-    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start,editor:true}}});
+    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,ai_prompt:p.aiPrompt||""}}});
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
