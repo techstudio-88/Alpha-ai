@@ -77,6 +77,22 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
     ((Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0))
   ).slice(0,8);
 }
+async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
+  if(!GEMINI_API_KEY||!instruction?.trim())return null;
+  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  let file=await ai.files.upload({file:filePath,config:{mimeType:"video/mp4"}});
+  for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
+  if(file?.state!=="ACTIVE")throw new Error("Gemini edit analysis failed: "+String(file?.state||"unknown"));
+  const lo=Math.max(0,Math.min(sourceDuration,Number(selectedStart)||0));
+  const hi=Math.max(lo,Math.min(sourceDuration,Number(selectedEnd)||sourceDuration));
+  const schema={type:"object",properties:{start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},action:{type:"string"}},required:["start_seconds","end_seconds","title","reason","action"]};
+  const prompt="You are Alpha.ai's AI editor. User instruction: "+JSON.stringify(String(instruction).slice(0,2000))+". Source duration is exactly "+sourceDuration.toFixed(3)+" seconds. Current selection is "+lo.toFixed(3)+" to "+hi.toFixed(3)+" seconds. Return ONE precise edit range that best fulfills the instruction. HARD RULES: start_seconds >= "+lo.toFixed(3)+", end_seconds <= "+hi.toFixed(3)+", start < end, minimum 0.25 seconds. Never invent timestamps or content. If the instruction asks for a strongest moment, answer, hook, quote, punchline, story beat, or useful section, choose the smallest complete context inside the selection. If it cannot be satisfied, keep the current selection.";
+  const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(file.uri,file.mimeType),prompt]),config:{responseMimeType:"application/json",responseSchema:schema}});
+  let parsed;try{parsed=JSON.parse(result.text||"{}")}catch{throw new Error("Gemini returned invalid edit JSON.")};
+  const start=Math.max(lo,Math.min(hi,Number(parsed.start_seconds)||lo));
+  const end=Math.max(start,Math.min(hi,Number(parsed.end_seconds)||hi));
+  return {start_seconds:start,end_seconds:end,title:String(parsed.title||"AI edited clip").slice(0,180),reason:String(parsed.reason||"").slice(0,500),action:String(parsed.action||"").slice(0,300)};
+}
 async function patchJob(id,body){return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id},body})}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
 async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download uploaded source: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)})}
@@ -102,8 +118,16 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(!asset){const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4",storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4",size=await upload(input,storagePath);asset=(await db("media_assets",{method:"POST",body:{workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,name:fileName,storage_path:storagePath,mime_type:"video/mp4",size_bytes:size,duration_seconds:duration,status:"uploaded"}}))[0];await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:fileName.replace(/\.mp4$/,""),duration_seconds:duration,width,height,fps,status:"ready"}})}else{await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{})}
   if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
   if(p.operation==="render_edit"){
-    const start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
-    const end=Math.max(start,Math.min(duration,Number(p.endSeconds)||duration));
+    let start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
+    let end=Math.max(start,Math.min(duration,Number(p.endSeconds)||duration));
+    let aiEdit=null;
+    if(p.aiPrompt?.trim()&&GEMINI_API_KEY){
+      await patchJob(p.jobId,{progress:25,payload:{...p,aiEditStatus:"analyzing"}});
+      try{
+        aiEdit=await applyEditInstructionWithGemini(input,duration,start,end,p.aiPrompt);
+        if(aiEdit){start=aiEdit.start_seconds;end=aiEdit.end_seconds;console.log("Gemini editor instruction applied",p.jobId,aiEdit.action)}
+      }catch(e){console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
+    }
     if(end-start<0.25)throw new Error("Selected edit range is too short.");
     const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
     const clip=clips?.[0];if(!clip)throw new Error("Could not create edited clip.");
@@ -118,7 +142,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,srtPath});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
     await upload(rendered,storagePath,"video/mp4");
-    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,captions:p.captions!==false,ai_prompt:p.aiPrompt||"",aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,ai_prompt:p.aiPrompt||""}}});
+    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""}}});
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
