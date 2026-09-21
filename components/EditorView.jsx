@@ -1,0 +1,188 @@
+"use client";
+
+import {useEffect,useMemo,useRef,useState} from "react";
+import {Activity,ChevronRight,Clock,Film,Fullscreen,Maximize2,Pause,Play,RotateCcw,Save,Scissors,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
+
+export default function EditorView({projects,supabase,onUpload}){
+  const [selectedId,setSelectedId]=useState(projects[0]?.id||"");
+  const [asset,setAsset]=useState(null);
+  const [sourceUrl,setSourceUrl]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [playing,setPlaying]=useState(false);
+  const [current,setCurrent]=useState(0);
+  const [duration,setDuration]=useState(0);
+  const [inPoint,setInPoint]=useState(0);
+  const [outPoint,setOutPoint]=useState(0);
+  const [aspect,setAspect]=useState("9:16");
+  const [speed,setSpeed]=useState(1);
+  const [muted,setMuted]=useState(false);
+  const [zoom,setZoom]=useState(1);
+  const [saved,setSaved]=useState(false);
+  const [aiPrompt,setAiPrompt]=useState("");
+  const videoRef=useRef(null);
+
+  const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
+
+  useEffect(()=>{
+    if(project?.id)setSelectedId(project.id);
+  },[project?.id]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function load(){
+      if(!project?.id||!supabase)return;
+      setLoading(true);setError("");setSourceUrl("");setAsset(null);setCurrent(0);setInPoint(0);setOutPoint(0);
+      const {data,error:assetError}=await supabase.from("media_assets").select("id,name,storage_path,mime_type,duration_seconds,status").eq("project_id",project.id).not("storage_path","is",null).order("created_at",{ascending:false}).limit(1).maybeSingle();
+      if(cancelled)return;
+      if(assetError){setError(assetError.message);setLoading(false);return}
+      if(!data?.storage_path){setError("This project has no uploaded media ready for editing.");setLoading(false);return}
+      setAsset(data);
+      const signed=await supabase.storage.from("media").createSignedUrl(data.storage_path,3600);
+      if(cancelled)return;
+      if(signed.error||!signed.data?.signedUrl){setError(signed.error?.message||"Could not create a secure video preview.");setLoading(false);return}
+      setSourceUrl(signed.data.signedUrl);
+      const savedDraft=typeof window!=="undefined"?window.localStorage.getItem("alpha.editor."+project.id):null;
+      if(savedDraft){
+        try{
+          const draft=JSON.parse(savedDraft);
+          setInPoint(Math.max(0,Number(draft.inPoint)||0));
+          setOutPoint(Math.max(0,Number(draft.outPoint)||0));
+          setAspect(draft.aspect||"9:16");
+          setSpeed(Number(draft.speed)||1);
+          setZoom(Number(draft.zoom)||1);
+        }catch{}
+      }
+      setLoading(false);
+    }
+    load();
+    return()=>{cancelled=true};
+  },[project?.id,supabase]);
+
+  useEffect(()=>{
+    const v=videoRef.current;if(!v)return;
+    v.playbackRate=speed;v.muted=muted;
+  },[speed,muted,sourceUrl]);
+
+  const fmt=s=>{const n=Math.max(0,Number(s)||0);return Math.floor(n/60)+":"+String(Math.floor(n%60)).padStart(2,"0")};
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const togglePlay=async()=>{
+    const v=videoRef.current;if(!v)return;
+    if(v.paused){await v.play().catch(()=>{});setPlaying(true)}else{v.pause();setPlaying(false)}
+  };
+  const seek=e=>{
+    const v=videoRef.current;if(!v||!duration)return;
+    const t=Number(e.target.value);v.currentTime=t;setCurrent(t);
+  };
+  const setIn=()=>{
+    const t=clamp(current,0,Math.max(0,outPoint||duration));
+    setInPoint(t);setSaved(false);
+  };
+  const setOut=()=>{
+    const t=clamp(current,Math.min(inPoint,duration),duration);
+    setOutPoint(t);setSaved(false);
+  };
+  const reset=()=>{
+    setInPoint(0);setOutPoint(duration);setAspect("9:16");setSpeed(1);setZoom(1);setSaved(false);
+  };
+  const saveDraft=()=>{
+    if(!project?.id)return;
+    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,updatedAt:new Date().toISOString()};
+    window.localStorage.setItem("alpha.editor."+project.id,JSON.stringify(data));
+    setSaved(true);
+  };
+  const jump=(t)=>{
+    const v=videoRef.current;if(!v)return;
+    const next=clamp(t,0,duration);v.currentTime=next;setCurrent(next);
+  };
+  const fullscreen=()=>videoRef.current?.requestFullscreen?.();
+
+  return <div className="alphaEditor">
+    <div className="editorTopBar">
+      <div className="editorTitleBlock">
+        <div className="eyebrow">ALPHA.AI EDITOR</div>
+        <h2>{project?.name||"Choose a project"}</h2>
+        <span>{asset?.name||"Select a project with uploaded media"}</span>
+      </div>
+      <div className="editorTopActions">
+        <button className="btn" onClick={reset}><RotateCcw size={15}/> Reset</button>
+        <button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
+      </div>
+    </div>
+
+    <div className="editorWorkspace">
+      <aside className="editorProjectRail">
+        <div className="editorRailHead"><b>Projects</b><span>{projects.length}</span></div>
+        <div className="editorProjectList">
+          {projects.map(p=><button key={p.id} className={"editorProject "+(p.id===project?.id?"active":"")} onClick={()=>setSelectedId(p.id)}>
+            <span className="editorProjectIcon"><Film size={16}/></span>
+            <span><b>{p.name}</b><small>{p.status||"draft"}</small></span>
+            <ChevronRight size={14}/>
+          </button>)}
+        </div>
+        <button className="btn editorAddProject" onClick={onUpload}><Scissors size={15}/> New source</button>
+      </aside>
+
+      <main className="editorMain">
+        <div className="editorCanvasPanel">
+          <div className="editorCanvasToolbar">
+            <div className="editorToolGroup">
+              <button className="editorTool active"><Scissors size={15}/> Edit</button>
+              <button className="editorTool"><WandSparkles size={15}/> AI</button>
+            </div>
+            <div className="editorToolGroup">
+              {["9:16","16:9","1:1"].map(x=><button key={x} className={"editorTool "+(aspect===x?"active":"")} onClick={()=>{setAspect(x);setSaved(false)}}>{x}</button>)}
+              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z-.1,.8,1.4))}><ZoomOut size={15}/></button>
+              <span className="editorZoom">{Math.round(zoom*100)}%</span>
+              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z+.1,.8,1.4))}><ZoomIn size={15}/></button>
+            </div>
+          </div>
+
+          <div className={"editorStage aspect-"+aspect.replace(":","x")}>
+            {loading?<div className="editorEmpty"><Activity className="spin" size={24}/><b>Loading source media…</b></div>
+            :sourceUrl?<video ref={videoRef} className="editorVideo" src={sourceUrl} style={{transform:"scale("+zoom+")"}} playsInline onLoadedMetadata={e=>{const d=e.currentTarget.duration||Number(asset?.duration_seconds)||0;setDuration(d);setOutPoint(prev=>prev>0?Math.min(prev,d):d)}} onTimeUpdate={e=>{const t=e.currentTarget.currentTime;setCurrent(t);if(outPoint>0&&t>=outPoint){e.currentTarget.pause();e.currentTarget.currentTime=inPoint;setPlaying(false)}}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onError={()=>setError("The source video could not be decoded by the browser.")}/>
+            :<div className="editorEmpty"><Film size={28}/><b>{error||"Select a project with ready media"}</b><span>Upload or import a video first.</span>{!projects.length&&<button className="btn primary" onClick={onUpload}>Add source video</button>}</div>}
+            {sourceUrl&&<div className="editorStageBadge">{aspect} · {fmt(current)} / {fmt(duration)}</div>}
+          </div>
+
+          <div className="editorPlayback">
+            <button className="editorRound" onClick={()=>jump(Math.max(0,current-5))}>−5</button>
+            <button className="editorPlay" onClick={togglePlay} disabled={!sourceUrl}>{playing?<Pause size={18}/>:<Play size={18}/>}</button>
+            <button className="editorRound" onClick={()=>jump(Math.min(duration,current+5))}>+5</button>
+            <span className="editorTime">{fmt(current)} / {fmt(duration)}</span>
+            <button className="editorTool" onClick={()=>setMuted(v=>!v)}>{muted?<VolumeX size={16}/>:<Volume2 size={16}/>}</button>
+            <select className="editorSelect" value={speed} onChange={e=>setSpeed(Number(e.target.value))}>{[.5,.75,1,1.25,1.5,2].map(x=><option key={x} value={x}>{x}×</option>)}</select>
+            <button className="editorTool" onClick={fullscreen}><Fullscreen size={16}/></button>
+          </div>
+        </div>
+
+        <section className="editorTimelinePanel">
+          <div className="editorTimelineHeader"><div><b>Timeline</b><span>{fmt(Math.max(0,outPoint-inPoint))} selected</span></div><div><button className="btn small" onClick={setIn}>Set in</button><button className="btn small" onClick={setOut}>Set out</button></div></div>
+          <div className="editorScrubber">
+            <input aria-label="Video position" type="range" min="0" max={Math.max(duration,.01)} step=".01" value={Math.min(current,duration)} onChange={seek}/>
+            <div className="editorRangeTrack">
+              <span style={{left:(duration?inPoint/duration*100:0)+"%",right:(duration?100-outPoint/duration*100:0)+"%"}}/>
+              <i style={{left:(duration?current/duration*100:0)+"%"}}/>
+            </div>
+          </div>
+          <div className="editorTrack">
+            <div className="editorTrackLabel"><Film size={14}/><span>Video</span></div>
+            <div className="editorTrackBody"><span className="editorClipBlock" style={{left:(duration?inPoint/duration*100:0)+"%",width:(duration?Math.max(0,(outPoint-inPoint)/duration*100):100)+"%"}}><b>{asset?.name||"Source video"}</b><small>{fmt(inPoint)} — {fmt(outPoint||duration)}</small></span></div>
+          </div>
+          <div className="editorTrack">
+            <div className="editorTrackLabel"><span className="editorCaptionDot"/>Captions</div>
+            <div className="editorTrackBody editorTrackMuted"><span>Transcript/caption track will appear when transcription is ready.</span></div>
+          </div>
+        </section>
+      </main>
+
+      <aside className="editorInspector">
+        <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
+        <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
+        <div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
+        <div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><div className="inspectorHint"><WandSparkles size={14}/> Prompt is ready for the AI editing pipeline.</div></div>
+        <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
+      </aside>
+    </div>
+  </div>;
+}
