@@ -209,7 +209,8 @@ export default function EditorView({projects,supabase,onUpload}){
           </div>
         </div>
 
-        <section className="editorTimelinePanel">
+        <section className="editorTimelinePanel" style={{height:timelineHeight}}>
+          <div className="editorControlsStrip"><div><label>Timeline height</label><input type="range" min="170" max="520" value={timelineHeight} onChange={e=>setTimelineHeight(Number(e.target.value))}/><b>{timelineHeight}px</b></div><div><label>Video block</label><input type="range" min="36" max="120" value={videoBlockHeight} onChange={e=>setVideoBlockHeight(Number(e.target.value))}/><input aria-label="Video block width" type="range" min="60" max="100" value={videoBlockWidth} onChange={e=>setVideoBlockWidth(Number(e.target.value))}/></div><div><label>Caption block</label><input type="range" min="36" max="120" value={captionBlockHeight} onChange={e=>setCaptionBlockHeight(Number(e.target.value))}/><input aria-label="Caption block width" type="range" min="60" max="100" value={captionBlockWidth} onChange={e=>setCaptionBlockWidth(Number(e.target.value))}/></div></div>
           <div className="editorTimelineHeader"><div><b>Timeline</b><span>{fmt(Math.max(0,outPoint-inPoint))} selected</span></div><div><button className="btn small" onClick={setIn}>Set in</button><button className="btn small" onClick={setOut}>Set out</button></div></div>
           <div className="editorScrubber">
             <input aria-label="Video position" type="range" min="0" max={Math.max(duration,.01)} step=".01" value={Math.min(current,duration)} onChange={seek}/>
