@@ -285,6 +285,18 @@ app.post("/process",async(req,res)=>{
     authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
+app.post("/assistant",async(req,res)=>{
+  try{
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
+    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    const prompt=String(req.body?.prompt||"").trim();
+    if(!prompt)return res.status(400).json({error:"Prompt is required."});
+    const context=String(req.body?.context||"").slice(0,12000);
+    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
+    return res.json({ok:true,text:String(result.text||"").trim()});
+  }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
+});
 const activeJobs=new Set();
 async function resumeQueuedJobs(){
   console.log("job recovery scan started");
