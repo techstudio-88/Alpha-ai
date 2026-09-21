@@ -85,6 +85,22 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const stream=probe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(probe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
   if(!asset){const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4",storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4",size=await upload(input,storagePath);asset=(await db("media_assets",{method:"POST",body:{workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,name:fileName,storage_path:storagePath,mime_type:"video/mp4",size_bytes:size,duration_seconds:duration,status:"uploaded"}}))[0];await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:fileName.replace(/\.mp4$/,""),duration_seconds:duration,width,height,fps,status:"ready"}})}else{await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{})}
   if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
+  if(p.operation==="render_edit"){
+    const start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
+    const end=Math.max(start,Math.min(duration,Number(p.endSeconds)||duration));
+    if(end-start<0.25)throw new Error("Selected edit range is too short.");
+    const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
+    const clip=clips?.[0];if(!clip)throw new Error("Could not create edited clip.");
+    const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
+    await renderClip(input,rendered,start,end);
+    const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
+    await upload(rendered,storagePath,"video/mp4");
+    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start,editor:true}}});
+    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
+    await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
+    console.log("editor render completed",p.jobId,clip.id);
+    return;
+  }
   await patchJob(p.jobId,{progress:35});
   await cmd("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",audio]);
   // Free-tier safe transcription: process short audio windows and checkpoint after every window.
