@@ -49,6 +49,8 @@ async function transcribeAudio(file){
   wav.toBitDepth("32f");wav.toSampleRate(16000);
   let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
   const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
+      const languageFromWhisper=String(result?.language||result?.language_code||"").trim();
+      if(languageFromWhisper){detectedLanguage=languageFromWhisper;await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{})}
   return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
     const t=x.timestamp||[0,0];
     return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
@@ -170,7 +172,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(p.captions!==false){
       const tr=(await db("transcripts",{params:{media_asset_id:"eq."+asset.id,select:"id",order:"created_at.desc",limit:"1"}}))[0];
       if(tr?.id){const rows=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,text",order:"start_ms.asc"}}).catch(()=>[]);const usable=(rows||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms));
-        if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
+        if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\
+"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\
+"+String(x.text||"").replace(/\\r?\
+/g," ")+"\
+").join("\
+"),"utf8")}
       }
     }
     const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""};
@@ -240,7 +247,9 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       await downloadStored(meta.storagePath,chunkPath);
       const wav=new WaveFile(fs.readFileSync(chunkPath));wav.toBitDepth("32f");wav.toSampleRate(16000);
       let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});\n      const detectedLanguage=String(result?.language||result?.language_code||"").trim();\n      if(detectedLanguage&&!p.detectedLanguage)await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{});
+      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
+      const detectedLanguage=String(result?.language||result?.language_code||"").trim();
+      if(detectedLanguage&&!p.detectedLanguage)await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{});
       const rows=(Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
@@ -251,13 +260,19 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }
     const completedRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
     const fullText=(completedRows||[]).map(x=>String(x.text||"").trim()).filter(Boolean).join(" ").trim();
-    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed"}}).catch(()=>{});
+    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed",language:String(detectedLanguage||"auto")}}).catch(()=>{});
   }
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const safeDuration=Math.max(0,Number(duration)||0);
-  if(!safeDuration)throw new Error("Source video duration could not be determined.");\n  await db("topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});\n  const topicWindows=[];\n  for(let start=0;start<safeDuration;start+=60){const end=Math.min(safeDuration,start+60);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}\n  let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));\n  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const rr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(GEMINI_MODEL)+":generateContent?key="+encodeURIComponent(GEMINI_API_KEY),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});const jj=await rr.json().catch(()=>({}));const raw=jj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"[]";const named=JSON.parse(raw);if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}\n  if(topicRows.length)await db("topics",{method:"POST",body:topicRows}).catch(e=>console.warn("topic save failed:",e.message));
+  if(!safeDuration)throw new Error("Source video duration could not be determined.");
+  await db("topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
+  const topicWindows=[];
+  for(let start=0;start<safeDuration;start+=60){const end=Math.min(safeDuration,start+60);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
+  let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
+  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const rr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(GEMINI_MODEL)+":generateContent?key="+encodeURIComponent(GEMINI_API_KEY),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});const jj=await rr.json().catch(()=>({}));const raw=jj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"[]";const named=JSON.parse(raw);if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}
+  if(topicRows.length)await db("topics",{method:"POST",body:topicRows}).catch(e=>console.warn("topic save failed:",e.message));
   let candidates=null;
   if(GEMINI_API_KEY){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
@@ -280,7 +295,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   for(let i=0;i<candidates.length;i++){
     const candidate=candidates[i];
     const start=Math.max(0,Math.min(safeDuration,Number(candidate.start_seconds)||0));
-    const end=Math.max(start,Math.min(safeDuration,Number(candidate.end_seconds)||start));
+    const end=Math.max(start,Math.min(safeDuration,start+45,Number(candidate.end_seconds)||start));
     if(end<=start)continue;
     const key=start.toFixed(3);
     let clip=existingByStart.get(key);
@@ -376,7 +391,11 @@ app.post("/assistant",async(req,res)=>{
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
     const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
+    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.
+Workspace context:
+"+context+"
+User request:
+"+prompt});
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
 });
