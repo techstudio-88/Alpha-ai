@@ -189,7 +189,6 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
     }
     const transcriber=await transcriberPromise;
-    let fullText="";
     for(let i=nextChunk;i<chunkCount;i++){
       const meta=transcriptionChunks[i];
       if(!meta)throw new Error("Missing transcription chunk "+i);
@@ -202,11 +201,13 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
       }).filter(x=>x.text&&x.end_ms>x.start_ms);
-      await authStore.run("",()=>db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}})).catch(()=>{});\n      if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
-      fullText+=(rows.map(x=>x.text).join(" ")+" ").trim();
+      await authStore.run("",()=>db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}})).catch(()=>{});
+      if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
       await patchJob(p.jobId,{status:"transcribing",progress:43+Math.round(((i+1)/chunkCount)*18),payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1,transcriptionChunks}});
     }
-    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText.trim(),status:"completed"}}).catch(()=>{});
+    const completedRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
+    const fullText=(completedRows||[]).map(x=>String(x.text||"").trim()).filter(Boolean).join(" ").trim();
+    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed"}}).catch(()=>{});
   }
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
