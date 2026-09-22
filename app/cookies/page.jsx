@@ -1,1 +1,1 @@
-export default function Page(){return <main className="seo-page"><h1>Cookies</h1><p>Alpha.ai may use necessary and analytics technologies to operate and improve the service.</p></main>
+export default function Page(){return <main className="seo-page"><h1>Cookies</h1><p>Alpha.ai may use necessary and analytics technologies to operate and improve the service.</p></main>}
