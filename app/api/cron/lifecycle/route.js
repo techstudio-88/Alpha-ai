@@ -1,0 +1,2 @@
+import { runLifecycle } from "../../lifecycle/process/route";
+export async function GET(req){if(req.headers.get("authorization")!==`Bearer ${process.env.CRON_SECRET}`)return new Response("Unauthorized",{status:401});return runLifecycle()}
