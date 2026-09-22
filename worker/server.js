@@ -180,9 +180,33 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }
   }
   if(nextChunk<chunkCount){
-    await patchJob(p.jobId,{status:"awaiting_transcription",progress:43,payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}});
-    console.log("awaiting browser transcription",p.jobId,nextChunk,"/",chunkCount);
-    return;
+    await patchJob(p.jobId,{status:"transcribing",progress:43,payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}});
+    const {pipeline}=await import("@huggingface/transformers");
+    const wavefile=await import("wavefile");
+    const {WaveFile}=wavefile.default||wavefile;
+    if(!transcriberPromise){
+      const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
+      transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
+    }
+    const transcriber=await transcriberPromise;
+    let fullText="";
+    for(let i=nextChunk;i<chunkCount;i++){
+      const meta=transcriptionChunks[i];
+      if(!meta)throw new Error("Missing transcription chunk "+i);
+      const chunkPath=path.join(dir,"transcribe-"+i+".wav");
+      await downloadStored(meta.storagePath,chunkPath);
+      const wav=new WaveFile(fs.readFileSync(chunkPath));wav.toBitDepth("32f");wav.toSampleRate(16000);
+      let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
+      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
+      const rows=(Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
+        const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
+        return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
+      }).filter(x=>x.text&&x.end_ms>x.start_ms);
+      if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
+      fullText+=(rows.map(x=>x.text).join(" ")+" ").trim();
+      await patchJob(p.jobId,{status:"transcribing",progress:43+Math.round(((i+1)/chunkCount)*18),payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1,transcriptionChunks}});
+    }
+    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText.trim(),status:"completed"}}).catch(()=>{});
   }
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
