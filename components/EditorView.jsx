@@ -190,8 +190,7 @@ export default function EditorView({projects,supabase,onUpload}){
         <div className="editorCanvasPanel">
           <div className="editorCanvasToolbar">
             <div className="editorToolGroup">
-              <button className="editorTool active"><Scissors size={15}/> Edit</button>
-              <button className="editorTool"><WandSparkles size={15}/> AI</button>
+              <span className="editorModeLabel"><Scissors size={15}/> Edit</span>
             </div>
             <div className="editorToolGroup">
               {["9:16","16:9","1:1"].map(x=><button key={x} className={"editorTool "+(aspect===x?"active":"")} onClick={()=>{setAspect(x);setSaved(false)}}>{x}</button>)}
