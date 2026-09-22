@@ -79,6 +79,26 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
     ((Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0))
   ).slice(0,8);
 }
+function dedupeClipCandidates(candidates){
+  const sorted=(Array.isArray(candidates)?candidates:[]).slice().sort((a,b)=>{
+    const sa=(Number(b.hook_score)||0)+(Number(b.information_density)||0)+(Number(b.story_completeness)||0)+(Number(b.shareability_score)||0);
+    const sb=(Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0);
+    return sa-sb;
+  });
+  const kept=[];
+  for(const candidate of sorted){
+    const start=Number(candidate.start_seconds),end=Number(candidate.end_seconds);
+    if(!(end>start))continue;
+    const duplicate=kept.some(existing=>{
+      const overlap=Math.max(0,Math.min(end,Number(existing.end_seconds))-Math.max(start,Number(existing.start_seconds)));
+      const shorter=Math.min(end-start,Number(existing.end_seconds)-Number(existing.start_seconds));
+      return shorter>0&&overlap/shorter>=0.7;
+    });
+    if(!duplicate)kept.push(candidate);
+    if(kept.length>=8)break;
+  }
+  return kept;
+}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
   if(!GEMINI_API_KEY||!instruction?.trim())return null;
   const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
@@ -131,8 +151,20 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       }catch(e){aiEdit={action:"fallback_original_selection",reason:e.message};await patchJob(p.jobId,{payload:{...p,aiEditStatus:"fallback",aiEditError:e.message}});console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
     }
     if(end-start<0.25)throw new Error("Selected edit range is too short.");
-    const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
-    const clip=clips?.[0];if(!clip)throw new Error("Could not create edited clip.");
+    let clip=null;
+    if(p.clipId){
+      clip=(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"*"}}))[0]||null;
+    }
+    if(!clip){
+      const existing=(await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,start_seconds:"eq."+start.toFixed(3),end_seconds:"eq."+end.toFixed(3),select:"*",order:"created_at.asc",limit:"1"}}))[0]||null;
+      clip=existing||null;
+    }
+    if(!clip){
+      const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
+      clip=clips?.[0]||null;
+    }
+    if(!clip)throw new Error("Could not create or recover edited clip.");
+    await patchJob(p.jobId,{payload:{...p,clipId:clip.id}});
     const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
     let srtPath=null;
     if(p.captions!==false){
@@ -141,10 +173,22 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
       }
     }
+    const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""};
+    const existingVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,version:"eq.1",select:"id,render_status,storage_path,edit_data",order:"created_at.desc",limit:"1"}}))[0]||null;
+    if(existingVersion?.render_status==="ready"&&existingVersion.storage_path){
+      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
+      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
+      console.log("editor render reused existing version",p.jobId,clip.id);
+      return;
+    }
     await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
     await upload(rendered,storagePath,"video/mp4");
-    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""}}});
+    if(existingVersion){
+      await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{render_status:"ready",storage_path:storagePath,edit_data:editData}});
+    }else{
+      await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:editData}});
+    }
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
@@ -196,12 +240,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       await downloadStored(meta.storagePath,chunkPath);
       const wav=new WaveFile(fs.readFileSync(chunkPath));wav.toBitDepth("32f");wav.toSampleRate(16000);
       let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
+      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
       const rows=(Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
       }).filter(x=>x.text&&x.end_ms>x.start_ms);
-      await authStore.run("",()=>db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}})).catch(()=>{});
+      await db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}}).catch(e=>console.warn("transcript checkpoint cleanup failed:",e.message));
       if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
       await patchJob(p.jobId,{status:"transcribing",progress:43+Math.round(((i+1)/chunkCount)*18),payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1,transcriptionChunks}});
     }
@@ -220,6 +264,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     try{candidates=await analyzeVideoWithGemini(input,safeDuration);console.log("Gemini clip candidates",p.jobId,candidates?.length||0)}
     catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
   }
+  if(candidates?.length)candidates=dedupeClipCandidates(candidates);
   if(!candidates?.length){
     const count=safeDuration<=45?1:Math.min(12,Math.floor((safeDuration-1)/30)+1);
     candidates=Array.from({length:count},(_,i)=>{
@@ -267,9 +312,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){
   console.error("job",p.jobId,e);
-  const retryCount=Number(p.retryCount||0);
+  // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
+  const retryCount=Math.max(1,Number(p.retryCount||0));
   const terminal=retryCount>=5;
-  await patchJob(p.jobId,{status:"failed",progress:0,error:terminal?("Automatic retry limit reached after "+retryCount+" attempts: "+e.message):e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
+  await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
@@ -315,7 +361,11 @@ app.post("/process",async(req,res)=>{
     if(activeJobs.size>=1)return;
     activeJobs.add(String(req.body?.jobId));
     const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
-    authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
+    // Processing-ticket and worker-secret requests are already authorized upstream.
+    // Keep privileged worker credentials for their DB/storage work; only direct JWT
+    // requests should override them with the user's bearer token.
+    const dbAuth=identity.mode==="supabase-jwt"&&bearer?bearer:null;
+    authStore.run(dbAuth,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
 app.post("/assistant",async(req,res)=>{
