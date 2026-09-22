@@ -245,7 +245,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
       }).filter(x=>x.text&&x.end_ms>x.start_ms);
-      await authStore.run("",()=>db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}})).catch(()=>{});
+      await db("transcript_segments",{method:"DELETE",params:{transcript_id:"eq."+transcript.id,start_ms:["gte."+Math.round(meta.start*1000),"lt."+Math.round((meta.start+meta.length)*1000)]}}).catch(e=>console.warn("transcript checkpoint cleanup failed:",e.message));
       if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
       await patchJob(p.jobId,{status:"transcribing",progress:43+Math.round(((i+1)/chunkCount)*18),payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1,transcriptionChunks}});
     }
