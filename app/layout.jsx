@@ -1,5 +1,6 @@
 import "./globals.css";
 import ProductAnalytics from "./components/ProductAnalytics";
+import ClarityAnalytics from "./components/ClarityAnalytics";
 
 const SITE_URL = "https://alpha-ai-techstudio7808-4455.vercel.app";
 
@@ -49,7 +50,7 @@ const organizationSchema = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body><ProductAnalytics />
+      <body><ProductAnalytics /><ClarityAnalytics />
         {children}
         <script
           type="application/ld+json"
