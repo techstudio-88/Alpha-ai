@@ -274,7 +274,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const safeDuration=Math.max(0,Number(duration)||0);
   if(!safeDuration)throw new Error("Source video duration could not be determined.");
-  await detectSpeakersWithGemini(input,safeDuration,p.projectId);\n  await db("topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
+  await detectSpeakersWithGemini(input,safeDuration,p.projectId);
+  await db("topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
   const topicWindows=[];
   for(let start=0;start<safeDuration;start+=60){const end=Math.min(safeDuration,start+60);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
