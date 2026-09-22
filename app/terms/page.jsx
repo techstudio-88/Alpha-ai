@@ -1,0 +1,1 @@
+export default function Terms(){return <main style={{maxWidth:900,margin:"0 auto",padding:"72px 24px",fontFamily:"Arial"}}><a href="/">Alpha.ai</a><h1>Terms</h1><p>Use Alpha.ai lawfully and only with content you are authorized to process. You remain responsible for your uploaded media, publishing decisions and third-party platform accounts.</p></main>
