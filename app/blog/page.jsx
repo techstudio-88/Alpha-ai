@@ -1,0 +1,1 @@
+export const metadata={title:"Alpha.ai Blog — Video AI Guides"};export default function Page(){return <main className="seo-page"><h1>Alpha.ai Blog & Guides</h1><article><h2>How AI clipping works</h2><p>Learn how transcription, topic segmentation, hooks and clip scoring fit together in an automated workflow.</p></article></main>}
