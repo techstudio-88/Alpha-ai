@@ -14,9 +14,8 @@ async function guard(request){
  if(error||!user)throw new Error("Authentication expired.");
  const admin=adminClient();
  const allow=(process.env.ALPHA_CONTROL_ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
- const {data:owned}=await admin.from("workspaces").select("id").eq("owner_id",user.id).limit(1);
  const {data:member}=await admin.from("control_center_members").select("role,active").eq("email",(user.email||"").toLowerCase()).eq("active",true).maybeSingle();
- if(!owned?.length&&!allow.includes((user.email||"").toLowerCase())&&!member)throw new Error("Control center access denied.");
+ if(!allow.includes((user.email||"").toLowerCase())&&!member)throw new Error("Control center access denied.");
  return{user,admin,role:member?.role||"owner"};
 }
 export async function GET(request){
