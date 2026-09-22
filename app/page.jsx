@@ -164,6 +164,31 @@ async function loadGroups(wid){if(!wid||!supabase)return;const{data}=await supab
 async function createProjectGroup(){if(!workspace||!groupName.trim()||!selectedProjectIds.length||grouping)return;setGrouping(true);const{data:group,error}=await supabase.from("project_groups").insert({workspace_id:workspace.id,name:groupName.trim(),created_by:user.id}).select().single();if(error){setUploadMsg(error.message);setGrouping(false);return}const rows=selectedProjectIds.map(pid=>({group_id:group.id,project_id:pid}));const{error:memberError}=await supabase.from("project_group_members").insert(rows);if(memberError){setUploadMsg(memberError.message);setGrouping(false);return}setGroupName("");setSelectedProjectIds([]);await loadGroups(workspace.id);setGrouping(false)}
 async function renameProject(id){if(!editingProjectName.trim())return;const{error}=await supabase.from("projects").update({name:editingProjectName.trim()}).eq("id",id);if(error){setUploadMsg(error.message);return}setEditingProjectId("");setEditingProjectName("");await loadProjects(workspace.id)}
 async function getProcessingTicket({workspaceId,projectId,sourceId,jobId,mediaAssetId}){const refreshed=await supabase.auth.refreshSession();let session=refreshed.data?.session||null;if(!session?.access_token){const fallback=await supabase.auth.getSession();session=fallback.data?.session||null}if(!session?.access_token)throw new Error("Your sign-in session expired. Please sign in again and retry the upload.");const response=await fetch("/api/import-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({workspaceId,projectId,sourceId,jobId,mediaAssetId})});const body=await response.json().catch(()=>({}));if(!response.ok||!body.ticket)throw new Error(body.error||"Could not authorize the processing job.");return body.ticket}
+async function watchProcessingJob(jobId,onProgress){
+  const refreshed=await supabase.auth.refreshSession();
+  const session=refreshed.data?.session||null;
+  const token=session?.access_token;
+  if(!token)return{status:"unknown"};
+  for(let attempt=0;attempt<120;attempt++){
+    try{
+      const response=await fetch("/api/processing-status?jobId="+encodeURIComponent(jobId),{headers:{Authorization:"Bearer "+token},cache:"no-store"});
+      const body=await response.json().catch(()=>({}));
+      if(response.ok&&body.job){
+        const job=body.job;
+        const p=Math.max(0,Math.min(100,Number(job.progress)||0));
+        onProgress(p);
+        if(job.status==="completed")return job;
+        if(job.status==="failed")return job;
+      }else if(response.status===401){
+        const retry=await supabase.auth.refreshSession();
+        const retryToken=retry.data?.session?.access_token;
+        if(!retryToken)return{status:"auth_expired"};
+      }
+    }catch(error){console.warn("processing status poll failed",error)}
+    await new Promise(resolve=>setTimeout(resolve,2500));
+  }
+  return{status:"timeout"};
+}
 async function handleUpload(file){
   if(!supabase||!user||!workspace||!file)return;
   setBusy(true);setProgress(1);setUploadMsg("");
@@ -201,7 +226,16 @@ async function handleUpload(file){
     const response=await fetch("/api/import-source",{method:"POST",headers:{"Content-Type":"application/json","x-import-ticket":processingTicket},body:JSON.stringify({sourceType:"upload",workspaceId:workspace.id,projectId:project.id,sourceId:src.data.id,jobId:job.data.id,mediaAssetId:asset.data.id})});
     if(!response.ok){const body=await response.json().catch(()=>({}));await supabase.from("processing_jobs").update({status:"failed",error:body.error||"Media worker unavailable"}).eq("id",job.data.id);setUploadMsg(body.error||"Media worker is not connected.");setBusy(false);return}
   }catch(error){console.error(error);setUploadMsg(error?.message||"Could not reach the media worker.");setBusy(false);return}
-  setProgress(100);setUploadMsg("Upload complete. Media processing has started.");setUploadDone("Your video is uploaded and the processing pipeline has started.");await loadProjects(workspace.id);setBusy(false);setUpload(false);setUploadMsg("");
+  setProgress(88);setUploadMsg("Upload complete. Processing has started…");
+  const processing=await watchProcessingJob(job.data.id,p=>setProgress(88+Math.round(p*.12)));
+  if(processing.status==="failed"){
+    setUploadMsg(processing.error||"Media processing failed. You can retry this project.");
+    await loadProjects(workspace.id);setBusy(false);return;
+  }
+  setProgress(100);
+  setUploadMsg(processing.status==="completed"?"Processing complete.":"Processing is continuing in the background.");
+  setUploadDone(processing.status==="completed"?"Your video is processed and clips are ready.":"Your video is uploaded and processing continues in the background.");
+  await loadProjects(workspace.id);setBusy(false);setTimeout(()=>{setUpload(false);setUploadMsg("")},processing.status==="completed"?500:1400);
 }
 async function handleSourceUrl(url){if(!supabase||!user||!workspace||!url.trim())return;setBusy(true);setProgress(5);setUploadMsg("");let source_type="direct_url";try{const u=new URL(url.trim());const host=u.hostname.toLowerCase();if(host.includes("youtube.com")||host.includes("youtu.be"))source_type="youtube";else if(host.includes("drive.google.com"))source_type="google_drive";else if(host.includes("dropbox.com"))source_type="dropbox";else if(host.includes("1drv.ms")||host.includes("onedrive.live.com"))source_type="onedrive";}catch{setUploadMsg("Please enter a valid URL.");setBusy(false);return}const name=(source_type==="youtube"?"YouTube":source_type==="google_drive"?"Google Drive":source_type==="dropbox"?"Dropbox":source_type==="onedrive"?"OneDrive":"Linked")+" source";const pr=await supabase.from("projects").insert({workspace_id:workspace.id,owner_id:user.id,name,status:"uploading"}).select().single();if(pr.error){setUploadMsg(pr.error.message);setBusy(false);return}const src=await supabase.from("project_sources").insert({workspace_id:workspace.id,project_id:pr.data.id,source_type,source_url:url.trim(),status:"queued",metadata:{url:url.trim()}}).select().single();if(src.error){setUploadMsg(src.error.message);setBusy(false);return}const job=await supabase.from("processing_jobs").insert({workspace_id:workspace.id,project_id:pr.data.id,job_type:"ingest",status:"queued",progress:0,payload:{source_type,source_id:src.data.id,url:url.trim()}}).select().single();if(job.error){setUploadMsg(job.error.message);setBusy(false);return}try{const processingTicket=await getProcessingTicket({workspaceId:workspace.id,projectId:pr.data.id,sourceId:src.data.id,jobId:job.data.id});const response=await fetch("/api/import-source",{method:"POST",headers:{"Content-Type":"application/json","x-import-ticket":processingTicket},body:JSON.stringify({url:url.trim(),sourceType:source_type,workspaceId:workspace.id,projectId:pr.data.id,sourceId:src.data.id,jobId:job.data.id})});const body=await response.json().catch(()=>({}));if(!response.ok){await supabase.from("processing_jobs").update({status:"failed",error_message:body.error||"Media worker unavailable"}).eq("id",job.data.id);await supabase.from("project_sources").update({status:"failed",error_message:body.error||"Media worker unavailable"}).eq("id",src.data.id);await supabase.from("projects").update({status:"ingest_failed"}).eq("id",pr.data.id);setUploadMsg(body.error||"The media worker is not connected yet.");setBusy(false);return}}catch(error){console.error(error);setUploadMsg(error?.message||"Could not authorize the processing job.");setBusy(false);return}setProgress(100);setUploadMsg("Link received. The actual video download has started.");await loadProjects(workspace.id);setBusy(false);setTimeout(()=>{setUpload(false);setUploadMsg("")},1200)}
 
