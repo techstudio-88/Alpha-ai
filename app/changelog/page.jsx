@@ -1,1 +1,1 @@
-export default function Page(){return <main className="seo-page"><h1>Alpha.ai Changelog</h1><p>Product updates, processing improvements and new creator workflows.</p></main>}
+export default function Page(){return <main className="seo-page"><h1>Alpha.ai Changelog</h1><p>Product updates, processing improvements and creator workflow releases.</p></main>}
