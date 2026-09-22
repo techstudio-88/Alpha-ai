@@ -25,6 +25,8 @@ export async function GET(request) {
     return NextResponse.redirect(new URL("/?auth_error="+encodeURIComponent(exchangeError?.message || "OAuth session exchange failed"), url.origin));
   }
 
+  try{const ref=request.cookies.get("alpha_ref")?.value||null;const service=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;if(service&&ref){const admin=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,service,{auth:{persistSession:false}});await admin.from("content_attribution").insert({user_id:data.session.user.id,anonymous_id:null,content_id:ref,source:"referral",medium:"referral",campaign:ref,landing_path:"/",signup_at:new Date().toISOString(),metadata:{referral_code:ref}});await admin.from("referrals").update({referred_user_id:data.session.user.id,referred_at:new Date().toISOString()}).eq("code",ref).is("referred_user_id",null).catch(()=>{})}}catch(e){console.warn("signup attribution failed:",e.message)}
+
   const target = new URL("/", url.origin);
   target.hash = new URLSearchParams({
     access_token: data.session.access_token,
