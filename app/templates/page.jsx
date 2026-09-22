@@ -1,0 +1,1 @@
+const items=["Podcast clips","YouTube Shorts","Educational clips","Founder clips","Interview clips"];export default function Page(){return <main className="seo-page"><h1>Video Templates & Examples</h1><p>Starting structures for common short-form workflows.</p><ul>{items.map(x=><li key={x}>{x}</li>)}</ul></main>}
