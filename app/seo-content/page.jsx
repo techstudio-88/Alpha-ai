@@ -1,1 +1,1 @@
-export default function Page(){return <main className="seo-page"><h1>Alpha.ai Content Hub</h1><p>Search-focused guides, examples, glossary terms and creator resources.</p><a href="/blog">Browse guides</a></main>
+export default function Page(){return <main className="seo-page"><h1>Alpha.ai Content Hub</h1><p>Search-focused guides, examples, glossary terms and creator resources.</p><a href="/blog">Browse guides</a></main>}
