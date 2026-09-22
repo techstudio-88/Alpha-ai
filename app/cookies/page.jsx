@@ -1,0 +1,1 @@
+export default function Cookies(){return <main style={{maxWidth:900,margin:"0 auto",padding:"72px 24px",fontFamily:"Arial"}}><a href="/">Alpha.ai</a><h1>Cookies</h1><p>Alpha.ai uses necessary browser storage for authentication and product operation. Optional analytics should be collected only where disclosed and permitted by the product's consent settings.</p></main>
