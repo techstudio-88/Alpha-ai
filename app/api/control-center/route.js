@@ -37,7 +37,7 @@ export async function GET(request){
   const p=new Map((profiles||[]).map(x=>[x.id,x]));
   const w=new Map((workspaces||[]).map(x=>[x.id,x]));
   const u=(users||[]).map(x=>({id:x.id,email:x.email||"",phone:x.phone||"",created_at:x.created_at,last_sign_in_at:x.last_sign_in_at,confirmed_at:x.confirmed_at,app_metadata:x.app_metadata||{},user_metadata:x.user_metadata||{},profile:p.get(x.id)||null,workspaces:(workspaces||[]).filter(y=>y.owner_id===x.id).map(y=>({id:y.id,name:y.name,created_at:y.created_at}))}));
-  const withNames=(rows||[]).map(x=>({...x,user_email:(users||[]).find(y=>y.id===x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
+  const withNames=(events||[]).map(x=>({...x,user_email:(users||[]).find(y=>y.id===x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
   return Response.json({ok:true,users:u,workspaces:workspaces||[],projects:projects||[],jobs:jobs||[],events:withNames,consents:consents||[],members:members||[],notifications:notifications||[],audit:audit||[]});
  }catch(e){return Response.json({error:e.message||"Control center request failed."},{status:e.message?.includes("access denied")?403:401})}
 }
