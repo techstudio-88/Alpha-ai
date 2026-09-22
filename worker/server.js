@@ -131,8 +131,20 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       }catch(e){aiEdit={action:"fallback_original_selection",reason:e.message};await patchJob(p.jobId,{payload:{...p,aiEditStatus:"fallback",aiEditError:e.message}});console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
     }
     if(end-start<0.25)throw new Error("Selected edit range is too short.");
-    const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
-    const clip=clips?.[0];if(!clip)throw new Error("Could not create edited clip.");
+    let clip=null;
+    if(p.clipId){
+      clip=(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"*"}}))[0]||null;
+    }
+    if(!clip){
+      const existing=(await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,start_seconds:"eq."+start.toFixed(3),end_seconds:"eq."+end.toFixed(3),select:"*",order:"created_at.asc",limit:"1"}}))[0]||null;
+      clip=existing||null;
+    }
+    if(!clip){
+      const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
+      clip=clips?.[0]||null;
+    }
+    if(!clip)throw new Error("Could not create or recover edited clip.");
+    await patchJob(p.jobId,{payload:{...p,clipId:clip.id}});
     const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
     let srtPath=null;
     if(p.captions!==false){
