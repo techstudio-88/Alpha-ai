@@ -1,0 +1,1 @@
+export default function Contact(){return <main style={{maxWidth:900,margin:"0 auto",padding:"72px 24px",fontFamily:"Arial"}}><a href="/">Alpha.ai</a><h1>Contact Alpha.ai</h1><p>For product support, account questions, privacy requests, or partnership enquiries, use the contact channel provided in your Alpha.ai account.</p></main>
