@@ -1,6 +1,6 @@
 "use client";
 import{useEffect,useMemo,useState}from"react";
-import{ArrowLeft,Download,ShieldCheck,UserRound,Trash2,RefreshCw,Lock,Check}from"lucide-react";
+import{ArrowLeft,Download,ShieldCheck,UserRound,Trash2,RefreshCw,Lock,Check,Activity}from"lucide-react";
 import{supabase}from"../../lib/supabase";
 
 function CloudLoader(){return <div className="authLoading"><span>Loading admin workspace…</span></div>}
