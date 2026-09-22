@@ -48,7 +48,7 @@ async function transcribeAudio(file){
   const wav=new WaveFile(fs.readFileSync(file));
   wav.toBitDepth("32f");wav.toSampleRate(16000);
   let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-  const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
+  const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
   return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
     const t=x.timestamp||[0,0];
     return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
