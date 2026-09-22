@@ -1,0 +1,10 @@
+"use client";
+import{useState}from"react";
+import{supabase}from"../lib/supabase";
+import{CalendarDays}from"lucide-react";
+const PLATFORMS=["instagram","tiktok","youtube","linkedin","x","facebook"];
+export default function ScheduleModal({workspace,clip,onClose}){
+ const[platform,setPlatform]=useState(PLATFORMS[0]),[when,setWhen]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[done,setDone]=useState(false);
+ const submit=async()=>{if(!workspace?.id||!clip?.id||!when||busy)return;setBusy(true);setError("");const scheduledFor=new Date(when);if(Number.isNaN(scheduledFor.getTime())){setError("Choose a valid date and time.");setBusy(false);return}const{error:insertError}=await supabase.from("scheduled_posts").insert({workspace_id:workspace.id,clip_id:clip.id,platform,scheduled_for:scheduledFor.toISOString(),status:"scheduled",payload:{title:clip.title||"Untitled clip"}});setBusy(false);if(insertError){setError(insertError.message);return}setDone(true)};
+ return <div className="modal" onClick={onClose}><div className="modalCard" onClick={e=>e.stopPropagation()}><button className="close" onClick={onClose}>×</button><div className="eyebrow">SCHEDULE CLIP</div><h2>{clip?.title||"Untitled clip"}</h2>{done?<><p className="muted">Scheduled for {new Date(when).toLocaleString()} on {platform}.</p><button className="btn primary" onClick={onClose}>Done</button></>:<><p className="muted">Pick a platform and time to add this clip to the content calendar.</p><select className="editorSelect wide" value={platform} onChange={e=>setPlatform(e.target.value)}>{PLATFORMS.map(p=><option key={p} value={p}>{p}</option>)}</select><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/>{error&&<div className="message">{error}</div>}<button className="btn primary" disabled={!when||busy} onClick={submit}><CalendarDays size={15}/>{busy?"Scheduling…":"Schedule"}</button></>}</div></div>;
+}
