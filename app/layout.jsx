@@ -1,4 +1,4 @@
-import "./globals.css";
+import "./globals.css";\nimport ProductAnalytics from "./components/ProductAnalytics";
 
 const SITE_URL = "https://alpha-ai-techstudio7808-4455.vercel.app";
 
