@@ -315,7 +315,11 @@ app.post("/process",async(req,res)=>{
     if(activeJobs.size>=1)return;
     activeJobs.add(String(req.body?.jobId));
     const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
-    authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
+    // Processing-ticket and worker-secret requests are already authorized upstream.
+    // Keep privileged worker credentials for their DB/storage work; only direct JWT
+    // requests should override them with the user's bearer token.
+    const dbAuth=identity.mode==="supabase-jwt"&&bearer?bearer:null;
+    authStore.run(dbAuth,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
 app.post("/assistant",async(req,res)=>{
