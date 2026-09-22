@@ -1,0 +1,1 @@
+SEO route inventory: /features/clipping /features/captions /features/editor /features/repurposing /use-cases/podcasts /use-cases/youtube /use-cases/creators /tools/ai-hook-generator /tools/shorts-title-generator /tools/caption-generator /tools/clip-ideas-generator /tools/podcast-to-shorts-planner /blog /glossary
