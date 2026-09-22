@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>Contact Alpha.ai</h1><p>Contact the Alpha.ai team through the support channel provided in your workspace.</p></main>}
