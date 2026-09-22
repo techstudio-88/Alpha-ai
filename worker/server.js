@@ -251,7 +251,7 @@ async function authorize(req){
   const ticket=req.get("x-import-ticket")||"";
   if(ticket&&SUPA&&PUBLIC_KEY){
     try{
-      const r=await fetch(SUPA+"/rest/v1/rpc/validate_processing_ticket",{method:"POST",headers:{apikey:PUBLIC_KEY,Authorization:"Bearer "+PUBLIC_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_ticket:ticket})});
+      const r=await fetch(SUPA+"/rest/v1/rpc/validate_processing_ticket",{method:"POST",headers:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"},body:JSON.stringify({p_ticket:ticket})});
       const rows=await r.json().catch(()=>[]);
       const row=Array.isArray(rows)?rows[0]:null;
       if(r.ok&&row?.user_id){
