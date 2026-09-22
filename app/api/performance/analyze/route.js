@@ -4,7 +4,7 @@ const url=process.env.NEXT_PUBLIC_SUPABASE_URL,anon=process.env.NEXT_PUBLIC_SUPA
 const service=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
 export async function POST(req){
  try{
-  const token=(req.headers.get("authorization")||"").replace(/^Bearer\\s+/i,"");if(!token)return Response.json({error:"Authentication required."},{status:401});
+  const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"");if(!token)return Response.json({error:"Authentication required."},{status:401});
   const client=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:false}});const{data:{user},error:ue}=await client.auth.getUser(token);if(ue||!user)return Response.json({error:"Authentication expired."},{status:401});
   const body=await req.json().catch(()=>({}));const workspaceId=body.workspaceId;const clipId=body.clipId;const platform=String(body.platform||"youtube_shorts");
   if(!workspaceId||!clipId)return Response.json({error:"workspaceId and clipId are required."},{status:400});
