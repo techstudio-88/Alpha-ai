@@ -1,0 +1,1 @@
+export default function Pricing(){return <main style={{maxWidth:900,margin:"0 auto",padding:"72px 24px",fontFamily:"Arial"}}><a href="/">Alpha.ai</a><h1>Alpha.ai Pricing</h1><p>Plans and usage limits are presented in the Alpha.ai workspace. Start with the available plan and upgrade when your workflow requires more capacity.</p><a href="/auth">Open Alpha.ai →</a></main>
