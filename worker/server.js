@@ -239,7 +239,11 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
   await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
-}catch(e){console.error("job",p.jobId,e);await patchJob(p.jobId,{status:"failed",progress:0,error:e.message}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
+}catch(e){
+  console.error("job",p.jobId,e);
+  const retryCount=Number(p.retryCount||0);
+  const terminal=retryCount>=5;
+  await patchJob(p.jobId,{status:"failed",progress:0,error:terminal?("Automatic retry limit reached after "+retryCount+" attempts: "+e.message):e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
@@ -281,9 +285,11 @@ app.post("/process",async(req,res)=>{
       const member=await authStore.run(bearer,()=>db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}}));
       if(!member?.[0])return res.status(403).json({error:"Workspace access denied."});
     }
-    res.status(202).json({accepted:true,jobId:req.body?.jobId});
+    res.status(202).json({accepted:true,queued:activeJobs.size>=1,jobId:req.body?.jobId});
+    if(activeJobs.size>=1)return;
+    activeJobs.add(String(req.body?.jobId));
     const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
-    authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy})).catch(e=>console.error(e));
+    authStore.run(bearer,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
 app.post("/assistant",async(req,res)=>{
@@ -316,12 +322,18 @@ async function resumeQueuedJobs(){
     if(!row)return;
     console.log("job recovery selected",row.id,row.status,row.progress);
     const normalized={...payload,jobId:row.id,workspaceId:row.workspace_id,projectId:row.project_id,sourceId:payload.sourceId||payload.source_id,sourceType:payload.sourceType||payload.source_type,mediaAssetId:payload.mediaAssetId||payload.media_asset_id,driveFileId:payload.driveFileId||payload.drive_file_id,driveAccessToken:payload.driveAccessToken||payload.drive_access_token};
-    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,select:"id"},body:{status:"processing",progress:Math.max(1,Number(row.progress||1)),error:null}});
+    const retryCount=Number(row?.payload?.retryCount||0);
+    if(retryCount>=5){
+      await patchJob(row.id,{status:"failed",progress:0,error:"Job exceeded the maximum automatic retry limit (5).",payload:{...payload,retryCount}}).catch(()=>{});
+      console.warn("job recovery permanently failed after retries",row.id);
+      return;
+    }
+    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,select:"id"},body:{status:"processing",progress:Math.max(1,Number(row.progress||1)),error:null,payload:{...payload,retryCount:retryCount+1}}});
     console.log("job recovery claim result",JSON.stringify(claimed));
     if(!claimed?.[0]?.id)return;
     activeJobs.add(row.id);
     console.log("resuming queued/stale job",row.id);
-    processJob(normalized).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
+    processJob({...normalized,retryCount:retryCount+1}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
 }
 console.log("Supabase server-side key configured:",!!KEY);
