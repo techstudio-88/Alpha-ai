@@ -1,1 +1,0 @@
-export default function About(){return <main style={{maxWidth:900,margin:"0 auto",padding:"72px 24px",fontFamily:"Arial"}}><a href="/">Alpha.ai</a><h1>About Alpha.ai</h1><p>Alpha.ai is a video repurposing workspace for finding useful moments in long-form recordings and turning them into short-form content.</p></main>
