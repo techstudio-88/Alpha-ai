@@ -196,7 +196,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       await downloadStored(meta.storagePath,chunkPath);
       const wav=new WaveFile(fs.readFileSync(chunkPath));wav.toBitDepth("32f");wav.toSampleRate(16000);
       let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:true});
+      const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
       const rows=(Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
@@ -269,7 +269,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   console.error("job",p.jobId,e);
   const retryCount=Number(p.retryCount||0);
   const terminal=retryCount>=5;
-  await patchJob(p.jobId,{status:"failed",progress:0,error:terminal?("Automatic retry limit reached after "+retryCount+" attempts: "+e.message):e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing_failed"}}).catch(()=>{});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
+  await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount:retryCount+1}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
