@@ -661,3 +661,14 @@ html[data-theme="dusk"] .themeSwitcher{background:#24243e;border-color:#454666}
 .alphaConsentLinks button{border:0;background:transparent;color:inherit;text-decoration:underline;padding:0;font-size:12px;cursor:pointer}
 @keyframes alphaGlowFloat{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(0,-8px,0) scale(1.015)}}@keyframes alphaShimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 .card,.feature,.showCard,.editorCanvasPanel,.editorProjectRail{transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,border-color .28s}.card:hover{transform:translateY(-2px);box-shadow:0 24px 70px rgba(87,66,180,.14)}
+
+
+/* Searchable transcript editor */
+.editorTranscriptPanel{margin-top:16px;border:1px solid var(--border,#27304a);border-radius:18px;background:var(--panel,#101525);overflow:hidden}
+.editorTranscriptHead{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--border,#27304a)}
+.editorTranscriptHead>div:first-child{display:flex;align-items:center;gap:10px}.editorTranscriptHead span{font-size:12px;opacity:.65}
+.editorTranscriptSearch{display:flex;align-items:center;gap:8px;min-width:260px;padding:8px 10px;border:1px solid var(--border,#27304a);border-radius:10px;background:rgba(255,255,255,.03)}.editorTranscriptSearch input{border:0;background:transparent;outline:0;color:inherit;width:100%}
+.editorTranscriptList{max-height:360px;overflow:auto}.editorTranscriptRow{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05)}.editorTranscriptRow:last-child{border-bottom:0}.editorTranscriptRow:hover{background:rgba(255,255,255,.025)}
+.editorTranscriptRow.editing{grid-template-columns:64px minmax(0,1fr) auto}.editorTranscriptRow textarea{width:100%;min-height:64px;resize:vertical;border:1px solid var(--border,#27304a);border-radius:10px;background:rgba(255,255,255,.04);color:inherit;padding:9px;outline:none}
+.editorTranscriptTime{border:0;background:transparent;color:var(--accent,#a78bfa);font:inherit;font-size:12px;text-align:left;cursor:pointer}.editorTranscriptText{display:flex;flex-direction:column;gap:3px;min-width:0}.editorTranscriptText b{font-size:11px;opacity:.65;text-transform:uppercase;letter-spacing:.05em}.editorTranscriptText span{white-space:pre-wrap;word-break:break-word}.editorTranscriptActions{display:flex;gap:6px;justify-content:flex-end}.editorTranscriptActions .outlineBtn{white-space:nowrap}
+@media(max-width:760px){.editorTranscriptHead{align-items:stretch;flex-direction:column}.editorTranscriptSearch{min-width:0}.editorTranscriptRow,.editorTranscriptRow.editing{grid-template-columns:52px minmax(0,1fr)}.editorTranscriptActions{grid-column:2;justify-content:flex-start}}
