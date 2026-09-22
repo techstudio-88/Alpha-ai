@@ -79,6 +79,26 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
     ((Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0))
   ).slice(0,8);
 }
+function dedupeClipCandidates(candidates){
+  const sorted=(Array.isArray(candidates)?candidates:[]).slice().sort((a,b)=>{
+    const sa=(Number(b.hook_score)||0)+(Number(b.information_density)||0)+(Number(b.story_completeness)||0)+(Number(b.shareability_score)||0);
+    const sb=(Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0);
+    return sa-sb;
+  });
+  const kept=[];
+  for(const candidate of sorted){
+    const start=Number(candidate.start_seconds),end=Number(candidate.end_seconds);
+    if(!(end>start))continue;
+    const duplicate=kept.some(existing=>{
+      const overlap=Math.max(0,Math.min(end,Number(existing.end_seconds))-Math.max(start,Number(existing.start_seconds)));
+      const shorter=Math.min(end-start,Number(existing.end_seconds)-Number(existing.start_seconds));
+      return shorter>0&&overlap/shorter>=0.7;
+    });
+    if(!duplicate)kept.push(candidate);
+    if(kept.length>=8)break;
+  }
+  return kept;
+}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
   if(!GEMINI_API_KEY||!instruction?.trim())return null;
   const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
@@ -232,6 +252,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     try{candidates=await analyzeVideoWithGemini(input,safeDuration);console.log("Gemini clip candidates",p.jobId,candidates?.length||0)}
     catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
   }
+  if(candidates?.length)candidates=dedupeClipCandidates(candidates);
   if(!candidates?.length){
     const count=safeDuration<=45?1:Math.min(12,Math.floor((safeDuration-1)/30)+1);
     candidates=Array.from({length:count},(_,i)=>{
