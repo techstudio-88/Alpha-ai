@@ -49,8 +49,6 @@ async function transcribeAudio(file){
   wav.toBitDepth("32f");wav.toSampleRate(16000);
   let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
   const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
-      const languageFromWhisper=String(result?.language||result?.language_code||"").trim();
-      if(languageFromWhisper){detectedLanguage=languageFromWhisper;await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{})}
   return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
     const t=x.timestamp||[0,0];
     return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
@@ -247,6 +245,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
     }
     const transcriber=await transcriberPromise;
+    let detectedLanguage=String(p.detectedLanguage||"").trim();
     for(let i=nextChunk;i<chunkCount;i++){
       const meta=transcriptionChunks[i];
       if(!meta)throw new Error("Missing transcription chunk "+i);
@@ -255,8 +254,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       const wav=new WaveFile(fs.readFileSync(chunkPath));wav.toBitDepth("32f");wav.toSampleRate(16000);
       let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
       const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
-      const detectedLanguage=String(result?.language||result?.language_code||"").trim();
-      if(detectedLanguage&&!p.detectedLanguage)await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{});
+      const chunkLanguage=String(result?.language||result?.language_code||"").trim();
+      if(chunkLanguage&&!detectedLanguage){detectedLanguage=chunkLanguage;await patchJob(p.jobId,{payload:{...p,detectedLanguage}}).catch(()=>{});}
       const rows=(Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
         const t=x.timestamp||[0,0];const start=Number(t[0]??0),end=Number(t[1]??t[0]??0);
         return {transcript_id:transcript.id,start_ms:Math.round((meta.start+start)*1000),end_ms:Math.round((meta.start+end)*1000),text:String(x.text||"").trim(),speaker:"Speaker 1"};
