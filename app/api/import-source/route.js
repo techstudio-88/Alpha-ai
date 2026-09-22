@@ -2,7 +2,7 @@ import{createClient}from"@supabase/supabase-js";
 export const runtime="nodejs";
 export const maxDuration=50;
 const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const publicKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
 const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
 async function callWorker(worker,ticket,payload){
   let lastError=null;
@@ -25,8 +25,8 @@ export async function POST(request){
     const body=await request.json();const{url,sourceType,workspaceId,projectId,sourceId,jobId,mediaAssetId}=body||{};
     if(!ticket)return Response.json({error:"Processing ticket is required."},{status:401});
     if(!workspaceId||!projectId||!jobId)return Response.json({error:"Missing processing job context."},{status:400});
-    if(!supabaseUrl||!publicKey)return Response.json({error:"Supabase is not configured."},{status:503});
-    const verifier=createClient(supabaseUrl,publicKey,{auth:{persistSession:false,autoRefreshToken:false}});
+    if(!supabaseUrl||!serviceKey)return Response.json({error:"Supabase server credentials are not configured."},{status:503});
+    const verifier=createClient(supabaseUrl,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
     const{data:rows,error:ticketError}=await verifier.rpc("validate_processing_ticket",{p_ticket:ticket});
     const valid=rows?.[0];
     if(ticketError||!valid)return Response.json({error:"Invalid or expired processing ticket."},{status:401});
