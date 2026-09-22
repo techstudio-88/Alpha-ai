@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>Privacy</h1><p>Alpha.ai processes account, workspace, media and product-usage data to provide its services.</p></main>}
