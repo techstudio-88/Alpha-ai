@@ -1,9 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
-export default async function SharePage({params}){
- const {slug}=await params;
- const c=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
- const {data}=await c.from("public_shares").select("slug,enabled,branding_enabled,view_count,clip_id,clips(title,start_seconds,end_seconds)").eq("slug",slug).eq("enabled",true).maybeSingle();
- if(!data)return <main style={{padding:40,fontFamily:"sans-serif"}}><h1>Clip not found</h1></main>;
- return <main style={{maxWidth:900,margin:"40px auto",padding:24,fontFamily:"sans-serif"}}><h1>{data.clips?.title||"Alpha.ai Clip"}</h1><p>AI-selected short-form clip.</p><div style={{aspectRatio:"16/9",background:"#111",borderRadius:16,display:"grid",placeItems:"center",color:"#fff"}}>Video playback will use the published clip asset.</div><p>{data.view_count||0} views</p>{data.branding_enabled!==false&&<small>Made with Alpha.ai</small>}</main>
-}
-export async function generateMetadata({params}){const {slug}=await params;return {title:"Alpha.ai clip "+slug,description:"A clip shared from Alpha.ai."}}
+import {createClient} from "@supabase/supabase-js";
+import ShareView from "./ShareView";
+export default async function SharePage({params}){const {slug}=await params;const c=createClient(process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,{auth:{persistSession:false}});const {data}=await c.from("public_shares").select("slug,enabled,branding_enabled,view_count,clip_id,clips(title,start_seconds,end_seconds,clip_versions(storage_path,render_status))").eq("slug",slug).eq("enabled",true).maybeSingle();if(!data)return <main style={{padding:40,fontFamily:"sans-serif"}}><h1>Clip not found</h1></main>;const path=data.clips?.clip_versions?.find?.(x=>x.render_status==="ready")?.storage_path;let videoUrl=null;if(path){const s=await c.storage.from("media").createSignedUrl(path,3600);videoUrl=s.data?.signedUrl||null}return <main style={{maxWidth:900,margin:"40px auto",padding:24,fontFamily:"sans-serif"}}><h1>{data.clips?.title||"Alpha.ai Clip"}</h1><ShareView slug={slug} videoUrl={videoUrl} branding={data.branding_enabled!==false} initialViews={data.view_count||0}/></main>}
+export async function generateMetadata({params}){const {slug}=await params;return {title:"Alpha.ai clip "+slug,description:"A short-form clip shared from Alpha.ai."}}
