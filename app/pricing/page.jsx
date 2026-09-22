@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>Alpha.ai Pricing</h1><p>Review current Alpha.ai plans and usage limits inside the product.</p><a href="/">Open Alpha.ai</a></main>}
