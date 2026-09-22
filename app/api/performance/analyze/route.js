@@ -1,5 +1,4 @@
 import{createClient}from"@supabase/supabase-js";
-import{GoogleGenAI}from"@google/genai";
 export const runtime="nodejs";
 const url=process.env.NEXT_PUBLIC_SUPABASE_URL,anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const service=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
@@ -15,11 +14,9 @@ export async function POST(req){
   const{data:scores}=await admin.from("clip_scores").select("*").eq("clip_id",clipId).maybeSingle();
   const{data:history}=await admin.from("content_performance").select("views,likes,comments,shares,retention,ctr,platform").eq("workspace_id",workspaceId).eq("platform",platform).order("captured_at",{ascending:false}).limit(100);
   const baseline=Number(body.baselineViews||0)||Number(history?.map(x=>Number(x.views)||0).filter(Boolean).sort((a,b)=>a-b)[Math.floor((history?.length||1)/2)]||0);
-  const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY||""});
-  if(!process.env.GEMINI_API_KEY)return Response.json({error:"Performance analysis requires GEMINI_API_KEY."},{status:503});
+  const apiKey=process.env.GEMINI_API_KEY||"";\n  if(!apiKey)return Response.json({error:"Performance analysis requires GEMINI_API_KEY."},{status:503});
   const prompt=`Analyze a short-form video clip for Alpha.ai. This is an estimate, not a factual probability or guarantee. Platform: ${platform}. User supplied baseline views: ${baseline||"not supplied"}. Clip: ${JSON.stringify({title:clip.title,start:clip.start_seconds,end:clip.end_seconds})}. Existing AI scores: ${JSON.stringify(scores||{})}. Historical observations: ${JSON.stringify(history||[])}. Return JSON with: low_views, high_views, relative_low, relative_high, confidence ("low","medium","high"), hook_assessment, retention_assessment, packaging_assessment, risks[], opportunities[], methodology. Never claim certainty. If there is insufficient history, explicitly lower confidence and rely on content signals rather than inventing a statistical probability.`;
-  const result=await ai.models.generateContent({model:process.env.GEMINI_MODEL||"gemini-3.8-flash",contents:prompt,config:{responseMimeType:"application/json"}});
-  const analysis=JSON.parse(result.text||"{}");
+  const model=process.env.GEMINI_MODEL||"gemini-3.8-flash";\n  const gr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(apiKey),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});\n  const gj=await gr.json().catch(()=>({}));\n  if(!gr.ok)throw new Error(gj?.error?.message||"Gemini request failed.");\n  const raw=gj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"{}";\n  const analysis=JSON.parse(raw);
   const row={workspace_id:workspaceId,project_id:clip.project_id,clip_id:clipId,platform,baseline_views:baseline||null,predicted_low_views:Number(analysis.low_views)||null,predicted_high_views:Number(analysis.high_views)||null,relative_low:Number(analysis.relative_low)||null,relative_high:Number(analysis.relative_high)||null,confidence:String(analysis.confidence||"low"),model_version:"performance-v1",input_features:{clip,scores,history,baseline},explanation:analysis};
   const{data:saved,error}=await admin.from("performance_predictions").insert(row).select().single();if(error)throw error;
   return Response.json({prediction:saved});
