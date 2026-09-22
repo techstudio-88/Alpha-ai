@@ -399,11 +399,7 @@ app.post("/assistant",async(req,res)=>{
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
     const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.
-Workspace context:
-"+context+"
-User request:
-"+prompt});
+    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
 });
