@@ -21,6 +21,10 @@ export default function EditorView({projects,supabase,onUpload}){
   const [saved,setSaved]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
   const [segments,setSegments]=useState([]);
+  const [transcriptQuery,setTranscriptQuery]=useState("");
+  const [editingSegmentId,setEditingSegmentId]=useState("");
+  const [editingSegmentText,setEditingSegmentText]=useState("");
+  const [segmentBusy,setSegmentBusy]=useState("");
   const [captions,setCaptions]=useState(true);
   const [effect,setEffect]=useState("none");
   const [transition,setTransition]=useState("cut");
@@ -39,6 +43,24 @@ export default function EditorView({projects,supabase,onUpload}){
   const editorRef=useRef(null);
 
   const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
+
+  const filteredSegments=useMemo(()=>{
+    const q=transcriptQuery.trim().toLowerCase();
+    return q?segments.filter(s=>String(s.text||"").toLowerCase().includes(q)||String(s.speaker||"").toLowerCase().includes(q)):segments;
+  },[segments,transcriptQuery]);
+  const saveTranscriptSegment=async id=>{
+    const text=editingSegmentText.trim(); if(!text)return;
+    setSegmentBusy(id);
+    const {error}=await supabase.from("transcript_segments").update({text}).eq("id",id);
+    if(!error)setSegments(v=>v.map(s=>s.id===id?{...s,text}:s));
+    setSegmentBusy("");setEditingSegmentId("");
+  };
+  const deleteTranscriptSegment=async id=>{
+    setSegmentBusy(id);
+    const {error}=await supabase.from("transcript_segments").delete().eq("id",id);
+    if(!error)setSegments(v=>v.filter(s=>s.id!==id));
+    setSegmentBusy("");
+  };
 
   useEffect(()=>{
     if(project?.id)setSelectedId(project.id);
@@ -217,6 +239,11 @@ export default function EditorView({projects,supabase,onUpload}){
             <button className="editorTool" onClick={fullscreen}><Fullscreen size={16}/></button>
           </div>
         </div>
+
+        <section className="editorTranscriptPanel">
+          <div className="editorTranscriptHead"><div><b>Transcript</b><span>{segments.length} segments</span></div><div className="editorTranscriptSearch"><Search size={14}/><input value={transcriptQuery} onChange={e=>setTranscriptQuery(e.target.value)} placeholder="Search transcript…"/></div></div>
+          <div className="editorTranscriptList">{filteredSegments.length?filteredSegments.map(s=>editingSegmentId===s.id?<div className="editorTranscriptRow editing" key={s.id}><button className="editorTranscriptTime" onClick={()=>jump(s.start_ms/1000)}>{fmt(s.start_ms/1000)}</button><textarea value={editingSegmentText} onChange={e=>setEditingSegmentText(e.target.value)} autoFocus/><div className="editorTranscriptActions"><button className="btn small primary" disabled={segmentBusy===s.id} onClick={()=>saveTranscriptSegment(s.id)}>Save</button><button className="btn small" onClick={()=>setEditingSegmentId("")}>Cancel</button></div></div>:<div className="editorTranscriptRow" key={s.id}><button className="editorTranscriptTime" onClick={()=>jump(s.start_ms/1000)}>{fmt(s.start_ms/1000)}</button><div className="editorTranscriptText"><b>{s.speaker||"Speaker"}</b><span>{s.text}</span></div><div className="editorTranscriptActions"><button className="outlineBtn" onClick={()=>{setEditingSegmentId(s.id);setEditingSegmentText(s.text||"")}}>Edit</button><button className="outlineBtn" disabled={segmentBusy===s.id} onClick={()=>deleteTranscriptSegment(s.id)}>Delete</button></div></div>):<div className="emptyModule">No transcript segments match your search.</div>}</div>
+        </section>
 
         <section className="editorTimelinePanel" style={{height:timelineHeight}}>
           <div className="editorControlsStrip"><div><label>Timeline height</label><input type="range" min="170" max="520" value={timelineHeight} onChange={e=>setTimelineHeight(Number(e.target.value))}/><b>{timelineHeight}px</b></div><div><label>Video block</label><input type="range" min="36" max="120" value={videoBlockHeight} onChange={e=>setVideoBlockHeight(Number(e.target.value))}/><input aria-label="Video block width" type="range" min="60" max="100" value={videoBlockWidth} onChange={e=>setVideoBlockWidth(Number(e.target.value))}/></div><div><label>Caption block</label><input type="range" min="36" max="120" value={captionBlockHeight} onChange={e=>setCaptionBlockHeight(Number(e.target.value))}/><input aria-label="Caption block width" type="range" min="60" max="100" value={captionBlockWidth} onChange={e=>setCaptionBlockWidth(Number(e.target.value))}/></div></div>
