@@ -1,0 +1,2 @@
+const items={podcasts:["Podcast to shorts","Find quotable, complete moments from podcasts."],youtube:["YouTube clipping","Repurpose long YouTube videos into short-form clips."],creators:["Creator content repurposing","Build a repeatable long-to-short workflow."]};
+export default async function Page({params}){const {slug}=await params;const x=items[slug]||["Video repurposing use case","Create short-form content from long videos."];return <main className="seo-page"><h1>{x[0]}</h1><p>{x[1]}</p><a href="/">Try Alpha.ai</a></main>}
