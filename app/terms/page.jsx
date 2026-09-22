@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>Terms</h1><p>Use of Alpha.ai is subject to the current service terms.</p></main>}
