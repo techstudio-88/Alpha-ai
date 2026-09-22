@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>About Alpha.ai</h1><p>Alpha.ai is a video repurposing workspace focused on turning long-form content into short-form assets.</p></main>}
