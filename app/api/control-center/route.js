@@ -65,6 +65,7 @@ export async function POST(request){
   }
   if(action==="revoke_access"){
    const email=String(body.email||"").trim().toLowerCase();
+   if(email===(user.email||"").toLowerCase())return Response.json({error:"You cannot revoke your own control-center access."},{status:400});
    const{error}=await admin.from("control_center_members").update({active:false}).eq("email",email);
    if(error)throw error;
    await admin.from("audit_logs").insert({user_id:user.id,action:"control_center_access_revoked",entity_type:"control_center_member",metadata:{email}});
