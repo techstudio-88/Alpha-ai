@@ -812,3 +812,10 @@ html[data-theme="light"] .mobileMenuButton{background:#fff;color:#344054;border-
 @media(max-width:900px){html[data-theme="light"] .side{width:76px}html[data-theme="light"] .side .brand{justify-content:center}html[data-theme="light"] .side .alphaLogo{width:50px}html[data-theme="light"] .main{margin-left:76px;width:calc(100% - 76px)}}
 @media(max-width:680px){html[data-theme="light"] .main{margin-left:0;width:100%;padding:78px 16px 34px}html[data-theme="light"] .side{width:min(290px,86vw)}html[data-theme="light"] .side .brand{justify-content:flex-start}html[data-theme="light"] .side .alphaLogo{width:145px}html[data-theme="light"] .side:not(.mobileOpen){transform:translateX(-105%)}html[data-theme="light"] .landingNav{padding:0 16px}html[data-theme="light"] .landingNav .alphaLogo{width:122px}html[data-theme="light"] .navTools .navCta:first-child{display:none}html[data-theme="light"] .heroLarge{padding-top:132px}html[data-theme="light"] .heroLarge h1{font-size:clamp(44px,13vw,66px)}html[data-theme="light"] .heroLarge>p{font-size:16px}html[data-theme="light"] .productStage{width:calc(100vw - 24px)}html[data-theme="light"] .productWindow{border-radius:16px!important}html[data-theme="light"] .mockMain{padding:16px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+
+
+/* Brand logo variants */
+.alphaLogoWhite{display:none}
+html[data-theme="dark"] .alphaLogoColor,html[data-theme="dusk"] .alphaLogoColor{display:none}
+html[data-theme="dark"] .alphaLogoWhite,html[data-theme="dusk"] .alphaLogoWhite{display:block}
+.alphaLogo{object-fit:contain}
