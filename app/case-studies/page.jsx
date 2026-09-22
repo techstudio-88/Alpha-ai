@@ -1,0 +1,1 @@
+export default function Page(){return <main className="seo-page"><h1>Creator Case Studies</h1><p>Published creator workflows and measured outcomes will appear here.</p></main>
