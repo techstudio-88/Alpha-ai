@@ -167,7 +167,7 @@ async function getProcessingTicket({workspaceId,projectId,sourceId,jobId,mediaAs
 async function watchProcessingJob(jobId,onProgress){
   const refreshed=await supabase.auth.refreshSession();
   const session=refreshed.data?.session||null;
-  const token=session?.access_token;
+  let token=session?.access_token;
   if(!token)return{status:"unknown"};
   for(let attempt=0;attempt<120;attempt++){
     try{
@@ -183,6 +183,7 @@ async function watchProcessingJob(jobId,onProgress){
         const retry=await supabase.auth.refreshSession();
         const retryToken=retry.data?.session?.access_token;
         if(!retryToken)return{status:"auth_expired"};
+        token=retryToken;
       }
     }catch(error){console.warn("processing status poll failed",error)}
     await new Promise(resolve=>setTimeout(resolve,2500));
