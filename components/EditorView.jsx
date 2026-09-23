@@ -22,7 +22,7 @@ export default function EditorView({projects,supabase,onUpload}){
   const [zoom,setZoom]=useState(1);
   const [saved,setSaved]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
-  const [segments,setSegments]=useState([]);
+  const [segments,setSegments]=useState([]),[words,setWords]=useState([]);
   const [transcriptQuery,setTranscriptQuery]=useState("");
   const [editingSegmentId,setEditingSegmentId]=useState("");
   const [editingSegmentText,setEditingSegmentText]=useState("");
@@ -78,7 +78,7 @@ export default function EditorView({projects,supabase,onUpload}){
     let cancelled=false;
     async function load(){
       if(!project?.id||!supabase)return;
-      setLoading(true);setError("");setSourceUrl("");setAsset(null);setSegments([]);setCurrent(0);setInPoint(0);setOutPoint(0);
+      setLoading(true);setError("");setSourceUrl("");setAsset(null);setSegments([]);setWords([]);setCurrent(0);setInPoint(0);setOutPoint(0);
       const {data,error:assetError}=await supabase.from("media_assets").select("id,name,storage_path,mime_type,duration_seconds,status").eq("project_id",project.id).not("storage_path","is",null).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(cancelled)return;
       if(assetError){setError(assetError.message);setLoading(false);return}
@@ -87,7 +87,8 @@ export default function EditorView({projects,supabase,onUpload}){
       const {data:transcript}=await supabase.from("transcripts").select("id,language,status,created_at").eq("media_asset_id",data.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(transcript?.id){
         const {data:rows}=await supabase.from("transcript_segments").select("id,start_ms,end_ms,text,speaker").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
-        if(!cancelled)setSegments(rows||[]);
+        const {data:wordRows}=await supabase.from("transcript_words").select("id,start_ms,end_ms,word").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
+        if(!cancelled){setSegments(rows||[]);setWords(wordRows||[])}
       }
       const signed=await supabase.storage.from("media").createSignedUrl(data.storage_path,3600);
       if(cancelled)return;
