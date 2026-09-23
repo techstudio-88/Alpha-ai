@@ -814,11 +814,8 @@ html[data-theme="light"] .mobileMenuButton{background:#fff;color:#344054;border-
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
 
 
-/* Brand logo variants */
-.alphaLogoWhite{display:none}
-html[data-theme="dark"] .alphaLogoColor,html[data-theme="dusk"] .alphaLogoColor{display:none}
-html[data-theme="dark"] .alphaLogoWhite,html[data-theme="dusk"] .alphaLogoWhite{display:block}
-.alphaLogo{object-fit:contain}
+/* Exact uploaded Alpha.ai logo */
+.alphaLogoExact{display:block!important;object-fit:contain!important}
 
 
 /* ==========================================================================
