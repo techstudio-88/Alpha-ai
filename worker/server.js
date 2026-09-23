@@ -465,7 +465,9 @@ async function processPublishJobs(){
       }catch(e){const n=Number(job.attempt_count||0)+1;await db("publish_jobs",{method:"PATCH",params:{id:"eq."+job.id},body:{status:n>=3?"failed":"queued",error:String(e.message||e)}}).catch(()=>{});console.warn("publish job failed",job.id,e.message)}}
   }catch(e){console.warn("publish queue scan failed",e.message)}
 }
-console.log("Supabase server-side key configured:",!!KEY);\nsetInterval(processPublishJobs,30000);\nsetTimeout(processPublishJobs,10000);
+console.log("Supabase server-side key configured:",!!KEY);
+setInterval(processPublishJobs,30000);
+setTimeout(processPublishJobs,10000);
 setTimeout(resumeQueuedJobs,5000);
 setInterval(resumeQueuedJobs,15000);
 app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
