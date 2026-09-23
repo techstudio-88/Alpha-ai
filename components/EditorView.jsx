@@ -3,6 +3,8 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Activity,ChevronRight,Clock,Film,Fullscreen,Maximize2,Pause,Play,RotateCcw,Save,Scissors,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
 
+function LiveWaveform({videoRef}){const canvasRef=useRef(null);useEffect(()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;let ctx,analyser,source,raf;try{const AudioContext=window.AudioContext||window.webkitAudioContext;const ac=new AudioContext();analyser=ac.createAnalyser();analyser.fftSize=128;source=ac.createMediaElementSource(v);source.connect(analyser);analyser.connect(ac.destination);const draw=()=>{const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.beginPath();for(let i=0;i<data.length;i++){const x=i/(data.length-1)*c.width,y=c.height/2+(data[i]-128)/128*c.height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle="#7c5cff";ctx.lineWidth=2;ctx.stroke();raf=requestAnimationFrame(draw)};ctx=c.getContext("2d");draw();return()=>{cancelAnimationFrame(raf);source?.disconnect();analyser?.disconnect();ac.close().catch(()=>{})}}catch{}},[videoRef]);return <canvas className="editorWaveform" ref={canvasRef} width="900" height="72" aria-label="Live audio waveform"/>}
+
 export default function EditorView({projects,supabase,onUpload}){
   const [selectedId,setSelectedId]=useState(projects[0]?.id||"");
   const [asset,setAsset]=useState(null);
@@ -36,10 +38,10 @@ export default function EditorView({projects,supabase,onUpload}){
   const [aiStatus,setAiStatus]=useState("");
   const [blockHeight,setBlockHeight]=useState(52);
   const [layoutTemplate,setLayoutTemplate]=useState("vertical-pro");
-  const [fullscreenAsk,setFullscreenAsk]=useState(false);
+  const [fullscreenAsk,setFullscreenAsk]=useState(false),[shortcutsOpen,setShortcutsOpen]=useState(false),[splitView,setSplitView]=useState(false),[history,setHistory]=useState([]),[future,setFuture]=useState([]);
   const [rendering,setRendering]=useState(false);
   const [renderMessage,setRenderMessage]=useState("");
-  const videoRef=useRef(null);
+  const videoRef=useRef(null); const historyRef=useRef(null);
   const editorRef=useRef(null);
 
   const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
@@ -123,6 +125,10 @@ export default function EditorView({projects,supabase,onUpload}){
     v.playbackRate=speed;v.muted=muted;
   },[speed,muted,sourceUrl]);
 
+  const snapshot=()=>({inPoint,outPoint,effect,transition});
+  const remember=()=>{setHistory(v=>[...v,snapshot()].slice(-30));setFuture([])};
+  const undo=()=>{setHistory(v=>{if(!v.length)return v;const next=[...v],s=next.pop();setFuture(f=>[snapshot(),...f].slice(0,30));setInPoint(s.inPoint);setOutPoint(s.outPoint);setEffect(s.effect);setTransition(s.transition);return next})};
+  const redo=()=>{setFuture(v=>{if(!v.length)return v;const next=[...v],s=next.shift();setHistory(h=>[...h,snapshot()].slice(-30));setInPoint(s.inPoint);setOutPoint(s.outPoint);setEffect(s.effect);setTransition(s.transition);return next})};
   const fmt=s=>{const n=Math.max(0,Number(s)||0);return Math.floor(n/60)+":"+String(Math.floor(n%60)).padStart(2,"0")};
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const togglePlay=async()=>{
@@ -182,14 +188,14 @@ export default function EditorView({projects,supabase,onUpload}){
   };
 
   return <div ref={editorRef} className="alphaEditor">
-    {fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
+    {shortcutsOpen&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">KEYBOARD</div><h3>Editor shortcuts</h3><div className="shortcutList"><span><kbd>Space</kbd> Play / pause</span><span><kbd>J</kbd> Back 5s</span><span><kbd>K</kbd> Play / pause</span><span><kbd>L</kbd> Forward 5s</span><span><kbd>I</kbd> Set in</span><span><kbd>O</kbd> Set out</span><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⌘/Ctrl Y</kbd> Redo</span></div><button className="btn primary" onClick={()=>setShortcutsOpen(false)}>Close</button></div></div>}{fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
     <div className="editorTopBar">
       <div className="editorTitleBlock">
         <div className="eyebrow">ALPHA.AI EDITOR</div>
         <h2>{project?.name||"Choose a project"}</h2>
         <span>{asset?.name||"Select a project with uploaded media"}</span>
       </div>
-      <div className="editorTopActions">
+      <div className="editorTopActions"><button className="btn" onClick={undo} disabled={!history.length}><Undo2 size={15}/></button><button className="btn" onClick={redo} disabled={!future.length}><Redo2 size={15}/></button><button className="btn" onClick={()=>setShortcutsOpen(true)}><Keyboard size={15}/> Shortcuts</button>
         <button className="btn" onClick={reset}><RotateCcw size={15}/> Reset</button>
         <button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
       </div>
@@ -222,7 +228,7 @@ export default function EditorView({projects,supabase,onUpload}){
             </div>
           </div>
 
-          <div className={"editorStage aspect-"+aspect.replace(":","x")}>
+          <div className={"editorStage aspect-"+aspect.replace(":","x")+" "+(splitView?"splitView":"")}>
             {loading?<div className="editorEmpty"><Activity className="spin" size={24}/><b>Loading source media…</b></div>
             :sourceUrl?<video ref={videoRef} className="editorVideo" src={sourceUrl} style={{transform:"scale("+zoom+")"}} playsInline onLoadedMetadata={e=>{const d=e.currentTarget.duration||Number(asset?.duration_seconds)||0;setDuration(d);setOutPoint(prev=>prev>0?Math.min(prev,d):d)}} onTimeUpdate={e=>{const t=e.currentTarget.currentTime;setCurrent(t);if(outPoint>0&&t>=outPoint){e.currentTarget.pause();e.currentTarget.currentTime=inPoint;setPlaying(false)}}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onError={()=>setError("The source video could not be decoded by the browser.")}/>
             :<div className="editorEmpty"><Film size={28}/><b>{error||"Select a project with ready media"}</b><span>Upload or import a video first.</span>{!projects.length&&<button className="btn primary" onClick={onUpload}>Add source video</button>}</div>}
@@ -236,7 +242,7 @@ export default function EditorView({projects,supabase,onUpload}){
             <span className="editorTime">{fmt(current)} / {fmt(duration)}</span>
             <button className="editorTool" onClick={()=>setMuted(v=>!v)}>{muted?<VolumeX size={16}/>:<Volume2 size={16}/>}</button>
             <select className="editorSelect" value={speed} onChange={e=>setSpeed(Number(e.target.value))}>{[.5,.75,1,1.25,1.5,2].map(x=><option key={x} value={x}>{x}×</option>)}</select>
-            <button className="editorTool" onClick={fullscreen}><Fullscreen size={16}/></button>
+            <button className={"editorTool "+(splitView?"active":"")} onClick={()=>setSplitView(v=>!v)}><SplitSquareHorizontal size={16}/></button><button className="editorTool" onClick={fullscreen}><Fullscreen size={16}/></button>
           </div>
         </div>
 
@@ -248,7 +254,7 @@ export default function EditorView({projects,supabase,onUpload}){
         <section className="editorTimelinePanel" style={{height:timelineHeight}}>
           <div className="editorControlsStrip"><div><label>Timeline height</label><input type="range" min="170" max="520" value={timelineHeight} onChange={e=>setTimelineHeight(Number(e.target.value))}/><b>{timelineHeight}px</b></div><div><label>Video block</label><input type="range" min="36" max="120" value={videoBlockHeight} onChange={e=>setVideoBlockHeight(Number(e.target.value))}/><input aria-label="Video block width" type="range" min="60" max="100" value={videoBlockWidth} onChange={e=>setVideoBlockWidth(Number(e.target.value))}/></div><div><label>Caption block</label><input type="range" min="36" max="120" value={captionBlockHeight} onChange={e=>setCaptionBlockHeight(Number(e.target.value))}/><input aria-label="Caption block width" type="range" min="60" max="100" value={captionBlockWidth} onChange={e=>setCaptionBlockWidth(Number(e.target.value))}/></div></div>
           <div className="editorTimelineHeader"><div><b>Timeline</b><span>{fmt(Math.max(0,outPoint-inPoint))} selected</span></div><div><button className="btn small" onClick={setIn}>Set in</button><button className="btn small" onClick={setOut}>Set out</button></div></div>
-          <div className="editorScrubber">
+          <div className="editorWaveformWrap"><LiveWaveform videoRef={videoRef}/></div><div className="editorScrubber">
             <input aria-label="Video position" type="range" min="0" max={Math.max(duration,.01)} step=".01" value={Math.min(current,duration)} onChange={seek}/>
             <div className="editorRangeTrack">
               <span style={{left:(duration?inPoint/duration*100:0)+"%",right:(duration?100-outPoint/duration*100:0)+"%"}}/>
@@ -269,7 +275,7 @@ export default function EditorView({projects,supabase,onUpload}){
       <aside className="editorInspector">
         <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
         <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
-        <div className="inspectorSection"><label>Layout templates</label><div className="editorTemplateGrid">{Object.entries(templates).map(([k,t])=><button key={k} className={layoutTemplate===k?"selected":""} onClick={()=>applyTemplate(k)}>{t.label}<small>{t.aspect}</small></button>)}</div></div><div className="inspectorSection"><label>Effects</label><select className="editorSelect wide" value={effect} onChange={e=>setEffect(e.target.value)}><option value="none">None</option><option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="mono">Monochrome</option><option value="vibrant">Vibrant</option></select></div><div className="inspectorSection"><label>Transitions</label><select className="editorSelect wide" value={transition} onChange={e=>setTransition(e.target.value)}><option value="cut">Hard cut</option><option value="fade">Fade</option><option value="dip">Dip to black</option><option value="zoom">Zoom</option></select></div><div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
+        <div className="inspectorSection"><label>Layout templates</label><div className="editorTemplateGrid">{Object.entries(templates).map(([k,t])=><button key={k} className={layoutTemplate===k?"selected":""} onClick={()=>applyTemplate(k)}>{t.label}<small>{t.aspect}</small></button>)}</div></div><div className="inspectorSection"><label>Effects</label><select className="editorSelect wide" value={effect} onChange={e=>{remember();setEffect(e.target.value)}}><option value="none">None</option><option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="mono">Monochrome</option><option value="vibrant">Vibrant</option></select></div><div className="inspectorSection"><label>Transitions</label><select className="editorSelect wide" value={transition} onChange={e=>{remember();setTransition(e.target.value)}}><option value="cut">Hard cut</option><option value="fade">Fade</option><option value="dip">Dip to black</option><option value="zoom">Zoom</option></select></div><div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
         <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>{setAiStatus("Instruction ready for Gemini on the next render.");setSaved(false)}}><WandSparkles size={14}/> Apply instruction</button></div>
         <div className="inspectorSection"><label>AI status</label><div className="aiEditStatus">{aiStatus||"Ready"}</div></div><div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
       </aside>
