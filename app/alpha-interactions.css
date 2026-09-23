@@ -1,0 +1,127 @@
+/* Alpha.ai interaction polish: persistent sidebar branding + living parallax popups */
+.sideTop{
+  min-height:58px;
+  display:flex;
+  align-items:center;
+  padding:6px 8px 10px;
+  margin-bottom:6px;
+}
+.sideTop .brand{
+  width:100%;
+  min-height:42px;
+  display:flex;
+  align-items:center;
+}
+.sideTop .alphaLogoExact{
+  width:156px!important;
+  height:42px!important;
+  max-width:100%;
+  object-fit:contain!important;
+  object-position:left center!important;
+  filter:drop-shadow(0 8px 18px rgba(74,62,160,.10));
+}
+html[data-theme="light"] .sideTop{
+  padding-top:8px;
+  border-bottom:1px solid rgba(226,231,239,.7);
+}
+html[data-theme="light"] .sideTop .alphaLogoExact{
+  width:158px!important;
+}
+html[data-theme="dark"] .sideTop .alphaLogoExact,
+html[data-theme="dusk"] .sideTop .alphaLogoExact{
+  filter:drop-shadow(0 8px 18px rgba(20,20,40,.24));
+}
+
+/* The landing preview now reacts in depth instead of only rotating in place. */
+.productWindow{
+  --px:0;
+  --py:0;
+  transform:perspective(1400px)
+    rotateX(calc(var(--py) * -4deg))
+    rotateY(calc(var(--px) * 5deg))
+    translate3d(calc(var(--px) * -8px),calc(var(--py) * -8px),0)!important;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .35s;
+  will-change:transform;
+}
+.stageFloat{
+  --px:0;
+  --py:0;
+  transform:translate3d(calc(var(--px) * -22px),calc(var(--py) * -16px),90px)!important;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1);
+  will-change:transform;
+}
+.stageFloat span{
+  animation:alphaPopupDrift 3.8s ease-in-out infinite;
+  will-change:transform;
+}
+.stageFloat span:nth-child(1){animation-delay:-.2s}
+.stageFloat span:nth-child(2){animation-delay:-1.5s}
+.stageFloat span:nth-child(3){animation-delay:-2.7s}
+
+.videoOrbitObjects{
+  position:absolute;
+  inset:0;
+  z-index:12;
+  pointer-events:none;
+  transform-style:preserve-3d;
+}
+.orbitCard{
+  --mx:var(--px,0);
+  --my:var(--py,0);
+  position:absolute;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:9px 12px;
+  border:1px solid rgba(140,125,235,.28);
+  border-radius:13px;
+  background:rgba(255,255,255,.92);
+  color:#4b3bb0;
+  box-shadow:0 14px 34px rgba(39,49,86,.13),0 0 24px rgba(110,86,232,.10);
+  backdrop-filter:blur(14px);
+  transform:
+    translate3d(calc(var(--mx) * var(--depth-x,18px)),calc(var(--my) * var(--depth-y,14px)),var(--depth-z,45px))
+    rotateX(var(--tilt-x,-2deg))
+    rotateY(var(--tilt-y,3deg));
+  transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .25s;
+  animation:alphaOrbitFloat 4.5s ease-in-out infinite;
+  will-change:transform;
+}
+.orbitCard b{font-size:9px;letter-spacing:.12em}
+.orbitCard svg{width:15px;height:15px}
+.orbitOne{left:-20px;top:17%;--depth-x:30px;--depth-y:20px;--depth-z:65px;animation-delay:-.4s}
+.orbitTwo{left:-36px;bottom:18%;--depth-x:-20px;--depth-y:26px;--depth-z:42px;--tilt-y:-4deg;animation-delay:-1.5s}
+.orbitThree{right:-28px;top:29%;--depth-x:-34px;--depth-y:18px;--depth-z:72px;--tilt-x:2deg;--tilt-y:-3deg;animation-delay:-2.5s}
+.orbitFour{right:-48px;bottom:16%;--depth-x:22px;--depth-y:-22px;--depth-z:50px;--tilt-x:2deg;animation-delay:-3.3s}
+@keyframes alphaPopupDrift{
+  0%,100%{transform:translate3d(0,0,0) rotateX(0) rotateY(0) scale(1)}
+  50%{transform:translate3d(6px,-9px,14px) rotateX(3deg) rotateY(-3deg) scale(1.025)}
+}
+@keyframes alphaOrbitFloat{
+  0%,100%{margin-top:0}
+  50%{margin-top:-9px}
+}
+
+/* Workspace selector and small floating status surfaces should feel alive too. */
+.workspaceMini{
+  animation:alphaWorkspaceFloat 5.5s ease-in-out infinite;
+  transform-origin:center;
+}
+@keyframes alphaWorkspaceFloat{
+  0%,100%{transform:translate3d(0,0,0);box-shadow:0 4px 12px rgba(50,60,100,.03)}
+  50%{transform:translate3d(3px,-3px,0);box-shadow:0 12px 24px rgba(70,60,150,.09)}
+}
+
+@media(max-width:900px){
+  .orbitCard{transform:translate3d(calc(var(--mx) * 10px),calc(var(--my) * 8px),35px) scale(.9)}
+  .orbitOne{left:-8px}.orbitTwo{left:-10px}.orbitThree{right:-8px}.orbitFour{right:-12px}
+}
+@media(max-width:600px){
+  .sideTop .alphaLogoExact{width:145px!important;height:38px!important}
+  .videoOrbitObjects{display:none}
+  .stageFloat{right:4px;transform:translate3d(calc(var(--px) * -8px),calc(var(--py) * -6px),55px) scale(.85)!important}
+}
+@media(prefers-reduced-motion:reduce){
+  .stageFloat span,.orbitCard,.workspaceMini{animation:none!important}
+  .productWindow,.stageFloat,.orbitCard{transition:none!important}
+}
