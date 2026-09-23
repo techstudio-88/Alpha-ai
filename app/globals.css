@@ -404,7 +404,7 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
 .mockAI{box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 16px 32px rgba(0,0,0,.2)}
 .videoPoster{transform-style:preserve-3d}
 .playCircle{box-shadow:0 0 0 8px rgba(139,92,246,.06),0 0 35px rgba(139,92,246,.28);animation:playPulse 3s ease-in-out infinite}
-@keyframes playPulse{0%,100%{transform:translate(-50%,-50%) scale(.96);box-shadow:0 0 0 8px rgba(139,92,246,.05),0 0 25px rgba(139,92,246,.22)}50%{transform:translate(-50%,-50%) scale(1.08);box-shadow:0 0 0 12px rgba(139,92,246,.08),0 0 45px rgba(34,211,238,.25)}}
+@keyframes playPulse{0%,100%{transform:translate(-50%,-50%) scale(1);box-shadow:0 0 0 6px rgba(139,92,246,.05),0 0 20px rgba(139,92,246,.18)}50%{transform:translate(-50%,-50%) scale(1.035);box-shadow:0 0 0 9px rgba(139,92,246,.07),0 0 30px rgba(34,211,238,.2)}}
 
 /* === Animated auth image / atmosphere === */
 .authVisual{position:relative;isolation:isolate;perspective:1000px;background:radial-gradient(circle at 20% 20%,#3b0764 0,transparent 34%),radial-gradient(circle at 80% 75%,#082f49 0,transparent 36%),#080b14!important}
@@ -1130,3 +1130,19 @@ html[data-theme="light"] .appInsight,
 html[data-theme="light"] .emptyModule,
 html[data-theme="light"] .featureTile,
 html[data-theme="light"] .workflowCard3d{transform-style:preserve-3d!important;perspective:1100px!important}
+
+/* FINAL CALM MOTION + REAL 3D DEPTH */
+.playCircle{animation:playPulse 4.5s ease-in-out infinite}
+@keyframes feedPulse{0%,100%{opacity:.55;transform:scaleX(.92)}50%{opacity:.95;transform:scaleX(1)}}
+.aiMiniFeed span{animation-duration:4.2s}
+.card,.featureTile,.showCard,.clipLibraryCard,.projectCard,.appTimeline,.appInsight,.mockStats>div,.mockAI,.mockVideo,.onboardingCard,.editorProjectRail,.editorInspector,.uploadCard,.metric{transform-style:preserve-3d!important;perspective:1000px!important;transition:transform .45s cubic-bezier(.2,.8,.2,1),box-shadow .4s,border-color .4s!important}
+.card:hover,.featureTile:hover,.showCard:hover,.clipLibraryCard:hover,.projectCard:hover,.appTimeline:hover,.appInsight:hover,.mockStats>div:hover,.onboardingCard:hover,.uploadCard:hover{transform:perspective(900px) rotateX(3deg) rotateY(-3deg) translateY(-7px) translateZ(6px)!important;box-shadow:0 30px 70px rgba(20,20,45,.16),0 0 34px rgba(124,58,237,.10)!important}
+html[data-theme="light"] .card:hover,html[data-theme="light"] .featureTile:hover,html[data-theme="light"] .showCard:hover,html[data-theme="light"] .clipLibraryCard:hover,html[data-theme="light"] .projectCard:hover{box-shadow:0 26px 60px rgba(40,44,90,.14),0 0 26px rgba(105,85,232,.10)!important;border-color:#cfc8fb!important}
+.productWindow{transform-style:preserve-3d!important;transform:perspective(1400px) rotateX(calc(var(--py,0) * -6deg)) rotateY(calc(var(--px,0) * 8deg))!important;transition:transform .25s ease-out!important}
+.mockVideo,.mockAI,.mockStats>div{transform:translateZ(18px)!important}.mockVideo{transform:translateZ(26px)!important}
+.faqList{max-width:760px;margin:46px auto 0;display:grid;gap:10px}.faqItem{border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0d1017;overflow:hidden;transition:.3s}.faqItem.open{border-color:rgba(139,92,246,.35)}
+.faqQuestion{width:100%;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:18px 20px;border:0;background:transparent;color:inherit;font-size:15px;font-weight:650;text-align:left;cursor:pointer}.faqChevron{transition:.3s;flex:none}.faqItem.open .faqChevron{transform:rotate(90deg)}
+.faqAnswer{margin:0;padding:0 20px 20px;color:#818b9d;font-size:13px;line-height:1.7;animation:faqIn .25s ease}@keyframes faqIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+html[data-theme="light"] .faqItem{background:#fff;border-color:#e4e8f0}html[data-theme="light"] .faqItem.open{border-color:#cfc8fb}html[data-theme="light"] .faqAnswer{color:#667085}
+@media(prefers-reduced-motion:reduce){.card,.featureTile,.showCard,.clipLibraryCard,.projectCard,.appTimeline,.appInsight,.mockStats>div,.mockAI,.mockVideo,.onboardingCard,.uploadCard,.productWindow{transform:none!important;transition:none!important}}
+@media(max-width:760px){.card:hover,.featureTile:hover,.showCard:hover,.clipLibraryCard:hover,.projectCard:hover{transform:translateY(-4px)!important}}
