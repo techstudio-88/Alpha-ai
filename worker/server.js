@@ -141,7 +141,7 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
           if(hit)await db("transcript_segments",{method:"PATCH",params:{id:"eq."+seg.id},body:{speaker:hit.speaker_label}});
         }
         await db("speaker_segments",{method:"DELETE",params:{project_id:"eq."+projectId}});
-        const linked=clean.map(s=>({...s,transcript_segment_id:null}));
+        const linked=clean.map(s=>{const mid=(s.start_ms+s.end_ms)/2;const hit=(ts||[]).find(t=>mid>=Number(t.start_ms)&&mid<=Number(t.end_ms));return {...s,transcript_segment_id:hit?.id||null}});
         if(linked.length)await db("speaker_segments",{method:"POST",body:linked});
       }
     }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
