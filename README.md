@@ -27,3 +27,6 @@ After the worker is live, its public service URL is used by Alpha.ai as the defa
 ### Production flow
 
 Browser → Supabase resumable upload → Alpha.ai API → media worker → FFmpeg / faster-whisper / clip analysis → Supabase database + Storage.
+
+
+<!-- Alpha production engineering baseline refreshed 2026-09-23 -->
