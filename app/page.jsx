@@ -26,14 +26,16 @@ function ProductPreview({onStart}) {
   const [progress, setProgress] = useState(0);
   const windowRef = useRef(null);
   const handleMove = (e) => {
-    const el = windowRef.current; if (!el) return;
+    const stage = ref.current;
+    const el = windowRef.current;
+    if (!stage || !el) return;
     const r = el.getBoundingClientRect();
-    el.style.setProperty("--px", ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
-    el.style.setProperty("--py", ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
+    stage.style.setProperty("--px", ((e.clientX - r.left) / r.width - 0.5).toFixed(3));
+    stage.style.setProperty("--py", ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
   };
   const handleLeave = () => {
-    const el = windowRef.current;
-    if (el) { el.style.setProperty("--px", 0); el.style.setProperty("--py", 0); }
+    const stage = ref.current;
+    if (stage) { stage.style.setProperty("--px", 0); stage.style.setProperty("--py", 0); }
   };
 
   useEffect(() => {
