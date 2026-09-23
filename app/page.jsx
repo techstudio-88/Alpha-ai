@@ -165,18 +165,18 @@ function Landing({onStart}){const[scrolled,setScrolled]=useState(false),[scrollP
 <div className="editorDemo premiumEditorDemo" aria-hidden="true"><div className="demoHeader"><span>EDITOR</span><b>CLIP · 00:42</b><span className="liveDot"><i/>9:16</span></div><div className="editorStage"><div className="editorGlowOrb"/><div className="demoPerson"/><div className="demoCaption"><small>HOOK DETECTED · 92%</small>This is the moment<br/><em>people will remember.</em></div><div className="demoScan"/><div className="floatingEditChip chipCaption"><Layers3 size={13}/> Captions <i/></div><div className="floatingEditChip chipReframe"><MousePointer2 size={13}/> Reframe</div><div className="floatingEditChip chipHook"><WandSparkles size={13}/> Hook <b>92</b></div><div className="editorCursor"><MousePointer2 size={17}/></div></div><div className="editorTimeline"><div className="timelineWave"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div><b className="timelinePlayhead"/></div><div className="editorControlRail"><button><Layers3 size={13}/> Captions</button><button><MousePointer2 size={13}/> Reframe</button><button><LayoutTemplate size={13}/> Brand</button><button className="active"><Sparkles size={13}/> Export</button></div></div>
 </section>
 <section className="section publishShowcase referencePipeline">
-<div className="sectionIntro center"><div className="eyebrow">CONTENT PIPELINE</div><h2>One source. <span className="gradient">Many next steps.</span></h2><p>Keep ideas, clips and publishing work connected instead of scattering the process across tabs.</p></div>
-<div className="refPipeline">
-<div className="refPipelineDecor decorA"><span>AI</span><i/><i/><i/></div>
-<div className="refPipelineDecor decorB"><span>9:16</span><i/><i/></div>
-<div className="refPipelineDecor decorC"><span>LIVE</span><i/><i/><i/></div>
-<div className="refPipelineFlow">
-{[["01","SOURCE","Bring it in",Upload,"Connected"],["02","ANALYZE","Find signals",Search,"Processing…"],["03","EDIT","Polish the moment",Scissors,"In progress…"],["04","PACKAGE","Create the assets",Layers3,"Queued"],["05","PUBLISH","Move it forward",TrendingUp,"Ready"]].map(([n,t,d,I,status],i)=><React.Fragment key={n}>
-<div className={"refStage refStage"+i}><div className="refStageIcon"><I size={22}/><b>{n}</b><span className="refStagePulse"/></div><h3>{t}</h3><p>{d}</p><div className="refStatus"><i/>{status}</div><div className="refStageSweep"/></div>
-{i<4&&<div className={"refConnector connector"+i}><svg viewBox="0 0 180 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C45 5 90 75 180 40"/><path className="connectorGlow" d="M0 40 C45 5 90 75 180 40"/></svg><span className="connectorOrb"/></div>}
-</React.Fragment>)}
+<div className="sectionIntro center pipelineIntro"><div className="eyebrow">CONTENT PIPELINE</div><h2>One source. <span className="gradient">Many next steps.</span></h2><p>Keep ideas, clips and publishing work connected instead of scattering the process across tabs.</p></div>
+<div className="refTimeline" aria-label="Alpha.ai content pipeline">
+<div className="timelineTrack"><span className="timelineBase"/><span className="timelineProgress"/><i className="timelineParticle particle1"/><i className="timelineParticle particle2"/><i className="timelineParticle particle3"/></div>
+<div className="timelineStages">
+{[["01","SOURCE","Bring it in",Upload,"Connected"],["02","ANALYZE","Find signals",Search,"Processing"],["03","EDIT","Polish the moment",Scissors,"Editing"],["04","PACKAGE","Create the assets",Layers3,"Packaging"],["05","PUBLISH","Move it forward",TrendingUp,"Ready"]].map(([n,t,d,I,status],i)=><div className={"timelineStage stage"+i} key={n}>
+<div className="timelineNumber">{n}</div>
+<div className="timelineIconWrap"><div className="timelineIcon"><I size={21}/></div><span className="timelinePing"/></div>
+<h3>{t}</h3><p>{d}</p><div className="timelineStatus"><i/>{status}</div>
+<div className="timelineOrbit orbitA"/><div className="timelineOrbit orbitB"/>
+</div>)}
 </div>
-<div className="refPipelineFoot"><span><i/> One connected workflow</span><span><i/> AI-powered processing</span><span><i/> Ready when you are</span></div>
+<div className="timelineFooter"><span><i/> One connected workflow</span><span><i/> AI-powered processing</span><span><i/> Publish when ready</span></div>
 </div>
 </section><section className="section includedSection">
 <div className="sectionIntro center"><div className="eyebrow">WHAT’S INCLUDED</div><h2>Three ways to bring a source in.</h2><p>Upload, connect or import — whichever fits your workflow. Every route lands in the same processing pipeline.</p></div>
