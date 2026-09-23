@@ -129,6 +129,21 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
     await db("speaker_segments",{method:"DELETE",params:{project_id:"eq."+projectId}}).catch(()=>{});
     const clean=rows.map(x=>({project_id:projectId,speaker_label:String(x.speaker_label||"Speaker 1").slice(0,80),start_ms:Math.max(0,Math.round(Number(x.start_seconds)||0)*1000),end_ms:Math.min(Math.round(duration*1000),Math.round(Number(x.end_seconds)||0)*1000),confidence:Number(x.confidence)||null,metadata:{source:"gemini"}})).filter(x=>x.end_ms>x.start_ms);
     if(clean.length)await db("speaker_segments",{method:"POST",body:clean});
+    // Map diarization intervals back onto transcript segments so the transcript is speaker-aware.
+    try{
+      const tr=(await db("transcripts",{params:{media_asset_id:"eq."+(await db("videos",{params:{project_id:"eq."+projectId,select:"media_asset_id",limit:"1"}}))[0]?.media_asset_id,select:"id",order:"created_at.desc",limit:"1"}}))[0];
+      if(tr?.id){
+        const ts=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,select:"id,start_ms,end_ms",order:"start_ms.asc"}});
+        for(const seg of ts||[]){
+          const mid=(Number(seg.start_ms)+Number(seg.end_ms))/2;
+          const hit=clean.find(s=>mid>=s.start_ms&&mid<=s.end_ms) || clean.reduce((best,s)=>Math.abs(((s.start_ms+s.end_ms)/2)-mid)<Math.abs(((best?.start_ms+best?.end_ms)/2||Infinity)-mid)?s:best,null);
+          if(hit)await db("transcript_segments",{method:"PATCH",params:{id:"eq."+seg.id},body:{speaker:hit.speaker_label}});
+        }
+        await db("speaker_segments",{method:"DELETE",params:{project_id:"eq."+projectId}});
+        const linked=clean.map(s=>({...s,transcript_segment_id:null}));
+        if(linked.length)await db("speaker_segments",{method:"POST",body:linked});
+      }
+    }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
   }catch(e){console.warn("speaker detection fallback:",e.message)}
 }
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),input=path.join(dir,"source.mp4"),audio=path.join(dir,"audio.wav");try{
@@ -274,12 +289,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const safeDuration=Math.max(0,Number(duration)||0);
   if(!safeDuration)throw new Error("Source video duration could not be determined.");
   await detectSpeakersWithGemini(input,safeDuration,p.projectId);
-  await db("topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
+  await db("video_topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
   const topicWindows=[];
   for(let start=0;start<safeDuration;start+=60){const end=Math.min(safeDuration,start+60);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
   if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const rr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(GEMINI_MODEL)+":generateContent?key="+encodeURIComponent(GEMINI_API_KEY),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});const jj=await rr.json().catch(()=>({}));const raw=jj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"[]";const named=JSON.parse(raw);if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}
-  if(topicRows.length)await db("topics",{method:"POST",body:topicRows}).catch(e=>console.warn("topic save failed:",e.message));
+  if(topicRows.length)await db("video_topics",{method:"POST",body:topicRows.map(t=>({workspace_id:p.workspaceId,project_id:t.project_id,video_id:null,title:t.name,summary:t.metadata?.source==="gemini"?"AI-segmented video topic":"Deterministic video topic",start_ms:Math.round(Number(t.metadata?.start_seconds||0)*1000),end_ms:Math.round(Number(t.metadata?.end_seconds||0)*1000),keywords:[],confidence:Number(t.score||50)/100}))}).catch(e=>console.warn("topic save failed:",e.message));
   let candidates=null;
   if(GEMINI_API_KEY){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
