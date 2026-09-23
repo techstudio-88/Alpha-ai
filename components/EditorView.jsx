@@ -125,6 +125,23 @@ export default function EditorView({projects,supabase,onUpload}){
     const v=videoRef.current;if(!v)return;
     v.playbackRate=speed;v.muted=muted;
   },[speed,muted,sourceUrl]);
+  useEffect(()=>{
+    const onKeyDown=e=>{
+      const tag=e.target?.tagName;
+      if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||e.isComposing)return;
+      const key=e.key.toLowerCase();
+      if((e.metaKey||e.ctrlKey)&&key==="z"){e.preventDefault();undo();return}
+      if((e.metaKey||e.ctrlKey)&&key==="y"){e.preventDefault();redo();return}
+      if(key===" "){e.preventDefault();togglePlay();return}
+      if(key==="k"){e.preventDefault();togglePlay();return}
+      if(key==="j"){e.preventDefault();jump(Math.max(0,current-5));return}
+      if(key==="l"){e.preventDefault();jump(Math.min(duration,current+5));return}
+      if(key==="i"){e.preventDefault();setIn();return}
+      if(key==="o"){e.preventDefault();setOut();return}
+    };
+    window.addEventListener("keydown",onKeyDown);
+    return()=>window.removeEventListener("keydown",onKeyDown);
+  },[current,duration,inPoint,outPoint,history.length,future.length]);
 
   const snapshot=()=>({inPoint,outPoint,effect,transition});
   const remember=()=>{setHistory(v=>[...v,snapshot()].slice(-30));setFuture([])};
@@ -140,12 +157,24 @@ export default function EditorView({projects,supabase,onUpload}){
     const v=videoRef.current;if(!v||!duration)return;
     const t=Number(e.target.value);v.currentTime=t;setCurrent(t);
   };
+  const snapToTranscript=(time,mode)=>{
+    if(!words.length)return time;
+    let best=words[0],bestDistance=Infinity;
+    for(const w of words){
+      const candidate=mode==="out"?Number(w.end_ms)/1000:Number(w.start_ms)/1000;
+      const distance=Math.abs(candidate-time);
+      if(distance<bestDistance){best=w;bestDistance=distance}
+    }
+    return mode==="out"?Number(best.end_ms)/1000:Number(best.start_ms)/1000;
+  };
   const setIn=()=>{
-    const t=clamp(current,0,Math.max(0,outPoint||duration));
+    remember();
+    const t=clamp(snapToTranscript(current,"in"),0,Math.max(0,outPoint||duration));
     setInPoint(t);setSaved(false);
   };
   const setOut=()=>{
-    const t=clamp(current,Math.min(inPoint,duration),duration);
+    remember();
+    const t=clamp(snapToTranscript(current,"out"),Math.min(inPoint,duration),duration);
     setOutPoint(t);setSaved(false);
   };
   const reset=()=>{
