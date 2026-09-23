@@ -50,7 +50,7 @@ export async function GET(request){
  try{
   const{user,admin,role,allowlisted,allow}=await guard(request);
   const{data:{users},error:userError}=await admin.auth.admin.listUsers({page:1,perPage:1000});if(userError)throw userError;
-  const[{data:profiles},{data:workspaces},{data:projects},{data:jobs},{data:events},{data:consents},{data:members},{data:notifications},{data:audit}]=await Promise.all([
+  const[{data:profiles},{data:workspaces},{data:projects},{data:jobs},{data:events},{data:consents},{data:members},{data:notifications},{data:audit},{data:workspaceMembers}]=await Promise.all([
    admin.from("profiles").select("id,full_name,avatar_url,created_at,updated_at"),
    admin.from("workspaces").select("id,name,owner_id,created_at"),
    admin.from("projects").select("id,workspace_id,owner_id,name,status,created_at,updated_at").order("created_at",{ascending:false}).limit(500),
@@ -59,13 +59,14 @@ export async function GET(request){
    admin.from("user_privacy_consents").select("id,user_id,consent_type,policy_version,granted,source,metadata,created_at").order("created_at",{ascending:false}).limit(500),
    admin.from("control_center_members").select("id,email,role,active,invited_at,last_seen_at,created_at").order("created_at",{ascending:false}),
    admin.from("notifications").select("id,workspace_id,user_id,title,message,read_at,created_at").order("created_at",{ascending:false}).limit(300),
-   admin.from("audit_logs").select("id,workspace_id,user_id,action,entity_type,entity_id,metadata,created_at").order("created_at",{ascending:false}).limit(500)
+   admin.from("audit_logs").select("id,workspace_id,user_id,action,entity_type,entity_id,metadata,created_at").order("created_at",{ascending:false}).limit(500),
+   admin.from("workspace_members").select("workspace_id,user_id,role,created_at").order("created_at",{ascending:false}).limit(1000)
   ]);
   const p=new Map((profiles||[]).map(x=>[x.id,x])),w=new Map((workspaces||[]).map(x=>[x.id,x])),uMap=new Map((users||[]).map(x=>[x.id,x]));
   const u=(users||[]).map(x=>({id:x.id,email:x.email||"",phone:x.phone||"",created_at:x.created_at,last_sign_in_at:x.last_sign_in_at,confirmed_at:x.confirmed_at,app_metadata:x.app_metadata||{},user_metadata:x.user_metadata||{},profile:p.get(x.id)||null,workspaces:(workspaces||[]).filter(y=>y.owner_id===x.id).map(y=>({id:y.id,name:y.name,created_at:y.created_at}))}));
   const eventsNamed=(events||[]).map(x=>({...x,user_email:uMap.get(x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
   const auditNamed=(audit||[]).map(x=>({...x,user_email:uMap.get(x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
-  const workspaceRows=(workspaces||[]).map(x=>({...x,owner_email:uMap.get(x.owner_id)?.email||"",project_count:(projects||[]).filter(p=>p.workspace_id===x.id).length,member_count:0}));
+  const workspaceRows=(workspaces||[]).map(x=>({...x,owner_email:uMap.get(x.owner_id)?.email||"",project_count:(projects||[]).filter(p=>p.workspace_id===x.id).length,member_count:(workspaceMembers||[]).filter(m=>m.workspace_id===x.id).length}));
   const jobsNamed=(jobs||[]).map(x=>({...x,workspace_name:w.get(x.workspace_id)?.name||"",project_name:(projects||[]).find(p=>p.id===x.project_id)?.name||"",requested_by_email:uMap.get(x.payload?.requestedBy||x.payload?.requested_by)?.email||""}));
   const flags=await scanFlags(admin,users||[],jobs||[],events||[],audit||[]);
   const activeJobs=(jobs||[]).filter(x=>["queued","processing"].includes(x.status)).length,failedJobs=(jobs||[]).filter(x=>x.status==="failed").length;
