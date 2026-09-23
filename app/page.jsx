@@ -190,7 +190,7 @@ function Metric({t,v,icon}){return <div className="card s3"><div className="metr
 function Sparkline({values=[]}){const nums=values.map(v=>Number(v)||0);const max=Math.max(...nums,1),min=Math.min(...nums,0);return <svg className="sparkline" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" points={nums.map((v,i)=>{const x=nums.length<2?60:i/(nums.length-1)*120;const y=31-((v-min)/(max-min||1))*25;return x+","+y}).join(" ")}/></svg>}
 function DashboardView({workspace,projects,user,onUpload,setView}){
  const [loading,setLoading]=useState(true),[stats,setStats]=useState({projects:0,clips:0,minutes:0,exports:0}),[activity,setActivity]=useState([]),[palette,setPalette]=useState(false),[activityError,setActivityError]=useState("");
- useEffect(()=>{let alive=true;async function load(){if(!workspace)return;setLoading(true);const [p,c,e,a]=await Promise.all([
+ useEffect(()=>{let alive=true;async function load(){if(!workspace)return;setLoading(true);const [p,c,e,a,m]=await Promise.all([
   supabase.from("projects").select("id,created_at",{count:"exact",head:true}).eq("workspace_id",workspace.id),
   supabase.from("clips").select("id,created_at",{count:"exact",head:true}).eq("workspace_id",workspace.id),
   supabase.from("processing_jobs").select("id",{count:"exact",head:true}).eq("workspace_id",workspace.id).eq("status","completed"),
