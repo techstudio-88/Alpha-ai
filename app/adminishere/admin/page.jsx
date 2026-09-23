@@ -5,7 +5,7 @@ import{supabase}from"../../../lib/supabase";
 
 const TABS=["Overview","Jobs","Users","Workspaces","Access","Audit","Consent","Security"];
 const fmt=x=>x?new Date(x).toLocaleString():"—";
-const csv=v=>"""+String(v??"").replace(/"/g,'""')+""";
+const csv=v=>JSON.stringify(String(v??""));
 function Table({children}){return <div className="adminTableWrap"><table className="adminTable">{children}</table></div>}
 function Pager({page,setPage,total,size=12}){const pages=Math.max(1,Math.ceil(total/size));return <div className="adminPager"><span>Page {Math.min(page+1,pages)} / {pages}</span><button disabled={page<=0} onClick={()=>setPage(Math.max(0,page-1))}>Previous</button><button disabled={page>=pages-1} onClick={()=>setPage(Math.min(pages-1,page+1))}>Next</button></div>}
 function Stat({label,value,icon:Icon,kind=""}){return <div className={"adminStat "+kind}><div><span>{label}</span><strong>{value}</strong></div><Icon size={21}/></div>}
