@@ -1429,3 +1429,39 @@ html[data-theme="dusk"] .primary{
 @media(max-width:1000px){.refPipelineFlow{grid-template-columns:repeat(5,minmax(155px,1fr));gap:16px;overflow-x:auto;padding:50px 8px 35px}.refConnector{display:none}.refPipeline{overflow:hidden}.refStage{min-height:205px}.refPipelineDecor{display:none}.refPipelineFoot{flex-wrap:wrap;padding:0 15px}}
 @media(max-width:600px){.refPipelineFlow{grid-template-columns:repeat(5,155px);overflow-x:auto;justify-content:start}.refStage{min-height:195px;padding:20px}.refPipelineFoot{display:grid;justify-content:start;gap:8px}.premiumEditorDemo .editorStage{height:310px!important}}
 @media(prefers-reduced-motion:reduce){.refPipeline:before,.refStageIcon,.refStageSweep,.connectorGlow,.connectorOrb,.refPipelineDecor,.refPipelineDecor i,.refPipelineFoot i{animation:none!important}}
+
+/* === LANDING VISUAL LOCK: symmetric pipeline + feature mosaic === */
+section.referencePipeline .refTimeline{display:block!important;position:relative!important;width:min(1160px,calc(100% - 48px))!important;max-width:1160px!important;margin:68px auto 0!important;padding:28px 18px 8px!important}
+section.referencePipeline .timelineStages{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;column-gap:26px!important;align-items:start!important;position:relative!important;z-index:3!important}
+section.referencePipeline .timelineStage{display:block!important;position:relative!important;min-width:0!important;text-align:center!important;padding:0 8px 20px!important;visibility:visible!important;opacity:1!important}
+section.referencePipeline .timelineNumber{display:grid!important;visibility:visible!important;opacity:1!important}
+section.referencePipeline .timelineIconWrap{display:grid!important;visibility:visible!important;opacity:1!important}
+section.referencePipeline .timelineIcon{display:grid!important;visibility:visible!important;opacity:1!important}
+section.referencePipeline .timelineTrack{display:block!important;position:absolute!important;left:10%!important;right:10%!important;top:132px!important;height:5px!important}
+section.referencePipeline .timelineFooter{display:flex!important;justify-content:center!important}
+section.featureSection .creativeFeatureWall{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-auto-rows:minmax(250px,auto)!important;gap:18px!important;align-items:stretch!important}
+section.featureSection .creativeTile{grid-column:auto!important;grid-row:auto!important;min-height:0!important;height:100%!important;display:flex!important;flex-direction:column!important}
+section.featureSection .creativeTile.tile1{grid-column:span 2!important;grid-row:span 2!important}
+section.featureSection .creativeTile.tile2{grid-column:3!important;grid-row:1!important}
+section.featureSection .creativeTile.tile3{grid-column:3!important;grid-row:2!important}
+section.featureSection .creativeTile.tile4{grid-column:1!important;grid-row:3!important}
+section.featureSection .creativeTile.tile5{grid-column:2!important;grid-row:3!important}
+section.featureSection .creativeTile.tile6{grid-column:3!important;grid-row:3!important}
+section.featureSection .creativeTile .tileVisual{flex:1 0 150px}
+section.featureSection .creativeTile .tileContent{margin-top:auto}
+section.featureSection .creativeTile .tileSheen{animation:featureSheen 5.5s ease-in-out infinite}
+section.featureSection .creativeTile:nth-child(2) .tileSheen{animation-delay:.8s}
+section.featureSection .creativeTile:nth-child(3) .tileSheen{animation-delay:1.6s}
+section.featureSection .creativeTile:nth-child(4) .tileSheen{animation-delay:2.4s}
+section.featureSection .creativeTile:nth-child(5) .tileSheen{animation-delay:3.2s}
+section.featureSection .creativeTile:nth-child(6) .tileSheen{animation-delay:4s}
+section.featureSection .creativeTile .tileIcon{animation:featureIconFloat 4s ease-in-out infinite}
+section.featureSection .creativeTile:nth-child(2) .tileIcon{animation-delay:.4s}
+section.featureSection .creativeTile:nth-child(3) .tileIcon{animation-delay:.8s}
+section.featureSection .creativeTile:nth-child(4) .tileIcon{animation-delay:1.2s}
+section.featureSection .creativeTile:nth-child(5) .tileIcon{animation-delay:1.6s}
+section.featureSection .creativeTile:nth-child(6) .tileIcon{animation-delay:2s}
+@keyframes featureIconFloat{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-5px) rotate(-2deg)}}
+@keyframes featureSheen{0%,55%,100%{transform:translateX(-130%) skewX(-14deg)}72%{transform:translateX(280%) skewX(-14deg)}}
+@media(max-width:900px){section.featureSection .creativeFeatureWall{grid-template-columns:repeat(2,minmax(0,1fr))!important}section.featureSection .creativeTile.tile1{grid-column:span 2!important;grid-row:auto!important}section.featureSection .creativeTile.tile2,section.featureSection .creativeTile.tile3,section.featureSection .creativeTile.tile4,section.featureSection .creativeTile.tile5,section.featureSection .creativeTile.tile6{grid-column:auto!important;grid-row:auto!important}}
+@media(max-width:600px){section.referencePipeline .refTimeline{width:100%!important;margin-top:40px!important;padding-left:8px!important;padding-right:8px!important}section.referencePipeline .timelineStages{width:900px!important;grid-template-columns:repeat(5,165px)!important}section.featureSection .creativeFeatureWall{grid-template-columns:1fr!important}section.featureSection .creativeTile.tile1{grid-column:1!important}section.featureSection .creativeTile{grid-column:1!important;grid-row:auto!important}}
