@@ -116,6 +116,7 @@ async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedSt
   return {start_seconds:start,end_seconds:end,title:String(parsed.title||"AI edited clip").slice(0,180),reason:String(parsed.reason||"").slice(0,500),action:String(parsed.action||"").slice(0,300)};
 }
 async function patchJob(id,body){return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id},body})}
+async function setStage(job,stageKey,status,progress,error=null){try{await db("processing_stages",{method:"POST",body:{job_id:job.jobId,workspace_id:job.workspaceId,stage_key:stageKey,status,progress:Math.max(0,Math.min(100,Number(progress)||0)),attempt_count:Number(job.retryCount||0)+1,started_at:status==="running"?new Date().toISOString():null,completed_at:status==="completed"?new Date().toISOString():null,heartbeat_at:new Date().toISOString(),error,metadata:{}}}).catch(async()=>{await db("processing_stages",{method:"PATCH",params:{job_id:"eq."+job.jobId,stage_key:"eq."+stageKey},body:{status,progress:Math.max(0,Math.min(100,Number(progress)||0)),heartbeat_at:new Date().toISOString(),completed_at:status==="completed"?new Date().toISOString():null,error}})});await patchJob(job.jobId,{current_stage:stageKey})}catch(e){console.warn("stage checkpoint failed",stageKey,e.message)}}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
 async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download uploaded source: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)})}
 async function downloadRemote(url,out,type="direct_url",opts={}){if(type==="google_drive"&&opts.driveFileId&&opts.driveAccessToken){const r=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(opts.driveFileId)+"?alt=media",{headers:{Authorization:"Bearer "+opts.driveAccessToken}});if(!r.ok)throw new Error("Google Drive download failed: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)});return}if(type==="google_drive"){const m=url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?[^#]*id=)([a-zA-Z0-9_-]+)/i);const id=m?.[1];if(!id)throw new Error("Google Drive link must point to a shared file.");await cmd("gdown",["--id",id,"-O",out,"--fuzzy"]);return}if(type==="dropbox"){const u=new URL(url);u.searchParams.set("dl","1");await cmd("curl",["-L","--fail","--retry","3","-o",out,u.toString()]);return}if(type==="onedrive"){const shareToken=Buffer.from(url).toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");const contentUrl="https://api.onedrive.com/v1.0/shares/u!"+shareToken+"/root/content";await cmd("curl",["-L","--fail","--retry","3","-o",out,contentUrl]);return}if(type==="direct_url"){await cmd("curl",["-L","--fail","--retry","3","-o",out,url]);return}await cmd("yt-dlp",["--no-playlist","--no-warnings","-f","bv*+ba/b","--merge-output-format","mp4","-o",out,url])}
@@ -147,7 +148,7 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
   }catch(e){console.warn("speaker detection fallback:",e.message)}
 }
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),input=path.join(dir,"source.mp4"),audio=path.join(dir,"audio.wav");try{
-  await patchJob(p.jobId,{status:"processing",progress:2});
+  await patchJob(p.jobId,{status:"processing",progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
   let asset=null,assetRows=[];
   if(p.sourceType==="google_drive"&&p.driveFileId&&p.driveAccessToken){
     await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloading"}});
@@ -161,7 +162,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(!asset?.storage_path)throw new Error("Uploaded source has no storage path.");
     await downloadStored(asset.storage_path,input);
   }
-  await patchJob(p.jobId,{progress:20});
+  await setStage(p,"media_inspection","completed",100);await setStage(p,"audio_extraction","running",0);await patchJob(p.jobId,{progress:20,current_stage:"audio_extraction"});
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
   const stream=probe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(probe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
   if(!asset){const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4",storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4",size=await upload(input,storagePath);asset=(await db("media_assets",{method:"POST",body:{workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,name:fileName,storage_path:storagePath,mime_type:"video/mp4",size_bytes:size,duration_seconds:duration,status:"uploaded"}}))[0];await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:fileName.replace(/\.mp4$/,""),duration_seconds:duration,width,height,fps,status:"ready"}})}else{await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{})}
@@ -222,7 +223,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     return;
   }
   await patchJob(p.jobId,{progress:35});
-  await cmd("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",audio]);
+  await cmd("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le",audio]);await setStage(p,"audio_extraction","completed",100);await setStage(p,"transcription","running",0);
   // Free-tier safe transcription: process short audio windows and checkpoint after every window.
   // If Render restarts, recovery resumes from the last saved window instead of starting Whisper again.
   let transcript=null;
@@ -281,15 +282,15 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }
     const completedRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
     const fullText=(completedRows||[]).map(x=>String(x.text||"").trim()).filter(Boolean).join(" ").trim();
-    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed",language:String(detectedLanguage||"auto")}}).catch(()=>{});
+    await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed",language:String(detectedLanguage||"auto")}}).catch(()=>{});await setStage(p,"transcription","completed",100);
   }
   const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const safeDuration=Math.max(0,Number(duration)||0);
   if(!safeDuration)throw new Error("Source video duration could not be determined.");
-  await detectSpeakersWithGemini(input,safeDuration,p.projectId);
-  await db("video_topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
+  await setStage(p,"speaker_detection","running",0);await detectSpeakersWithGemini(input,safeDuration,p.projectId);await setStage(p,"speaker_detection","completed",100);
+  await setStage(p,"topic_segmentation","running",0);await db("video_topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
   const topicWindows=[];
   for(let start=0;start<safeDuration;start+=60){const end=Math.min(safeDuration,start+60);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
@@ -301,7 +302,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     try{candidates=await analyzeVideoWithGemini(input,safeDuration);console.log("Gemini clip candidates",p.jobId,candidates?.length||0)}
     catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
   }
-  if(candidates?.length)candidates=dedupeClipCandidates(candidates);
+  if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
     const count=safeDuration<=45?1:Math.min(12,Math.floor((safeDuration-1)/30)+1);
     candidates=Array.from({length:count},(_,i)=>{
@@ -346,7 +347,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score,start_seconds:start,end_seconds:end,title}});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await patchJob(p.jobId,{status:"completed",progress:100});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){
   console.error("job",p.jobId,e);
   // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
