@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./alpha-interactions.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 
