@@ -1,13 +1,13 @@
 "use client";
-import{useEffect,useState}from"react";
+import{useEffect,useState,useRef}from"react";
 import{Bell,Check,ChevronRight}from"lucide-react";
 
 export default function NotificationCenter({supabase,workspaceId,userId}){
- const[items,setItems]=useState([]),[open,setOpen]=useState(false),[busy,setBusy]=useState(false);
+ const[items,setItems]=useState([]),[open,setOpen]=useState(false),[busy,setBusy]=useState(false); const known=useRef(new Set());
  const load=async()=>{
   if(!supabase||!workspaceId||!userId)return;
   const{data}=await supabase.from("notifications").select("id,title,message,read_at,created_at").eq("workspace_id",workspaceId).eq("user_id",userId).order("created_at",{ascending:false}).limit(25);
-  setItems(data||[]);
+  const next=data||[]; const incoming=next.some(x=>!known.current.has(x.id)); if(incoming&&known.current.size){window.dispatchEvent(new CustomEvent("alpha:notification:new"))} next.forEach(x=>known.current.add(x.id)); setItems(next);
  };
  useEffect(()=>{load();const channel=supabase?.channel("alpha-notifications-"+userId).on("postgres_changes",{event:"*",schema:"public",table:"notifications",filter:"user_id=eq."+userId},load).subscribe();return()=>{if(channel)supabase.removeChannel(channel)}},[supabase,workspaceId,userId]);
  const unread=items.filter(x=>!x.read_at).length;
