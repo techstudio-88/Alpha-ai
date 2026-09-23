@@ -91,7 +91,7 @@ export async function POST(request){
    const{data:target}=await admin.from("control_center_members").select("email").eq("email",email).maybeSingle();if(!target)return Response.json({error:"Admin member not found."},{status:404});
    const{data:authUsers}=await admin.auth.admin.listUsers({page:1,perPage:1000});const targetUser=authUsers?.users?.find(x=>(x.email||"").toLowerCase()===email);
    const owned=(await admin.from("workspaces").select("id,name").eq("owner_id",targetUser?.id||"00000000-0000-0000-0000-000000000000")).data||[];
-   if(owned.length&&!String(body.confirmEmail||"").trim().toLowerCase()===email)return Response.json({error:"Type the owner's email to confirm revocation."},{status:400});
+   if(owned.length&&String(body.confirmEmail||"").trim().toLowerCase()!==email)return Response.json({error:"Type the owner's email to confirm revocation."},{status:400});
    const{error}=await admin.from("control_center_members").update({active:false}).eq("email",email);if(error)throw error;
    await writeAudit(admin,user,"control_center_access_revoked",{email,workspace_owner:owned.length>0});return Response.json({ok:true});
   }
