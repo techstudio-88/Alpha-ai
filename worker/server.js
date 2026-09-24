@@ -387,7 +387,7 @@ app.post("/process",async(req,res)=>{
       const jobId=identity.jobId||req.body?.jobId,workspaceId=identity.workspaceId||req.body?.workspaceId,projectId=identity.projectId||req.body?.projectId;
       job=jobId&&workspaceId&&projectId?await db("processing_jobs",{params:{id:"eq."+jobId,select:"id,workspace_id,project_id,status,lease_until,attempt_count"}}):[];
       if(job?.[0]?.status==="completed")return res.status(200).json({accepted:true,completed:true,jobId});
-      if(job?.[0]?.status==="processing"&&job?.[0]?.lease_until&&new Date(job[0].lease_until)>new Date()&&String(req.body?.jobId)!==String(identity.jobId||""))return res.status(202).json({accepted:true,queued:true,jobId});
+      if(job?.[0]?.status==="processing"&&job?.[0]?.lease_until&&new Date(job[0].lease_until)>new Date())return res.status(202).json({accepted:true,queued:true,jobId});
     }else{
       const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
       job=await authStore.run(bearer,()=>db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}}));
