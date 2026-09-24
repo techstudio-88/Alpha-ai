@@ -2,7 +2,7 @@
 // Landing renders immediately; auth is hydrated in the background.
 import React,{useEffect,useState,useRef}from"react";
 import * as tus from "tus-js-client";
-import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo}from"lucide-react";
+import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo,Images}from"lucide-react";
 import{supabase}from"../lib/supabase";
 import OnboardingWizard from"../components/OnboardingWizard";
 import GoogleDriveBrowser from"../components/GoogleDriveBrowser";
