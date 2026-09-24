@@ -148,7 +148,7 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
     }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
   }catch(e){console.warn("speaker detection fallback:",e.message)}
 }
-async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),input=path.join(dir,"source.mp4"),audio=path.join(dir,"audio.wav");try{
+async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),input=path.join(dir,"source.mp4"),audio=path.join(dir,"audio.wav");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(e=>console.warn("job heartbeat failed:",e.message)),30000);try{
   await patchJob(p.jobId,{status:"processing",progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
   let asset=null,assetRows=[];
   if(p.sourceType==="google_drive"&&p.driveFileId&&p.driveAccessToken){
@@ -352,9 +352,9 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
 }catch(e){
   console.error("job",p.jobId,e);
   // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
-  const retryCount=Math.max(1,Number(p.retryCount||0));
+  const retryCount=Number(p.retryCount||0)+1;
   const terminal=retryCount>=5;
-  await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{fs.rmSync(dir,{recursive:true,force:true})}}
+  await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
@@ -425,30 +425,17 @@ async function resumeQueuedJobs(){
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
   if(activeJobs.size)return;
   try{
-    const [queued,stale]=await Promise.all([
-      db("processing_jobs",{params:{status:"eq.queued",select:"id,status,workspace_id,project_id,payload,created_at,updated_at",order:"created_at.asc",limit:"25"}}),
-      db("processing_jobs",{params:{status:"eq.processing",select:"id,workspace_id,project_id,payload,created_at,updated_at",order:"updated_at.asc",limit:"25"}})
-    ]);
-    const cutoff=Date.now()-600000;
-    const rows=[...(queued||[]),...(stale||[])].filter(row=>row?.status==="queued"||new Date(row?.updated_at||row?.created_at||0).getTime()<cutoff);
-    console.log("job recovery scan found",JSON.stringify({queued:queued?.length||0,processing:stale?.length||0,candidates:rows.length}));
-    const row=[...rows].sort((a,b)=>Number(!!b?.payload?.media_asset_id)-Number(!!a?.payload?.media_asset_id)||String(a.created_at).localeCompare(String(b.created_at)))[0];
-    const payload=row?.payload||{};
-    if(!row)return;
-    console.log("job recovery selected",row.id,row.status,row.progress);
+    const claimed=await db("rpc/claim_processing_job",{method:"POST",body:{p_worker:"media-worker"}}).catch(async()=>null);
+    const row=Array.isArray(claimed)?claimed[0]:null;
+    if(!row?.id){console.log("job recovery found no claimable job");return}
+    const payload=row.payload||{};
     const normalized={...payload,jobId:row.id,workspaceId:row.workspace_id,projectId:row.project_id,sourceId:payload.sourceId||payload.source_id,sourceType:payload.sourceType||payload.source_type,mediaAssetId:payload.mediaAssetId||payload.media_asset_id,driveFileId:payload.driveFileId||payload.drive_file_id,driveAccessToken:payload.driveAccessToken||payload.drive_access_token};
-    const retryCount=Number(row?.payload?.retryCount||0);
-    if(retryCount>=5){
-      await patchJob(row.id,{status:"failed",progress:0,error:"Job exceeded the maximum automatic retry limit (5).",payload:{...payload,retryCount}}).catch(()=>{});
-      console.warn("job recovery permanently failed after retries",row.id);
-      return;
-    }
-    const claimed=await db("processing_jobs",{method:"PATCH",params:{id:"eq."+row.id,select:"id"},body:{status:"processing",progress:Math.max(1,Number(row.progress||1)),error:null,payload:{...payload,retryCount:retryCount+1}}});
-    console.log("job recovery claim result",JSON.stringify(claimed));
-    if(!claimed?.[0]?.id)return;
+    const retryCount=Number(row.attempt_count||0);
+    if(retryCount>=5){await patchJob(row.id,{status:"failed",progress:0,error:"Job exceeded the maximum automatic retry limit (5).",lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
+    await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
-    console.log("resuming queued/stale job",row.id);
-    processJob({...normalized,retryCount:retryCount+1}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
+    console.log("resuming queued/stale job",row.id,row.status,row.progress);
+    processJob({...normalized,retryCount}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
 }
 async function processPublishJobs(){
