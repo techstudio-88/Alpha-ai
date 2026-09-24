@@ -1465,3 +1465,34 @@ section.featureSection .creativeTile:nth-child(6) .tileIcon{animation-delay:2s}
 @keyframes featureSheen{0%,55%,100%{transform:translateX(-130%) skewX(-14deg)}72%{transform:translateX(280%) skewX(-14deg)}}
 @media(max-width:900px){section.featureSection .creativeFeatureWall{grid-template-columns:repeat(2,minmax(0,1fr))!important}section.featureSection .creativeTile.tile1{grid-column:span 2!important;grid-row:auto!important}section.featureSection .creativeTile.tile2,section.featureSection .creativeTile.tile3,section.featureSection .creativeTile.tile4,section.featureSection .creativeTile.tile5,section.featureSection .creativeTile.tile6{grid-column:auto!important;grid-row:auto!important}}
 @media(max-width:600px){section.referencePipeline .refTimeline{width:100%!important;margin-top:40px!important;padding-left:8px!important;padding-right:8px!important}section.referencePipeline .timelineStages{width:900px!important;grid-template-columns:repeat(5,165px)!important}section.featureSection .creativeFeatureWall{grid-template-columns:1fr!important}section.featureSection .creativeTile.tile1{grid-column:1!important}section.featureSection .creativeTile{grid-column:1!important;grid-row:auto!important}}
+
+/* === FEATURE MOSAIC FINAL LIGHT SURFACE === */
+section.featureSection .creativeTile{
+  background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(247,249,255,.98))!important;
+  border:1px solid #e1e5ef!important;
+  border-radius:22px!important;
+  box-shadow:0 16px 38px rgba(55,63,105,.08),inset 0 1px rgba(255,255,255,.9)!important;
+  color:#20263a!important;
+  overflow:hidden!important;
+  transition:transform .45s cubic-bezier(.2,.8,.2,1),box-shadow .45s,border-color .45s!important;
+}
+section.featureSection .creativeTile:hover{
+  transform:translateY(-8px)!important;
+  border-color:#cfd5ea!important;
+  box-shadow:0 28px 60px rgba(76,66,150,.14),0 0 0 1px rgba(111,92,224,.04)!important;
+}
+section.featureSection .tileTop{position:relative;z-index:2}
+section.featureSection .tileIcon{
+  background:linear-gradient(145deg,#f4f0ff,#ebfbff)!important;
+  border:1px solid #e0e3ef!important;
+  box-shadow:0 10px 22px rgba(79,69,143,.09)!important;
+}
+section.featureSection .tileIndex{color:#778096!important}
+section.featureSection .tileVisual{box-shadow:0 14px 28px rgba(45,57,91,.08)!important}
+section.featureSection .tileContent h3{font-size:16px!important}
+section.featureSection .tileContent p{font-size:12px!important}
+section.featureSection .tileMeta{border-top:1px solid #e9ebf2!important;padding-top:12px!important}
+section.featureSection .tileSheen{opacity:.45!important}
+section.referencePipeline .timelineStage{will-change:transform}
+section.referencePipeline .timelineIcon,
+section.referencePipeline .timelineNumber{backdrop-filter:blur(12px)}
