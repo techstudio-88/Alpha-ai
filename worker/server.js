@@ -385,7 +385,9 @@ app.post("/process",async(req,res)=>{
     let job;
     if(identity.mode==="processing-ticket"||identity.mode==="worker-secret"){
       const jobId=identity.jobId||req.body?.jobId,workspaceId=identity.workspaceId||req.body?.workspaceId,projectId=identity.projectId||req.body?.projectId;
-      job=jobId&&workspaceId&&projectId?[{id:jobId,workspace_id:workspaceId,project_id:projectId}]:[];
+      job=jobId&&workspaceId&&projectId?await db("processing_jobs",{params:{id:"eq."+jobId,select:"id,workspace_id,project_id,status,lease_until,attempt_count"}}):[];
+      if(job?.[0]?.status==="completed")return res.status(200).json({accepted:true,completed:true,jobId});
+      if(job?.[0]?.status==="processing"&&job?.[0]?.lease_until&&new Date(job[0].lease_until)>new Date()&&String(req.body?.jobId)!==String(identity.jobId||""))return res.status(202).json({accepted:true,queued:true,jobId});
     }else{
       const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
       job=await authStore.run(bearer,()=>db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}}));
@@ -425,7 +427,7 @@ async function resumeQueuedJobs(){
   if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
   if(activeJobs.size)return;
   try{
-    const claimed=await db("rpc/claim_processing_job",{method:"POST",body:{p_worker:"media-worker"}}).catch(async()=>null);
+    const rpcUrl=SUPA+"/rest/v1/rpc/claim_processing_job";const rpcResponse=await fetch(rpcUrl,{method:"POST",headers:baseAuth,body:JSON.stringify({p_worker:"media-worker"})});const claimed=rpcResponse.ok?await rpcResponse.json().catch(()=>[]):null;
     const row=Array.isArray(claimed)?claimed[0]:null;
     if(!row?.id){console.log("job recovery found no claimable job");return}
     const payload=row.payload||{};
