@@ -149,13 +149,17 @@ self.onmessage = async event => {
   const { url, index } = event.data || {};
 
   try {
-    if (!url) throw new Error("Audio chunk URL is required.");
+    if (!url && !event.data?.wavBuffer) throw new Error("Audio input is required.");
 
     post("progress", { index, value: 5 });
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) throw new Error("Could not download transcription audio.");
-
-    const buffer = await response.arrayBuffer();
+    let buffer;
+    if (event.data?.wavBuffer) {
+      buffer = event.data.wavBuffer;
+    } else {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not download transcription audio.");
+      buffer = await response.arrayBuffer();
+    }
     post("progress", { index, value: 20 });
 
     const { samples, sampleRate } = decodePcm16Wav(buffer);
