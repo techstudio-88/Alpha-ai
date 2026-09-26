@@ -8,6 +8,7 @@ const JOB_LEASE_MS = 120000;
 
 export default function BrowserTranscriber({ workspace }) {
   const running = useRef(false);
+  const retryAfter = useRef(new Map());
   const [state, setState] = useState(null);
 
   useEffect(() => {
@@ -260,6 +261,8 @@ export default function BrowserTranscriber({ workspace }) {
           });
         }
 
+        retryAfter.current.set(job.id, Date.now() + 30000);
+
         await touchJob(job.id, {
           status: "awaiting_transcription",
           current_stage: "transcription",
@@ -288,7 +291,12 @@ export default function BrowserTranscriber({ workspace }) {
         .limit(1);
 
       if (!result.error && result.data?.[0]) {
-        processJob(result.data[0]);
+        const job = result.data[0];
+        const retryAt = retryAfter.current.get(job.id) || 0;
+        if (Date.now() >= retryAt) {
+          retryAfter.current.delete(job.id);
+          processJob(job);
+        }
       }
     }
 
