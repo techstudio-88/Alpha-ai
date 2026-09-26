@@ -286,24 +286,45 @@ async function renameProject(id){if(!editingProjectName.trim())return;const{erro
 async function getProcessingTicket({workspaceId,projectId,sourceId,jobId,mediaAssetId}){const refreshed=await supabase.auth.refreshSession();let session=refreshed.data?.session||null;if(!session?.access_token){const fallback=await supabase.auth.getSession();session=fallback.data?.session||null}if(!session?.access_token)throw new Error("Your sign-in session expired. Please sign in again and retry the upload.");const response=await fetch("/api/import-ticket",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+session.access_token},body:JSON.stringify({workspaceId,projectId,sourceId,jobId,mediaAssetId})});const body=await response.json().catch(()=>({}));if(!response.ok||!body.ticket)throw new Error(body.error||"Could not authorize the processing job.");return body.ticket}
 async function watchProcessingJob(jobId,onProgress){
   const refreshed=await supabase.auth.refreshSession();
-  const session=refreshed.data?.session||null;
-  let token=session?.access_token;
+  let token=refreshed.data?.session?.access_token||null;
+  if(!token){
+    const fallback=await supabase.auth.getSession();
+    token=fallback.data?.session?.access_token||null;
+  }
   if(!token)return{status:"unknown"};
-  for(let attempt=0;attempt<120;attempt++){
+  for(let attempt=0;attempt<480;attempt++){
     try{
-      const response=await fetch("/api/processing-status?jobId="+encodeURIComponent(jobId),{headers:{Authorization:"Bearer "+token},cache:"no-store"});
-      const body=await response.json().catch(()=>({}));
-      if(response.ok&&body.job){
-        const job=body.job;
+      // Read the job directly from Supabase first so the progress UI cannot
+      // get stuck behind a cached/intermediate Next.js response.
+      const direct=await supabase
+        .from("processing_jobs")
+        .select("id,workspace_id,project_id,status,progress,error,updated_at")
+        .eq("id",jobId)
+        .maybeSingle();
+      if(!direct.error&&direct.data){
+        const job=direct.data;
         const p=Math.max(0,Math.min(100,Number(job.progress)||0));
         onProgress(p);
         if(job.status==="completed")return job;
         if(job.status==="failed")return job;
-      }else if(response.status===401){
-        const retry=await supabase.auth.refreshSession();
-        const retryToken=retry.data?.session?.access_token;
-        if(!retryToken)return{status:"auth_expired"};
-        token=retryToken;
+      }else{
+        const response=await fetch("/api/processing-status?jobId="+encodeURIComponent(jobId),{
+          headers:{Authorization:"Bearer "+token,"Cache-Control":"no-cache"},
+          cache:"no-store"
+        });
+        const body=await response.json().catch(()=>({}));
+        if(response.ok&&body.job){
+          const job=body.job;
+          const p=Math.max(0,Math.min(100,Number(job.progress)||0));
+          onProgress(p);
+          if(job.status==="completed")return job;
+          if(job.status==="failed")return job;
+        }else if(response.status===401){
+          const retry=await supabase.auth.refreshSession();
+          const retryToken=retry.data?.session?.access_token;
+          if(!retryToken)return{status:"auth_expired"};
+          token=retryToken;
+        }
       }
     }catch(error){console.warn("processing status poll failed",error)}
     await new Promise(resolve=>setTimeout(resolve,2500));
