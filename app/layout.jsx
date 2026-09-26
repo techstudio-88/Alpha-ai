@@ -4,6 +4,7 @@ import "./tool-suite.css";
 import "./alpha-studio-ui.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
+import StudioEnhancements from "../components/StudioEnhancements";
 
 const SITE_URL = "https://alpha-ai-techstudio7808-4455.vercel.app";
 
