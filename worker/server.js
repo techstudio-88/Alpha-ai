@@ -355,7 +355,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const retryCount=Number(p.retryCount||0)+1;
   const terminal=retryCount>=5;
   await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"}));
+app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
@@ -422,11 +422,14 @@ app.post("/assistant",async(req,res)=>{
   }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
 });
 const activeJobs=new Set();
+let recoveryInFlight=false;
 async function resumeQueuedJobs(){
+  if(recoveryInFlight)return;
+  recoveryInFlight=true;
   console.log("job recovery scan started");
-  if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
-  if(activeJobs.size)return;
   try{
+    if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
+    if(activeJobs.size)return;
     const rpcUrl=SUPA+"/rest/v1/rpc/claim_processing_job";const rpcResponse=await fetch(rpcUrl,{method:"POST",headers:baseAuth,body:JSON.stringify({p_worker:"media-worker"})});const claimed=rpcResponse.ok?await rpcResponse.json().catch(()=>[]):null;
     const row=Array.isArray(claimed)?claimed[0]:null;
     if(!row?.id){console.log("job recovery found no claimable job");return}
@@ -436,9 +439,10 @@ async function resumeQueuedJobs(){
     if(retryCount>=5){await patchJob(row.id,{status:"failed",progress:0,error:"Job exceeded the maximum automatic retry limit (5).",lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
     await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
-    console.log("resuming queued/stale job",row.id,row.status,row.progress);
+    console.log("resuming queued/stale job",row.id,row.status,row.progress,"attempt",retryCount);
     processJob({...normalized,retryCount}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
   }catch(e){console.warn("queued-job recovery failed:",e.message)}
+  finally{recoveryInFlight=false}
 }
 async function processPublishJobs(){
   if(!KEY||!process.env.YOUTUBE_CLIENT_ID||!process.env.YOUTUBE_CLIENT_SECRET)return;
