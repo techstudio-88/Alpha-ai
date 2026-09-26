@@ -91,6 +91,71 @@ async function analyzeTranscriptWithGemini(segments,sourceDuration){
   return all.length?dedupeClipCandidates(all):[];
 }
 
+function generateDeterministicClipCandidates(segments,sourceDuration){
+  if(!Array.isArray(segments)||!segments.length||!sourceDuration)return [];
+  const duration=Math.min(45,Math.max(8,sourceDuration));
+  const step=10;
+  const candidates=[];
+  const hookWords=/\b(here's|here is|the truth|the biggest|most important|you need to|listen|watch this|nobody|everyone|actually|secret|mistake|why|how|what if|the reason|problem|solution)\b/i;
+  const usefulWords=/\b(how|because|tip|tips|learn|lesson|strategy|step|steps|method|example|important|remember|should|avoid|use|build|create|increase|decrease|better|best|worst|mistake)\b/i;
+  const storyWords=/\b(when i|then i|we went|i remember|years ago|story|happened|first|next|finally|after that)\b/i;
+  const ctaWords=/\b(subscribe|follow|comment|share|like|check out|link|download|join|try)\b/i;
+  const questionWords=/\?/;
+  for(let start=0;start<sourceDuration;start+=step){
+    const end=Math.min(sourceDuration,start+duration);
+    if(end-start<8)continue;
+    const rows=segments.filter(s=>s.end>start&&s.start<end);
+    const text=rows.map(s=>String(s.text||"").trim()).filter(Boolean).join(" ");
+    if(!text)continue;
+    const words=text.split(/\s+/).filter(Boolean);
+    const sentenceCount=(text.match(/[.!?]+/g)||[]).length;
+    const density=Math.min(100,Math.round((words.length/Math.max(1,end-start))*30));
+    const hook=Math.min(100,density*0.45+(hookWords.test(text)?38:0)+(text.length>90?10:0));
+    const info=Math.min(100,density*0.6+(usefulWords.test(text)?32:0)+(sentenceCount>=2?10:0));
+    const story=Math.min(100,density*0.35+(storyWords.test(text)?45:0)+(sentenceCount>=3?15:0));
+    const qa=Math.min(100,(questionWords.test(text)?65:0)+(text.includes("answer")?25:0));
+    const cta=Math.min(100,ctaWords.test(text)?75:0);
+    const emotion=Math.min(100,(/[!]/.test(text)?25:0)+(hookWords.test(text)?25:0)+Math.min(50,density*.5));
+    const completeness=Math.min(100,Math.round(Math.min(1,sentenceCount/3)*65+Math.min(1,text.length/500)*35));
+    const shareability=Math.min(100,Math.round(hook*.35+info*.3+emotion*.2+completeness*.15));
+    const score=Math.max(1,Math.min(99,Math.round(hook*.25+info*.2+story*.12+qa*.08+emotion*.12+shareability*.23)));
+    candidates.push({
+      start_seconds:start,
+      end_seconds:end,
+      title:hook>=70?"Strong hook":usefulWords.test(text)?"Useful insight":story>=65?"Story moment":qa>=60?"Question & answer":"Potential highlight",
+      reason:"Transcript signal: strong speech density with "+(hook>=60?"hook-like":"contextual")+" language and "+(completeness>=65?"complete":"developing")+" thought structure.",
+      hook_score:Math.round(hook),
+      emotional_intensity:Math.round(emotion),
+      information_density:Math.round(info),
+      story_completeness:Math.round(completeness),
+      shareability_score:Math.round(shareability),
+      audience_relevance:Math.round(info*.7+hook*.3),
+      retention_signal:Math.round(hook*.5+emotion*.25+completeness*.25),
+      qa_score:Math.round(qa),
+      controversy_score:0,
+      funny_score:0,
+      educational_score:usefulWords.test(text)?Math.round(info):0,
+      story_score:Math.round(story),
+      cta_score:Math.round(cta),
+      quote_score:Math.round(hook*.5+completeness*.5),
+      recommended_duration_seconds:Math.min(45,Math.max(8,end-start)),
+      _score:score
+    });
+  }
+  candidates.sort((a,b)=>b._score-a._score);
+  const selected=[];
+  for(const candidate of candidates){
+    const duplicate=selected.some(existing=>{
+      const overlap=Math.max(0,Math.min(candidate.end_seconds,existing.end_seconds)-Math.max(candidate.start_seconds,existing.start_seconds));
+      const shorter=Math.min(candidate.end_seconds-candidate.start_seconds,existing.end_seconds-existing.start_seconds);
+      return shorter>0&&overlap/shorter>=0.55;
+    });
+    if(!duplicate)selected.push(candidate);
+    if(selected.length>=8)break;
+  }
+  return selected.map(({_score,...candidate})=>candidate);
+}
+
 function dedupeClipCandidates(candidates){
   const sorted=(Array.isArray(candidates)?candidates:[]).slice().sort((a,b)=>{
     const sa=(Number(b.hook_score)||0)+(Number(b.information_density)||0)+(Number(b.story_completeness)||0)+(Number(b.shareability_score)||0);
@@ -306,14 +371,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
-    const count=safeDuration<=45?1:Math.min(12,Math.floor((safeDuration-1)/30)+1);
-    candidates=Array.from({length:count},(_,i)=>{
-      const start=Math.min(Math.max(0,safeDuration-45),i*30);
-      const end=Math.min(safeDuration,start+Math.min(45,safeDuration));
-      const words=segments.filter(s=>s.end>start&&s.start<end).reduce((n,s)=>n+s.text.split(/\s+/).filter(Boolean).length,0);
-      const score=Math.min(99,Math.round(55+Math.min(40,words/2)));
-      return {start_seconds:start,end_seconds:end,title:"AI moment "+Math.round(start)+"s",reason:"Speech density and continuous context",hook_score:score,emotional_intensity:Math.max(0,score-3),information_density:score,story_completeness:score,shareability_score:Math.max(0,score-1)};
-    });
+    candidates=generateDeterministicClipCandidates(segments,safeDuration);
+    console.log("Deterministic transcript clip candidates",p.jobId,candidates.length);
   }
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
