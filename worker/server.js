@@ -35,41 +35,6 @@ async function renderEditedClip(input,out,start,end,opts={}){
   const actual=Number(probe.format?.duration||0);
   if(!actual||actual>requested/Math.max(.5,speed)+.75)throw new Error("Rendered edit duration exceeded requested range.");
 }
-let transcriberPromise=null;
-let transcriptionQueue=Promise.resolve();
-async function getTranscriber(){
-  const {pipeline}=await import("@huggingface/transformers");
-  if(!transcriberPromise){
-    const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
-    transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"}).catch(error=>{
-      transcriberPromise=null;
-      throw error;
-    });
-  }
-  return transcriberPromise;
-}
-async function withTranscriptionLock(task){
-  const previous=transcriptionQueue;
-  let release;
-  transcriptionQueue=new Promise(resolve=>{release=resolve});
-  await previous;
-  try{return await task()}finally{release()}
-}
-async function transcribeAudio(file){
-  return withTranscriptionLock(async()=>{
-    const wavefile=await import("wavefile");
-    const {WaveFile}=wavefile.default||wavefile;
-    const transcriber=await getTranscriber();
-    const wav=new WaveFile(fs.readFileSync(file));
-    wav.toBitDepth("32f");wav.toSampleRate(16000);
-    let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-    const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
-    return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
-      const t=x.timestamp||[0,0];
-      return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
-    }).filter(x=>x.text&&x.end>x.start);
-  });
-}
 async function analyzeVideoWithGemini(filePath,sourceDuration){
   if(!GEMINI_API_KEY)return null;
   const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
