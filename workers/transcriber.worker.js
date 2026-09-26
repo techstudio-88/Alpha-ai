@@ -7,67 +7,90 @@ function post(type, payload = {}) {
   self.postMessage({ type, ...payload });
 }
 
+function getPreferredModel(device) {
+  if (device !== "webgpu") return "onnx-community/whisper-tiny";
+
+  const memory = Number(self.navigator?.deviceMemory || 0);
+  const cores = Number(self.navigator?.hardwareConcurrency || 0);
+  const capable = memory >= 6 || cores >= 8;
+
+  return capable
+    ? "onnx-community/whisper-base"
+    : "onnx-community/whisper-tiny";
+}
+
+function loadModel(model, device) {
+  return pipeline(
+    "automatic-speech-recognition",
+    model,
+    {
+      dtype: "q4",
+      device,
+      progress_callback: info => {
+        if (info?.status === "progress_total") {
+          post("model-progress", {
+            value: Math.max(0, Math.min(100, Number(info.progress) || 0)),
+            device,
+            model
+          });
+        } else if (info?.status === "ready") {
+          post("model-ready", { device, model });
+        }
+      }
+    }
+  );
+}
+
 async function getTranscriber() {
   if (transcriberPromise) return transcriberPromise;
 
   const canUseWebGPU = Boolean(self.navigator?.gpu);
   const preferredDevice = canUseWebGPU ? "webgpu" : "wasm";
+  const preferredModel = getPreferredModel(preferredDevice);
 
-  transcriberPromise = pipeline(
-    "automatic-speech-recognition",
-    "onnx-community/whisper-tiny",
-    {
-      dtype: "q4",
-      device: preferredDevice,
-      progress_callback: info => {
-        if (info?.status === "progress_total") {
-          post("model-progress", {
-            value: Math.max(0, Math.min(100, Number(info.progress) || 0)),
-            device: preferredDevice
-          });
-        } else if (info?.status === "ready") {
-          post("model-ready", { device: preferredDevice });
+  transcriberPromise = loadModel(preferredModel, preferredDevice)
+    .then(pipe => {
+      transcriberDevice = preferredDevice;
+      return pipe;
+    })
+    .catch(async firstError => {
+      // A capable GPU gets the more accurate Base model first. If memory,
+      // driver, or operator support prevents it from loading, use Tiny.
+      if (preferredModel !== "onnx-community/whisper-tiny") {
+        post("status", {
+          message: "Whisper Base could not load; switching to the lighter model."
+        });
+
+        try {
+          const tiny = await loadModel(
+            "onnx-community/whisper-tiny",
+            preferredDevice
+          );
+          transcriberDevice = preferredDevice;
+          return tiny;
+        } catch {
+          // Continue to the universal WASM fallback below.
         }
       }
-    }
-  ).then(pipe => {
-    transcriberDevice = preferredDevice;
-    return pipe;
-  }).catch(async error => {
-    // WebGPU is not available/reliable on every browser. Retry once on
-    // WASM/CPU before reporting a hard transcription failure.
-    if (preferredDevice === "webgpu") {
-      post("status", { message: "GPU transcription unavailable; switching to CPU mode." });
-      transcriberPromise = pipeline(
-        "automatic-speech-recognition",
-        "onnx-community/whisper-tiny",
-        {
-          dtype: "q4",
-          device: "wasm",
-          progress_callback: info => {
-            if (info?.status === "progress_total") {
-              post("model-progress", {
-                value: Math.max(0, Math.min(100, Number(info.progress) || 0)),
-                device: "wasm"
-              });
-            } else if (info?.status === "ready") {
-              post("model-ready", { device: "wasm" });
-            }
-          }
-        }
-      ).then(pipe => {
+
+      if (preferredDevice === "webgpu") {
+        post("status", {
+          message: "GPU transcription unavailable; switching to CPU mode."
+        });
+        const tinyWasm = await loadModel(
+          "onnx-community/whisper-tiny",
+          "wasm"
+        );
         transcriberDevice = "wasm";
-        return pipe;
-      });
-      return transcriberPromise;
-    }
-    transcriberPromise = null;
-    throw error;
-  });
+        return tinyWasm;
+      }
+
+      transcriberPromise = null;
+      throw firstError;
+    });
 
   return transcriberPromise;
 }
-
 function decodePcm16Wav(buffer) {
   const view = new DataView(buffer);
   if (
