@@ -1,5 +1,6 @@
 import{createClient}from"@supabase/supabase-js";
 export const runtime="nodejs";
+export const dynamic="force-dynamic";
 export async function GET(request){
   try{
     const auth=request.headers.get("authorization")||"";
@@ -21,7 +22,10 @@ export async function GET(request){
     const{data:member,error:memberError}=await admin.from("workspace_members").select("workspace_id").eq("workspace_id",job.workspace_id).eq("user_id",user.id).maybeSingle();
     if(memberError)return Response.json({error:memberError.message},{status:500});
     if(!member)return Response.json({error:"Workspace access denied."},{status:403});
-    return Response.json({job});
+    return new Response(JSON.stringify({job}),{
+      status:200,
+      headers:{"Content-Type":"application/json","Cache-Control":"no-store, no-cache, must-revalidate, proxy-revalidate"}
+    });
   }catch(error){
     console.error("processing-status",error);
     return Response.json({error:error?.message||"Unable to read processing status."},{status:500});
