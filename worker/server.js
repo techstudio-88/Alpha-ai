@@ -36,23 +36,39 @@ async function renderEditedClip(input,out,start,end,opts={}){
   if(!actual||actual>requested/Math.max(.5,speed)+.75)throw new Error("Rendered edit duration exceeded requested range.");
 }
 let transcriberPromise=null;
-async function transcribeAudio(file){
+let transcriptionQueue=Promise.resolve();
+async function getTranscriber(){
   const {pipeline}=await import("@huggingface/transformers");
-  const wavefile=await import("wavefile");
-  const {WaveFile}=wavefile.default||wavefile;
   if(!transcriberPromise){
     const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
-    transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
+    transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"}).catch(error=>{
+      transcriberPromise=null;
+      throw error;
+    });
   }
-  const transcriber=await transcriberPromise;
-  const wav=new WaveFile(fs.readFileSync(file));
-  wav.toBitDepth("32f");wav.toSampleRate(16000);
-  let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
-  const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
-  return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
-    const t=x.timestamp||[0,0];
-    return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
-  }).filter(x=>x.text&&x.end>x.start);
+  return transcriberPromise;
+}
+async function withTranscriptionLock(task){
+  const previous=transcriptionQueue;
+  let release;
+  transcriptionQueue=new Promise(resolve=>{release=resolve});
+  await previous;
+  try{return await task()}finally{release()}
+}
+async function transcribeAudio(file){
+  return withTranscriptionLock(async()=>{
+    const wavefile=await import("wavefile");
+    const {WaveFile}=wavefile.default||wavefile;
+    const transcriber=await getTranscriber();
+    const wav=new WaveFile(fs.readFileSync(file));
+    wav.toBitDepth("32f");wav.toSampleRate(16000);
+    let samples=wav.getSamples();if(Array.isArray(samples))samples=samples[0];
+    const result=await transcriber(samples,{chunk_length_s:15,stride_length_s:3,return_timestamps:"word"});
+    return (Array.isArray(result?.chunks)?result.chunks:[]).map(x=>{
+      const t=x.timestamp||[0,0];
+      return {start:Number(t[0]||0),end:Number(t[1]||t[0]||0),text:String(x.text||"").trim()};
+    }).filter(x=>x.text&&x.end>x.start);
+  });
 }
 async function analyzeVideoWithGemini(filePath,sourceDuration){
   if(!GEMINI_API_KEY)return null;
@@ -254,15 +270,11 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }
   if(nextChunk<chunkCount){
     await patchJob(p.jobId,{status:"transcribing",progress:43,payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}});
-    const {pipeline}=await import("@huggingface/transformers");
+    let detectedLanguage=String(p.detectedLanguage||"").trim();
+    await withTranscriptionLock(async()=>{
+    const transcriber=await getTranscriber();
     const wavefile=await import("wavefile");
     const {WaveFile}=wavefile.default||wavefile;
-    if(!transcriberPromise){
-      const model=(process.env.WHISPER_MODEL&&process.env.WHISPER_MODEL.includes("/"))?process.env.WHISPER_MODEL:"onnx-community/whisper-tiny";
-      transcriberPromise=pipeline("automatic-speech-recognition",model,{dtype:"q4"});
-    }
-    const transcriber=await transcriberPromise;
-    let detectedLanguage=String(p.detectedLanguage||"").trim();
     for(let i=nextChunk;i<chunkCount;i++){
       const meta=transcriptionChunks[i];
       if(!meta)throw new Error("Missing transcription chunk "+i);
@@ -281,6 +293,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       if(rows.length)await db("transcript_segments",{method:"POST",body:rows});
       await patchJob(p.jobId,{status:"transcribing",progress:43+Math.round(((i+1)/chunkCount)*18),payload:{...p,transcriptId:transcript.id,transcribeChunk:i+1,transcriptionChunks}});
     }
+    });
     const completedRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
     const fullText=(completedRows||[]).map(x=>String(x.text||"").trim()).filter(Boolean).join(" ").trim();
     await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:fullText,status:"completed",language:String(detectedLanguage||"auto")}}).catch(()=>{});await setStage(p,"transcription","completed",100);
