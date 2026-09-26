@@ -201,16 +201,18 @@ function AuthGate({ onClose, onAuthed }) {
   );
 }
 
-function ProcessingView({ status, progress }) {
+function ProcessingView({ status }) {
   return (
     <div className="alphaToolProcessing">
       <div className="alphaToolProcessingIcon"><Loader2 size={30} className="alphaToolSpin"/></div>
       <h2>Don’t close this site</h2>
       <p className="alphaToolProcessingLead">Alpha.ai is still processing your video. Keep this tab open until the result is ready.</p>
       <div className="alphaToolStatusList">
-        <div className="alphaToolStatus active"><i/><span>{status}</span><b>{progress}%</b></div>
-        <div className="alphaToolStatus"><i/><span>Working through the next step</span></div>
-        <div className="alphaToolStatus"><i/><span>Checking the result before it appears</span></div>
+        <div className="alphaToolStatus active"><i/><span>{status}</span></div>
+        <div className="alphaToolStatus"><i/><span>Still working through the source</span></div>
+        <div className="alphaToolStatus"><i/><span>Checking the next section</span></div>
+        <div className="alphaToolStatus"><i/><span>Making the result consistent</span></div>
+        <div className="alphaToolStatus"><i/><span>Finishing the processing steps</span></div>
       </div>
     </div>
   );
@@ -437,7 +439,7 @@ export default function ToolSuite({ slug }) {
           </div>
         )}
 
-        {busy && <ProcessingView status={status} progress={progress} />}
+        {busy && <ProcessingView status={status} />}
 
         {error && !busy && <div className="alphaToolError"><b>Processing stopped</b><span>{error}</span><button onClick={()=>setError("")}>Try again</button></div>}
 
