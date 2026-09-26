@@ -227,21 +227,19 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       }
     }
     const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""};
-    const existingVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,version:"eq.1",select:"id,render_status,storage_path,edit_data",order:"created_at.desc",limit:"1"}}))[0]||null;
-    if(existingVersion?.render_status==="ready"&&existingVersion.storage_path){
+    const latestVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,select:"id,version,render_status,storage_path,edit_data",order:"version.desc",limit:"1"}}))[0]||null;
+    if(latestVersion?.render_status==="ready"&&latestVersion?.edit_data?.render_job_id===p.jobId&&latestVersion.storage_path){
       await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
-      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
-      console.log("editor render reused existing version",p.jobId,clip.id);
+      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:latestVersion.version}});
+      console.log("editor render reused existing job version",p.jobId,clip.id,latestVersion.version);
       return;
     }
+    const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
+    editData.render_job_id=p.jobId;
     await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath});
-    const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
+    const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
-    if(existingVersion){
-      await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{render_status:"ready",storage_path:storagePath,edit_data:editData}});
-    }else{
-      await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:editData}});
-    }
+    await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:nextVersion,render_status:"ready",storage_path:storagePath,edit_data:editData}});
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
