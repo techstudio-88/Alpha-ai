@@ -17,5 +17,3 @@ services:
         sync: false
       - key: MEDIA_WORKER_SECRET
         generateValue: true
-      - key: WHISPER_MODEL
-        value: tiny
