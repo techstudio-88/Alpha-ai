@@ -172,13 +172,25 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }else{
     assetRows=await db("media_assets",{params:{id:"eq."+p.mediaAssetId,select:"*"}});
     asset=assetRows[0];
-    if(!asset?.storage_path)throw new Error("Uploaded source has no storage path.");
-    await downloadStored(asset.storage_path,input);
+    if(asset?.storage_path){
+      await downloadStored(asset.storage_path,input);
+    }else{
+      const sources=await db("project_sources",{params:{project_id:"eq."+p.projectId,select:"source_type,source_url,external_id,metadata,created_at",order:"created_at.desc",limit:"5"}}).catch(()=>[]);
+      const source=sources.find(x=>x.source_url||x.external_id);
+      if(!source?.source_url)throw new Error("Source media is not persisted and no re-download source is available.");
+      const meta=source.metadata||{};
+      await downloadRemote(source.source_url,input,source.source_type,{
+        googlePhotosBaseUrl:meta.base_url||meta.google_photos_base_url,
+        googlePhotosAccessToken:meta.access_token,
+        driveFileId:meta.file_id||source.external_id,
+        driveAccessToken:meta.access_token
+      });
+    }
   }
   await setStage(p,"media_inspection","completed",100);await setStage(p,"audio_extraction","running",0);await patchJob(p.jobId,{progress:20,current_stage:"audio_extraction"});
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
   const stream=probe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(probe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
-  if(!asset){const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4",storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4",size=await upload(input,storagePath);asset=(await db("media_assets",{method:"POST",body:{workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,name:fileName,storage_path:storagePath,mime_type:"video/mp4",size_bytes:size,duration_seconds:duration,status:"uploaded"}}))[0];await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:fileName.replace(/\.mp4$/,""),duration_seconds:duration,width,height,fps,status:"ready"}})}else{await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{})}
+  if(!asset){const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4",size=fs.statSync(input).size,remoteSource=Boolean(p.url||p.sourceType==="google_drive"||p.sourceType==="google_photos"),persistSource=!remoteSource||size<=45*1024*1024;let storagePath=null;if(persistSource){storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4";await upload(input,storagePath)}else{console.log("large source kept ephemeral",p.jobId,size,p.sourceType)}asset=(await db("media_assets",{method:"POST",body:{workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,name:fileName,storage_path:storagePath,mime_type:"video/mp4",size_bytes:size,duration_seconds:duration,status:"uploaded",metadata:{source_persisted:persistSource,source_type:p.sourceType||null}}}))[0];await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:fileName.replace(/\.mp4$/,""),duration_seconds:duration,width,height,fps,status:"ready"}})}else{await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{})}
   if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
   if(p.operation==="render_edit"){
     let start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
