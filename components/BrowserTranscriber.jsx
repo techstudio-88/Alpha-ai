@@ -226,6 +226,21 @@ export default function BrowserTranscriber({ workspace }) {
             .remove([chunk.storagePath])
             .catch(() => {});
 
+          if (completed) {
+            const stageUpdate = await supabase
+              .from("processing_stages")
+              .update({
+                status: "completed",
+                progress: 100,
+                completed_at: new Date().toISOString(),
+                heartbeat_at: new Date().toISOString(),
+                error: null
+              })
+              .eq("job_id", job.id)
+              .eq("stage_key", "transcription");
+            if (stageUpdate.error) throw stageUpdate.error;
+          }
+
           await touchJob(job.id, {
             status: completed ? "queued" : "transcribing",
             progress: completed
