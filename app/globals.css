@@ -1741,3 +1741,33 @@ section.referencePipeline .timelineNumber{backdrop-filter:blur(12px)}
 @media(prefers-reduced-motion:reduce){
   .landingNav,.landingNav::before,.landingNav::after,.landingNav .navCta.primary{animation:none!important}
 }
+
+
+/* Clip Library preview — responsive watch/download surface */
+.clipPreviewModal{width:100%;padding:16px;display:grid;place-items:center;overflow:auto}
+.previewModalCard{width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:18px;border:1px solid #dfe3ee;border-radius:24px;background:#fff;color:#171923;box-shadow:0 30px 90px #10142635;display:flex;flex-direction:column;overflow:hidden}
+.previewModalHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:2px 42px 12px 2px}
+.previewModalHeader h3{margin:5px 0 0;font-size:18px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.previewModalHeader .close{right:12px;top:8px;color:#4b5366;width:38px;height:38px;border-radius:12px}
+.previewModalHeader .close:hover{background:#f1f3f8;color:#111}
+.previewModalVideo{width:100%;height:min(68vh,700px);min-height:280px;border-radius:18px;background:#090b10;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.previewModalVideo video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+.previewModalToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px 4px}
+.previewMeta{font-size:12px;color:#687086}
+.previewActions{display:flex;gap:8px;align-items:center}
+.previewModalNav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;margin-top:8px;padding-top:10px;border-top:1px solid #eceef4}
+.previewModalNav button:last-child{justify-self:end}
+.previewModalNav b{font-size:12px;color:#626b7d}
+.previewModalCard .btn{border-color:#d9deea;background:#fff;color:#202534}
+.previewModalCard .btn.primary{border-color:transparent;color:#fff}
+@media(max-width:700px){
+  .clipPreviewModal{padding:8px}
+  .previewModalCard{width:calc(100vw - 16px);max-height:calc(100vh - 16px);padding:12px;border-radius:18px}
+  .previewModalVideo{height:min(62vh,620px);min-height:220px;border-radius:14px}
+  .previewModalToolbar{align-items:flex-start;flex-direction:column}
+  .previewActions{width:100%}
+  .previewActions .btn{flex:1;justify-content:center}
+  .previewModalNav{grid-template-columns:1fr 1fr}
+  .previewModalNav b{display:none}
+  .previewModalNav button:last-child{justify-self:end}
+}
