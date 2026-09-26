@@ -3,10 +3,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certi
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js transcribe.mjs /app/
+COPY server.js transcribe.mjs warmup-whisper.mjs /app/
+RUN node /app/warmup-whisper.mjs
 RUN test -f /app/transcribe.mjs
 ENV PORT=8080
 ENV WHISPER_MODEL=onnx-community/whisper-tiny
-ENV HF_HOME=/tmp/huggingface
+ENV HF_HOME=/root/.cache/huggingface\nENV TRANSFORMERS_CACHE=/root/.cache/huggingface\nENV HF_HUB_DISABLE_TELEMETRY=1
 EXPOSE 8080
 CMD ["npm","start"]
