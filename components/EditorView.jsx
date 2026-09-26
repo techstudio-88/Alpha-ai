@@ -5,8 +5,8 @@ import {Activity,ChevronRight,Clock,Film,Fullscreen,Keyboard,Maximize2,Pause,Pla
 
 function LiveWaveform({videoRef}){const canvasRef=useRef(null);useEffect(()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;let ctx,analyser,source,raf;try{const AudioContext=window.AudioContext||window.webkitAudioContext;const ac=new AudioContext();analyser=ac.createAnalyser();analyser.fftSize=128;source=ac.createMediaElementSource(v);source.connect(analyser);analyser.connect(ac.destination);const draw=()=>{const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.beginPath();for(let i=0;i<data.length;i++){const x=i/(data.length-1)*c.width,y=c.height/2+(data[i]-128)/128*c.height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle="#7c5cff";ctx.lineWidth=2;ctx.stroke();raf=requestAnimationFrame(draw)};ctx=c.getContext("2d");draw();return()=>{cancelAnimationFrame(raf);source?.disconnect();analyser?.disconnect();ac.close().catch(()=>{})}}catch{}},[videoRef]);return <canvas className="editorWaveform" ref={canvasRef} width="900" height="72" aria-label="Live audio waveform"/>}
 
-export default function EditorView({projects,supabase,onUpload}){
-  const [selectedId,setSelectedId]=useState(projects[0]?.id||"");
+export default function EditorView({projects,supabase,onUpload,initialClip}){
+  const [selectedId,setSelectedId]=useState(initialClip?.project_id||projects[0]?.id||"");
   const [asset,setAsset]=useState(null);
   const [sourceUrl,setSourceUrl]=useState("");
   const [loading,setLoading]=useState(false);
@@ -83,7 +83,7 @@ export default function EditorView({projects,supabase,onUpload}){
       if(cancelled)return;
       if(assetError){setError(assetError.message);setLoading(false);return}
       if(!data?.storage_path){setError("This project has no uploaded media ready for editing.");setLoading(false);return}
-      setAsset(data);
+      setAsset(data);\n      if(initialClip?.project_id===project.id){const clipStart=Math.max(0,Number(initialClip.start_seconds)||0);const clipEnd=Math.max(clipStart,Number(initialClip.end_seconds)||0);setInPoint(Math.min(clipStart,Number(data.duration_seconds)||clipStart));if(clipEnd>clipStart)setOutPoint(Math.min(clipEnd,Number(data.duration_seconds)||clipEnd));}
       const {data:transcript}=await supabase.from("transcripts").select("id,language,status,created_at").eq("media_asset_id",data.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(transcript?.id){
         const {data:rows}=await supabase.from("transcript_segments").select("id,start_ms,end_ms,text,speaker").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
@@ -119,7 +119,7 @@ export default function EditorView({projects,supabase,onUpload}){
     }
     load();
     return()=>{cancelled=true};
-  },[project?.id,supabase]);
+  },[project?.id,supabase,initialClip?.id]);
 
   useEffect(()=>{
     const v=videoRef.current;if(!v)return;
@@ -197,7 +197,7 @@ export default function EditorView({projects,supabase,onUpload}){
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
-      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,effect,transition,aiPrompt})});
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,clipId:initialClip?.id||null,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,effect,transition,aiPrompt})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Could not start render.");
       const jobId=result.jobId;
