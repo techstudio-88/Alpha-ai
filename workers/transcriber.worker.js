@@ -12,11 +12,10 @@ function getPreferredModel(device) {
 
   const memory = Number(self.navigator?.deviceMemory || 0);
   const cores = Number(self.navigator?.hardwareConcurrency || 0);
-  const capable = memory >= 6 || cores >= 8;
-
-  return capable
-    ? "onnx-community/whisper-base_timestamped"
-    : "onnx-community/whisper-tiny_timestamped";
+  // Keep production transcription predictable and fast. The Tiny model is
+  // substantially lighter to download/infer and is the browser-safe baseline;
+  // WebGPU still accelerates it when available.
+  return "onnx-community/whisper-tiny_timestamped";
 }
 
 function loadModel(model, device) {
