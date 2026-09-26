@@ -1,1 +1,1 @@
-{"name":"alpha-ai-media-worker","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{"express":"5.1.0","@huggingface/transformers":"^3.7.2","wavefile":"^11.0.0","@google/genai":"^1.27.0"}}
+{"name":"alpha-ai-media-worker","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{"express":"5.1.0","wavefile":"^11.0.0","@google/genai":"^1.27.0"}}
