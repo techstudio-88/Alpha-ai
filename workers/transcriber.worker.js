@@ -8,15 +8,15 @@ function post(type, payload = {}) {
 }
 
 function getPreferredModel(device) {
-  if (device !== "webgpu") return "onnx-community/whisper-tiny";
+  if (device !== "webgpu") return "onnx-community/whisper-tiny_timestamped";
 
   const memory = Number(self.navigator?.deviceMemory || 0);
   const cores = Number(self.navigator?.hardwareConcurrency || 0);
   const capable = memory >= 6 || cores >= 8;
 
   return capable
-    ? "onnx-community/whisper-base"
-    : "onnx-community/whisper-tiny";
+    ? "onnx-community/whisper-base_timestamped"
+    : "onnx-community/whisper-tiny_timestamped";
 }
 
 function loadModel(model, device) {
@@ -56,14 +56,14 @@ async function getTranscriber() {
     .catch(async firstError => {
       // A capable GPU gets the more accurate Base model first. If memory,
       // driver, or operator support prevents it from loading, use Tiny.
-      if (preferredModel !== "onnx-community/whisper-tiny") {
+      if (preferredModel !== "onnx-community/whisper-tiny_timestamped") {
         post("status", {
           message: "Whisper Base could not load; switching to the lighter model."
         });
 
         try {
           const tiny = await loadModel(
-            "onnx-community/whisper-tiny",
+            "onnx-community/whisper-tiny_timestamped",
             preferredDevice
           );
           transcriberDevice = preferredDevice;
@@ -78,7 +78,7 @@ async function getTranscriber() {
           message: "GPU transcription unavailable; switching to CPU mode."
         });
         const tinyWasm = await loadModel(
-          "onnx-community/whisper-tiny",
+          "onnx-community/whisper-tiny_timestamped",
           "wasm"
         );
         transcriberDevice = "wasm";
