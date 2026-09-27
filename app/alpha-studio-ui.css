@@ -447,3 +447,277 @@ html[data-theme="light"] .selectedCard:after{
 .authPanel form input{width:100%;margin-bottom:var(--az-space-3);background:var(--az-surface);border:1px solid var(--az-border);border-radius:var(--az-radius-sm);padding:10px 14px;color:var(--az-text-primary)}.authPanel form input:focus{outline:none;border-color:var(--az-violet-500);box-shadow:0 0 0 3px rgba(124,58,237,.14)}
 .authPanel .btn.primary.full{width:100%;justify-content:center;margin-top:var(--az-space-2)}.authPanel .forgotBtn{background:none;border:none;color:var(--az-text-muted);font-size:13px;margin-top:var(--az-space-2)}.authPanel .forgotBtn:hover{color:var(--az-violet-600)}
 .authPanel .message{background:var(--az-danger-bg);color:var(--az-danger);border-radius:var(--az-radius-sm);padding:var(--az-space-2) var(--az-space-3);margin-top:var(--az-space-3);font-size:13px}.authSwitch{color:var(--az-text-muted);font-size:13px;margin-top:var(--az-space-4)}.authSwitch button{background:none;border:none;color:var(--az-violet-600);font-weight:var(--az-fw-semibold)}.legal{color:var(--az-text-muted);font-size:11px;margin-top:var(--az-space-4)}
+\n
+/* ============================================================
+   PHASE L — AUTHENTICATED WORKSPACE POLISH
+   Real Alpha.ai surfaces: dashboard, projects, clips, editor,
+   calendar, assistant, templates, settings and upload flows.
+   ============================================================ */
+html[data-theme="light"] .appShell{
+  --alpha-panel:rgba(255,255,255,.92);
+  --alpha-panel-soft:#f8f9fd;
+  --alpha-border:#e3e7f0;
+  --alpha-text:#182033;
+  --alpha-muted-text:#718097;
+}
+html[data-theme="light"] .appShell .main{
+  color:var(--alpha-text)!important;
+}
+html[data-theme="light"] .appShell .top,
+html[data-theme="light"] .appShell .pageHeader,
+html[data-theme="light"] .appShell .sectionHeader{
+  margin-bottom:20px;
+}
+html[data-theme="light"] .appShell h2,
+html[data-theme="light"] .appShell h3,
+html[data-theme="light"] .appShell h4{
+  color:var(--alpha-text)!important;
+  letter-spacing:-.025em;
+}
+html[data-theme="light"] .appShell .muted,
+html[data-theme="light"] .appShell .subtle,
+html[data-theme="light"] .appShell small{
+  color:var(--alpha-muted-text);
+}
+html[data-theme="light"] .appShell .dashboardV2,
+html[data-theme="light"] .appShell .workspaceFeaturePage,
+html[data-theme="light"] .appShell .assistantPage{
+  animation:alphaWorkspaceIn .42s cubic-bezier(.2,.8,.2,1);
+}
+html[data-theme="light"] .appShell .dashboardV2 > *,
+html[data-theme="light"] .appShell .workspaceFeaturePage > *,
+html[data-theme="light"] .appShell .assistantPage > *{
+  animation:alphaChildIn .45s cubic-bezier(.2,.8,.2,1) both;
+}
+html[data-theme="light"] .appShell .dashboardV2 > *:nth-child(2),
+html[data-theme="light"] .appShell .workspaceFeaturePage > *:nth-child(2),
+html[data-theme="light"] .appShell .assistantPage > *:nth-child(2){animation-delay:.04s}
+html[data-theme="light"] .appShell .dashboardV2 > *:nth-child(3),
+html[data-theme="light"] .appShell .workspaceFeaturePage > *:nth-child(3),
+html[data-theme="light"] .appShell .assistantPage > *:nth-child(3){animation-delay:.08s}
+
+html[data-theme="light"] .appShell .metric,
+html[data-theme="light"] .appShell .metricTop,
+html[data-theme="light"] .appShell .metricCard{
+  position:relative;
+}
+html[data-theme="light"] .appShell .metric:after,
+html[data-theme="light"] .appShell .metricCard:after{
+  content:"";
+  position:absolute;
+  inset:auto 14px 0;
+  height:2px;
+  border-radius:99px;
+  background:linear-gradient(90deg,#7c3aed,#4f7cf7,#06b6d4);
+  opacity:.55;
+  transform:scaleX(.18);
+  transform-origin:left;
+  transition:transform .35s ease;
+}
+html[data-theme="light"] .appShell .metric:hover:after,
+html[data-theme="light"] .appShell .metricCard:hover:after{transform:scaleX(1)}
+
+html[data-theme="light"] .appShell .projectCard,
+html[data-theme="light"] .appShell .clipCard,
+html[data-theme="light"] .appShell .mediaCard,
+html[data-theme="light"] .appShell .templateCard{
+  overflow:hidden!important;
+}
+html[data-theme="light"] .appShell .projectCard:before,
+html[data-theme="light"] .appShell .clipCard:before,
+html[data-theme="light"] .appShell .mediaCard:before,
+html[data-theme="light"] .appShell .templateCard:before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:linear-gradient(120deg,rgba(124,58,237,.035),transparent 35%,rgba(6,182,212,.025));
+}
+html[data-theme="light"] .appShell .projectCard img,
+html[data-theme="light"] .appShell .clipCard img,
+html[data-theme="light"] .appShell .mediaCard img{
+  transition:transform .45s cubic-bezier(.2,.8,.2,1),filter .45s;
+}
+html[data-theme="light"] .appShell .projectCard:hover img,
+html[data-theme="light"] .appShell .clipCard:hover img,
+html[data-theme="light"] .appShell .mediaCard:hover img{
+  transform:scale(1.035);
+  filter:saturate(1.05);
+}
+
+html[data-theme="light"] .appShell .sourceTabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:6px;
+  background:#f5f7fb;
+  border:1px solid #e4e8f0;
+  border-radius:14px;
+}
+html[data-theme="light"] .appShell .sourceTabs button{
+  border:1px solid transparent;
+  background:transparent;
+  color:#6f7a90;
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:11px;
+  font-weight:750;
+  transition:all .2s ease;
+}
+html[data-theme="light"] .appShell .sourceTabs button:hover{
+  background:#fff;
+  color:#5135b6;
+}
+html[data-theme="light"] .appShell .sourceTabs button.selected{
+  background:#fff;
+  color:#5b21b6;
+  border-color:#ddd5f7;
+  box-shadow:0 5px 14px rgba(74,55,145,.08);
+}
+
+html[data-theme="light"] .appShell .uploadSteps{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:10px 0 2px;
+}
+html[data-theme="light"] .appShell .uploadSteps span{
+  flex:1;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  color:#8993a5;
+  font-size:10px;
+  font-weight:750;
+}
+html[data-theme="light"] .appShell .uploadSteps span i{
+  width:22px;height:22px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#edf0f6;color:#7c879a;
+  font-style:normal;
+}
+html[data-theme="light"] .appShell .uploadSteps span.active{color:#5b21b6}
+html[data-theme="light"] .appShell .uploadSteps span.active i{
+  color:#fff;
+  background:linear-gradient(135deg,#7c3aed,#06b6d4);
+  box-shadow:0 5px 14px rgba(124,58,237,.18);
+}
+
+html[data-theme="light"] .appShell .selectedFileRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:12px;
+  padding:10px 12px;
+  background:#f7f8fc;
+  border:1px solid #e5e8f0;
+  border-radius:12px;
+}
+html[data-theme="light"] .appShell .selectedFileRow span{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:#364158;font-size:12px;font-weight:650;
+}
+html[data-theme="light"] .appShell .progressWrap{
+  margin-top:14px;
+  padding:12px;
+  border:1px solid #e1e5ee;
+  border-radius:14px;
+  background:#f9faff;
+}
+html[data-theme="light"] .appShell .progressText{
+  display:flex;justify-content:space-between;
+  margin-top:7px;font-size:11px;color:#69758b;
+}
+html[data-theme="light"] .appShell .progressText b{color:#5b21b6}
+html[data-theme="light"] .appShell .uploadControls{
+  display:flex;gap:7px;margin-top:9px;
+}
+
+html[data-theme="light"] .appShell .editorFeaturePage{
+  border-radius:22px!important;
+  overflow:hidden;
+}
+html[data-theme="light"] .appShell .editorFeaturePage .editorToolbar,
+html[data-theme="light"] .appShell .editorFeaturePage .editorHeader{
+  background:rgba(255,255,255,.88)!important;
+  border-bottom:1px solid #e2e6ef!important;
+  backdrop-filter:blur(14px);
+}
+html[data-theme="light"] .appShell .timeline,
+html[data-theme="light"] .appShell .editorTimeline{
+  box-shadow:inset 0 1px #fff,0 -8px 28px rgba(48,58,92,.04);
+}
+html[data-theme="light"] .appShell .timeline .playhead,
+html[data-theme="light"] .appShell .editorTimeline .playhead{
+  background:#ec4899!important;
+  box-shadow:0 0 12px rgba(236,72,153,.32);
+}
+
+html[data-theme="light"] .appShell .calendarGrid,
+html[data-theme="light"] .appShell .calendar{
+  border-radius:18px!important;
+  overflow:hidden;
+  box-shadow:0 14px 40px rgba(47,58,95,.06);
+}
+html[data-theme="light"] .appShell .calendarGrid button,
+html[data-theme="light"] .appShell .calendar button{
+  transition:background .18s,color .18s,transform .18s;
+}
+html[data-theme="light"] .appShell .calendarGrid button:hover,
+html[data-theme="light"] .appShell .calendar button:hover{
+  background:#f3efff!important;
+  color:#5b21b6!important;
+}
+
+html[data-theme="light"] .appShell .notificationCenter,
+html[data-theme="light"] .appShell .notificationPanel{
+  animation:alphaPopoverIn .22s ease-out;
+}
+
+html[data-theme="light"] .appShell .toastViewport .toast{
+  border:1px solid #e1e5ef!important;
+  background:rgba(255,255,255,.96)!important;
+  color:#253049!important;
+  box-shadow:0 18px 45px rgba(39,48,80,.15)!important;
+  backdrop-filter:blur(16px);
+  animation:alphaToastIn .3s cubic-bezier(.2,.8,.2,1);
+}
+html[data-theme="light"] .appShell .toast.toast-success{border-left:3px solid #10b981!important}
+html[data-theme="light"] .appShell .toast.toast-error{border-left:3px solid #ef4444!important}
+
+html[data-theme="light"] .appShell .mobileTabBar{
+  background:rgba(255,255,255,.94)!important;
+  border-top:1px solid #e1e5ee!important;
+  box-shadow:0 -12px 30px rgba(43,53,89,.08);
+  backdrop-filter:blur(18px);
+}
+html[data-theme="light"] .appShell .mobileTabBar button.active{
+  color:#6336c9!important;
+}
+html[data-theme="light"] .appShell .mobileTabBar button.active:before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:28%;
+  right:28%;
+  height:2px;
+  border-radius:2px;
+  background:linear-gradient(90deg,#7c3aed,#06b6d4);
+}
+
+@keyframes alphaWorkspaceIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes alphaChildIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes alphaToastIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@media(max-width:700px){
+  html[data-theme="light"] .appShell .sourceTabs{overflow-x:auto;flex-wrap:nowrap}
+  html[data-theme="light"] .appShell .sourceTabs button{white-space:nowrap}
+  html[data-theme="light"] .appShell .uploadSteps span{font-size:9px}
+  html[data-theme="light"] .appShell .uploadSteps span i{width:19px;height:19px}
+}
+@media(prefers-reduced-motion:reduce){
+  html[data-theme="light"] .appShell .dashboardV2,
+  html[data-theme="light"] .appShell .workspaceFeaturePage,
+  html[data-theme="light"] .appShell .assistantPage,
+  html[data-theme="light"] .appShell .toastViewport .toast{animation:none!important}
+}
