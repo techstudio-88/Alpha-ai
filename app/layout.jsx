@@ -2,6 +2,7 @@ import "./globals.css";
 import "./alpha-interactions.css";
 import "./tool-suite.css";
 import "./alpha-studio-ui.css";
+import "./alpha-design-system.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 import StudioEnhancements from "../components/StudioEnhancements";
