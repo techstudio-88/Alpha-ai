@@ -250,3 +250,25 @@
 @media(prefers-reduced-motion:reduce){
   *,*:before,*:after{scroll-behavior:auto!important;animation-duration:0.001ms!important;animation-iteration-count:1!important;transition-duration:0.001ms!important}
 }
+
+
+/* ============================================================
+   PHASE L — FIXES: range sliders, icon buttons, assistant message,
+   mobile nav backdrop/close
+   ============================================================ */
+
+/* Native range sliders */
+.appShell input[type="range"]{ -webkit-appearance:none; appearance:none; width:100%; height:4px; background:var(--az-border); border-radius:var(--az-radius-pill); outline:none; cursor:pointer; }
+.appShell input[type="range"]::-webkit-slider-runnable-track{height:4px;border-radius:var(--az-radius-pill);background:var(--az-border)}
+.appShell input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:15px;height:15px;margin-top:-5.5px;border-radius:50%;background:var(--az-white);border:2px solid var(--az-violet-500);box-shadow:var(--az-shadow-sm);cursor:pointer;transition:transform var(--az-dur-micro) var(--az-ease)}
+.appShell input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.12)}
+.appShell input[type="range"]::-moz-range-track{height:4px;border-radius:var(--az-radius-pill);background:var(--az-border)}
+.appShell input[type="range"]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--az-white);border:2px solid var(--az-violet-500);box-shadow:var(--az-shadow-sm);cursor:pointer}
+.appShell input[type="range"]:focus::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(124,58,237,.18)}
+.appShell .iconBtn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--az-surface-alt);border:none;color:var(--az-text-muted);font-size:15px;line-height:1;transition:background var(--az-dur-micro) var(--az-ease),color var(--az-dur-micro) var(--az-ease)}
+.appShell .iconBtn:hover{background:var(--az-danger-bg);color:var(--az-danger)}
+.appShell .message{background:var(--az-danger-bg);color:var(--az-danger);border-radius:var(--az-radius-sm);padding:var(--az-space-2) var(--az-space-3);font-size:13px;margin-top:var(--az-space-3)}
+.appShell .mobileNavBackdrop{position:fixed;inset:0;background:rgba(26,26,46,.35);backdrop-filter:blur(4px);z-index:900;opacity:0;pointer-events:none;transition:opacity var(--az-dur-modal) var(--az-ease)}
+.appShell .mobileNavBackdrop.open{opacity:1;pointer-events:auto}
+.appShell .mobileNavClose{width:32px;height:32px;border-radius:50%;background:var(--az-surface-alt);border:none;color:var(--az-text-secondary);font-size:18px;line-height:1}
+.appShell .mobileNavClose:hover{background:var(--az-lavender-50);color:var(--az-text-primary)}
