@@ -721,3 +721,73 @@ html[data-theme="light"] .appShell .mobileTabBar button.active:before{
   html[data-theme="light"] .appShell .assistantPage,
   html[data-theme="light"] .appShell .toastViewport .toast{animation:none!important}
 }
+\n
+/* PHASE 3 — PERFORMANCE INTELLIGENCE */
+html[data-theme="light"] .performanceIntelligenceScreen .performanceStats .card{
+  position:relative;overflow:hidden;
+}
+html[data-theme="light"] .performanceIntelligenceScreen .performanceStats .card:after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
+  background:linear-gradient(90deg,#7c3aed,#4f7cf7,#06b6d4);
+  opacity:.65;
+}
+html[data-theme="light"] .performanceIntelligenceGrid{
+  display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.85fr);
+  gap:16px;margin-top:16px;
+}
+html[data-theme="light"] .performanceTrendCard,
+html[data-theme="light"] .performanceInsightCard,
+html[data-theme="light"] .performanceRecent{
+  padding:18px;
+}
+html[data-theme="light"] .performancePlatformRow{
+  display:grid;grid-template-columns:150px minmax(0,1fr) 90px;align-items:center;
+  gap:14px;padding:14px 0;border-bottom:1px solid #edf0f5;
+}
+html[data-theme="light"] .performancePlatformRow:last-child{border-bottom:0}
+html[data-theme="light"] .performancePlatformRow b{display:block;color:#24304a;font-size:12px}
+html[data-theme="light"] .performancePlatformRow small{display:block;margin-top:4px;color:#8994a8;font-size:10px}
+html[data-theme="light"] .performancePlatformRow>strong{text-align:right;color:#5b21b6;font-size:13px}
+html[data-theme="light"] .performancePlatformBar{
+  height:8px;background:#edf0f7;border-radius:99px;overflow:hidden;
+}
+html[data-theme="light"] .performancePlatformBar i{
+  display:block;height:100%;border-radius:99px;
+  background:linear-gradient(90deg,#7c3aed,#06b6d4);
+  animation:performanceBarIn .7s ease-out both;
+}
+html[data-theme="light"] .performanceInsight{
+  display:flex;gap:11px;padding:13px 0;border-bottom:1px solid #edf0f5;
+}
+html[data-theme="light"] .performanceInsight:last-child{border-bottom:0}
+html[data-theme="light"] .performanceInsight>span{
+  width:25px;height:25px;flex:0 0 25px;border-radius:8px;
+  display:grid;place-items:center;color:#fff;
+  background:linear-gradient(135deg,#7c3aed,#06b6d4);
+}
+html[data-theme="light"] .performanceInsight b{display:block;color:#25304a;font-size:12px}
+html[data-theme="light"] .performanceInsight p{margin:4px 0 0;color:#748096;font-size:11px;line-height:1.55}
+html[data-theme="light"] .performanceTable{margin-top:4px}
+html[data-theme="light"] .performanceTableHead,
+html[data-theme="light"] .performanceTableRow{
+  display:grid;grid-template-columns:1.1fr .8fr .8fr 1fr .9fr;gap:12px;align-items:center;
+}
+html[data-theme="light"] .performanceTableHead{
+  padding:9px 10px;background:#f7f8fc;border-radius:9px;
+  color:#8993a6;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+}
+html[data-theme="light"] .performanceTableRow{
+  padding:12px 10px;border-bottom:1px solid #edf0f5;color:#536078;font-size:11px;
+}
+html[data-theme="light"] .performanceTableRow b{color:#27334d}
+html[data-theme="light"] .performanceTableRow time{color:#8a94a7}
+@keyframes performanceBarIn{from{transform:scaleX(0);transform-origin:left}to{transform:scaleX(1);transform-origin:left}}
+@media(max-width:900px){
+ html[data-theme="light"] .performanceIntelligenceGrid{grid-template-columns:1fr}
+}
+@media(max-width:620px){
+ html[data-theme="light"] .performancePlatformRow{grid-template-columns:105px minmax(0,1fr) 68px}
+ html[data-theme="light"] .performanceTable{overflow-x:auto}
+ html[data-theme="light"] .performanceTableHead,
+ html[data-theme="light"] .performanceTableRow{min-width:610px}
+}
