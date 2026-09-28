@@ -1,0 +1,30 @@
+"use client";
+import {useEffect,useState} from "react";
+import {ArrowRight,Command,FolderKanban,History,Link2,Gift,House,Search,FileText,Copy,CheckCircle2} from "lucide-react";
+
+const shell=(eyebrow,title,sub,children)=><div className="workspaceAddon utilityScreen"><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><p className="muted">{sub}</p>{children}</div>;
+
+export function ProjectDetailView({workspace,projectId,supabase,onBack,onOpenEditor}){
+ const [project,setProject]=useState(null),[clips,setClips]=useState([]),[loading,setLoading]=useState(true);
+ useEffect(()=>{let live=true;(async()=>{if(!projectId||!workspace?.id){setLoading(false);return}const p=await supabase.from("projects").select("*").eq("id",projectId).eq("workspace_id",workspace.id).maybeSingle();const c=await supabase.from("clips").select("id,title,start_seconds,end_seconds,created_at").eq("project_id",projectId).order("created_at",{ascending:false}).limit(50);if(live){setProject(p.data);setClips(c.data||[]);setLoading(false)}})();return()=>{live=false}},[projectId,workspace?.id,supabase]);
+ if(loading)return shell("PROJECT","Project Detail","Loading the real project…",<div className="addonState">Loading…</div>);
+ if(!project)return shell("PROJECT","Project not found","This project is unavailable in the current workspace.",<button className="btn" onClick={onBack}>Back to projects</button>);
+ return shell("PROJECT DETAIL",project.name||"Untitled project",project.status||"Project workspace",<><div className="addonGrid utilityMetrics"><div className="card addonMetric"><span>Clips</span><b>{clips.length}</b></div><div className="card addonMetric"><span>Created</span><b>{project.created_at?new Date(project.created_at).toLocaleDateString():"—"}</b></div><div className="card addonMetric"><span>Status</span><b>{project.status||"draft"}</b></div></div><div className="addonList">{clips.length?clips.map(c=><button className="addonListRow" key={c.id} onClick={()=>onOpenEditor?.(c)}><div><b>{c.title||"Untitled clip"}</b><small>{Number(c.start_seconds||0).toFixed(1)}s → {Number(c.end_seconds||0).toFixed(1)}s</small></div><span>Edit <ArrowRight size={14}/></span></button>):<div className="addonState">No clips have been created for this project yet.</div>}</div><button className="btn" onClick={onBack}>Back to projects</button></>);
+}
+
+export function SearchView({workspace,supabase,onNavigate}){
+ const [q,setQ]=useState(""),[results,setResults]=useState([]),[loading,setLoading]=useState(false);
+ useEffect(()=>{let live=true;const timer=setTimeout(async()=>{if(!workspace?.id||q.trim().length<2){setResults([]);return}setLoading(true);const term=q.trim();const [p,c]=await Promise.all([supabase.from("projects").select("id,name,status").eq("workspace_id",workspace.id).ilike("name","%"+term+"%").limit(20),supabase.from("media_assets").select("id,name,status,project_id").eq("workspace_id",workspace.id).ilike("name","%"+term+"%").limit(20)]);if(live){setResults([...(p.data||[]).map(x=>({...x,type:"Project",view:"projects"})),...(c.data||[]).map(x=>({...x,type:"Media",view:"library"}))]);setLoading(false)}},250);return()=>{live=false;clearTimeout(timer)}},[q,workspace?.id,supabase]);
+ return shell("INSIGHTS","Search","Search real projects and media in this workspace.",<><div className="utilitySearch card"><Search size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search projects or media…"/><kbd>⌘K</kbd></div>{loading?<div className="addonState">Searching…</div>:q.trim().length<2?<div className="addonState">Type at least 2 characters to search.</div>:results.length?<div className="addonList">{results.map(r=><button className="addonListRow" key={r.type+r.id} onClick={()=>onNavigate?.(r.view)}><div><b>{r.name||"Untitled"}</b><small>{r.type} · {r.status||"available"}</small></div><span>Open <ArrowRight size={14}/></span></button>)}</div>:<div className="addonState">No matching workspace records.</div>}</>);
+}
+
+export function ChangelogView(){return shell("PUBLIC","Changelog","Product updates and engineering milestones.",<div className="addonList"><div className="addonListRow"><div><b>Studio workspace expansion</b><small>New media, audio, review, team, billing, API and help surfaces.</small></div><span><History size={15}/> Current</span></div><div className="addonListRow"><div><b>Production processing pipeline</b><small>Real upload, processing and clip-analysis infrastructure.</small></div><span><CheckCircle2 size={15}/> Live</span></div><div className="addonListRow"><div><b>Accessibility and responsive polish</b><small>Keyboard focus, reduced motion and mobile navigation improvements.</small></div><span><CheckCircle2 size={15}/> Live</span></div></div>)}
+
+export function ReferralView({workspace,supabase}){
+ const [copied,setCopied]=useState(false);
+ const link=typeof window!=="undefined"?window.location.origin+"/?ref="+encodeURIComponent(workspace?.id||""):"";
+ const copy=async()=>{if(!link)return;try{await navigator.clipboard.writeText(link);setCopied(true);window.setTimeout(()=>setCopied(false),1800)}catch{}};
+ return shell("ACCOUNT","Referral Program","Share Alpha.ai with a workspace-safe referral link. Reward balances are only shown when a real referral backend exists.",<><div className="addonNotice"><Gift size={18}/><div><b>No fabricated reward balance.</b><p className="muted">Referral tracking and rewards must be backed by real account records before Alpha.ai displays earnings.</p></div></div><div className="utilitySearch card"><Link2 size={17}/><input readOnly value={link}/><button className="btn small" onClick={copy}>{copied?<><CheckCircle2 size={14}/>Copied</>:<><Copy size={14}/>Copy link</>}</button></div></>);
+}
+
+export function NotFoundView({onHome}){return shell("PUBLIC","404","The page you requested does not exist in Alpha.ai.",<div className="addonState utility404"><FileText size={24}/><div><b>Nothing here</b><p className="muted">The route may have moved or never existed.</p><button className="btn primary" onClick={onHome}><House size={14}/> Go home</button></div></div>)}
