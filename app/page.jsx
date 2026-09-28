@@ -2,7 +2,7 @@
 // Landing renders immediately; auth is hydrated in the background.
 import React,{useEffect,useState,useRef}from"react";
 import * as tus from "tus-js-client";
-import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Palette,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo,Images,Mic2,CreditCard,Code2,HelpCircle,History,Gift}from"lucide-react";
+import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,FlaskConical,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Palette,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo,Images,Mic2,CreditCard,Code2,HelpCircle,History,Gift}from"lucide-react";
 import{supabase}from"../lib/supabase";
 import OnboardingWizard from"../components/OnboardingWizard";
 import GoogleDriveBrowser from"../components/GoogleDriveBrowser";
@@ -14,13 +14,13 @@ import ConsentBanner from"../components/ConsentBanner";
 import PromptEditModal from"../components/PromptEditModal";
 import ScheduleModal from"../components/ScheduleModal";
 import {IntelligenceLabView,TranscriptView,ProcessingView,ClipReviewView,CaptionStudioView,RepurposeView,AnalyticsView,ThumbnailStudioView,AutomationView,ShareExportView,UtilitiesView} from "../components/StudioScreens";
-import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BrandKitView,BillingPlansView,ApiWebhooksView,HelpCenterView} from "../components/StudioAddons";
+import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BrandKitView,BillingPlansView,ApiWebhooksView,HelpCenterView,ExperimentationView,TrendIntelligenceView,SecurityAuditView} from "../components/StudioAddons";
 import {ProjectDetailView,SearchView,ChangelogView,ReferralView,NotFoundView} from "../components/StudioUtilityScreens";
 import ClipLabView from "../components/ClipLabView";
 const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
 const AUTH_CALLBACK_URL=`${SITE_URL}/auth/callback`;
-const NAV=[["dashboard","Dashboard",BarChart3],["cliplab","AI Clip Lab",Sparkles],["projects","Projects",FolderKanban],["project","Project Detail",FolderKanban],["search","Search",Search],["changelog","Changelog",History],["referral","Referral Program",Gift],["404","Not Found",AlertCircle],["library","Media Library",Images],["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle],["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles],["share","Share / Export",ArrowRight],["utilities","Utilities",Settings],["team","Team & Roles",Users],["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["help","Help Center",HelpCircle],["settings","Settings",Settings]];
+const NAV=[["dashboard","Dashboard",BarChart3],["cliplab","AI Clip Lab",Sparkles],["projects","Projects",FolderKanban],["project","Project Detail",FolderKanban],["search","Search",Search],["changelog","Changelog",History],["referral","Referral Program",Gift],["404","Not Found",AlertCircle],["library","Media Library",Images],["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle],["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles],["share","Share / Export",ArrowRight],["utilities","Utilities",Settings],["team","Team & Roles",Users],["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["experiments","Experiments",FlaskConical],["trends","Trend Intelligence",TrendingUp],["security","Security & Audit",ShieldCheck],["help","Help Center",HelpCircle],["settings","Settings",Settings]];
 
 
 function normalizeSourceUrl(raw){try{const u=new URL(String(raw).trim());if(u.protocol!=="https:")return null;const host=u.hostname.toLowerCase();if(host.includes("youtube.com")||host==="youtu.be"){const v=u.searchParams.get("v")||(u.pathname.split("/").filter(Boolean)[1]||u.pathname.split("/").filter(Boolean)[0]);return v?"https://www.youtube.com/watch?v="+encodeURIComponent(v):null}if(host.includes("dropbox.com")||host==="1drv.ms"||host.includes("onedrive.live.com"))return u.origin+u.pathname;return u.origin+u.pathname+u.search}catch{return null}}
@@ -255,8 +255,8 @@ function WorkspaceModule({view,workspace,projects,user,onUpload,onRefresh,filter
  if(view==="approvals")return <ApprovalsView workspace={workspace} supabase={supabase} onOpenClip={c=>{setSelectedStudioClip(c);setView?.("review")}}/>;
  if(view==="team")return <TeamRolesView workspace={workspace} supabase={supabase}/>;
  if(view==="billing")return <BillingPlansView workspace={workspace} supabase={supabase}/>;
- if(view==="api")return <ApiWebhooksView/>;
- if(view==="help")return <HelpCenterView/>;
+ if(view==="api")return <ApiWebhooksView workspace={workspace} supabase={supabase}/>;
+ if(view==="experiments")return <ExperimentationView workspace={workspace} supabase={supabase}/>; if(view==="trends")return <TrendIntelligenceView workspace={workspace} supabase={supabase}/>; if(view==="security")return <SecurityAuditView workspace={workspace} supabase={supabase}/>; if(view==="help")return <HelpCenterView/>;
  if(view==="intelligence")return <IntelligenceLabView workspace={workspace} supabase={supabase} onOpenClip={c=>{setSelectedStudioClip(c);setView?.("review")}}/>;
  if(view==="transcript")return <TranscriptView workspace={workspace} supabase={supabase} onOpenClip={c=>setSelectedStudioClip(c)}/>;
  if(view==="processing")return <ProcessingView workspace={workspace} supabase={supabase}/>;
