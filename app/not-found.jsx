@@ -1,0 +1,2 @@
+export const metadata={title:"Page not found | Alpha.ai",description:"The Alpha.ai page you requested could not be found."};
+export default function NotFound(){return <main className="legalPage"><article className="legalCard notFoundCard"><div className="eyebrow">404 · ALPHA.AI</div><h1>That page doesn't exist.</h1><p>It may have moved, or the link may be outdated.</p><a className="btn primary" href="/">Return to Alpha.ai</a></article></main>}
