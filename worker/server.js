@@ -40,7 +40,7 @@ async function renderEditedClip(input,out,start,end,opts={}){
   const sw=Math.round(size[0]*zoom),sh=Math.round(size[1]*zoom);
   const captionFilter=opts.srtPath?`,subtitles=${String(opts.srtPath).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}:force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=70'`:"";
   const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=.18":opts.transition==="dip"?",fade=t=in:st=0:d=.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"x")+")*(iw-"+sw+")":"(iw-"+sw+")*.5"; const cropY=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"y")+")*(ih-"+sh+")":"(ih-"+sh+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh}:x=${cropX}:y=${cropY},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(requested),"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",out]));
@@ -71,6 +71,33 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
     ((Number(b.hook_score)||0)+(Number(b.information_density)||0)+(Number(b.story_completeness)||0)+(Number(b.shareability_score)||0))-
     ((Number(a.hook_score)||0)+(Number(a.information_density)||0)+(Number(a.story_completeness)||0)+(Number(a.shareability_score)||0))
   ).slice(0,8);
+}
+async function analyzeReframeWithGemini(filePath,sourceDuration){
+  if(!GEMINI_API_KEY||sourceDuration<=0)return null;
+  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  const file=await ai.files.upload({file:filePath,config:{mimeType:"video/mp4"}});
+  let active=file;
+  for(let i=0;i<60&&active?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));active=await ai.files.get({name:active.name})}
+  if(active?.state!=="ACTIVE")throw new Error("Reframe video analysis failed.");
+  const schema={type:"object",properties:{keyframes:{type:"array",items:{type:"object",properties:{time_seconds:{type:"number"},x_center:{type:"number"},y_center:{type:"number"},confidence:{type:"number"}},required:["time_seconds","x_center","y_center","confidence"]}}},required:["keyframes"]};
+  const prompt="Analyze the video for automatic vertical/social reframing. Sample the main visible speaker or dominant person at useful moments across the source. Return up to 30 keyframes. x_center and y_center are normalized 0..1 coordinates of the desired crop center in the original frame. Follow the main speaker when possible; if no person is visible, keep the visual subject centered. time_seconds must be between 0 and "+sourceDuration.toFixed(2)+" seconds. Avoid abrupt jumps. Return JSON only.";
+  const out=await ai.models.generateContent({model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(active.uri,active.mimeType),prompt]),config:{responseMimeType:"application/json",responseSchema:schema}});
+  const parsed=JSON.parse(out.text||"{}");
+  const rows=(Array.isArray(parsed.keyframes)?parsed.keyframes:[]).map(x=>({time_seconds:Math.max(0,Math.min(sourceDuration,Number(x.time_seconds)||0)),x_center:Math.max(0,Math.min(1,Number(x.x_center)??.5)),y_center:Math.max(0,Math.min(1,Number(x.y_center)??.5)),confidence:Math.max(0,Math.min(1,Number(x.confidence)||0))})).sort((a,b)=>a.time_seconds-b.time_seconds);
+  const dedup=[];for(const row of rows){if(!dedup.length||Math.abs(row.time_seconds-dedup[dedup.length-1].time_seconds)>=.25)dedup.push(row)}
+  return dedup.length?dedup.slice(0,30):null;
+}
+function reframeExpr(keyframes,axis){
+  if(!Array.isArray(keyframes)||!keyframes.length)return ".5";
+  const value=k=>axis==="x"?Number(k.x_center).toFixed(5):Number(k.y_center).toFixed(5);
+  let expr=value(keyframes[keyframes.length-1]);
+  for(let i=keyframes.length-2;i>=0;i--){
+    const a=keyframes[i],b=keyframes[i+1],dt=Math.max(.25,b.time_seconds-a.time_seconds);
+    const v0=value(a),v1=value(b);
+    expr="if(lt(t,"+b.time_seconds.toFixed(3)+"),("+v0+"+("+v1+"-"+v0+")*(t-"+a.time_seconds.toFixed(3)+")/"+dt.toFixed(3)+"),"+expr+")";
+  }
+  const first=keyframes[0];
+  return "if(lt(t,"+first.time_seconds.toFixed(3)+"),"+value(first)+","+expr+")";
 }
 async function analyzeTranscriptWithGemini(segments,sourceDuration){
   if(!GEMINI_API_KEY||!Array.isArray(segments)||!segments.length)return null;
@@ -304,6 +331,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
       }
     }
+    let reframeKeyframes=null;
+    if(p.reframe!==false&&p.aspect!=="16:9"&&GEMINI_API_KEY){
+      try{await patchJob(p.jobId,{progress:18,payload:{...p,aiEditStatus:p.aiPrompt?.trim()?"analyzing_reframe":"analyzing_reframe"}});reframeKeyframes=await analyzeReframeWithGemini(input,duration);if(reframeKeyframes?.length)await patchJob(p.jobId,{payload:{...p,reframeStatus:"ready",reframeKeyframes}})}catch(error){await patchJob(p.jobId,{payload:{...p,reframeStatus:"fallback",reframeError:error.message}});console.warn("AI reframe unavailable; using centered crop:",error.message)}
+    }
     const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""};
     const latestVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,select:"id,version,render_status,storage_path,edit_data",order:"version.desc",limit:"1"}}))[0]||null;
     if(latestVersion?.render_status==="ready"&&latestVersion?.edit_data?.render_job_id===p.jobId&&latestVersion.storage_path){
@@ -314,7 +345,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,reframeKeyframes});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
     await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:nextVersion,render_status:"ready",storage_path:storagePath,edit_data:editData}});
