@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useMemo,useRef,useState} from "react";
-import {Activity,ChevronRight,Clock,Film,Fullscreen,Keyboard,Maximize2,Pause,Play,Redo2,RotateCcw,Save,Scissors,Search,ScanFace,SplitSquareHorizontal,Undo2,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
+import {Activity,ChevronRight,Clock,Film,Fullscreen,Keyboard,Maximize2,Pause,Play,Redo2,RotateCcw,Save,Scissors,Search,Scan,SplitSquareHorizontal,Undo2,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
 
 function LiveWaveform({videoRef}){const canvasRef=useRef(null);useEffect(()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;let ctx,analyser,source,raf;try{const AudioContext=window.AudioContext||window.webkitAudioContext;const ac=new AudioContext();analyser=ac.createAnalyser();analyser.fftSize=128;source=ac.createMediaElementSource(v);source.connect(analyser);analyser.connect(ac.destination);const draw=()=>{const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.beginPath();for(let i=0;i<data.length;i++){const x=i/(data.length-1)*c.width,y=c.height/2+(data[i]-128)/128*c.height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle="#7c5cff";ctx.lineWidth=2;ctx.stroke();raf=requestAnimationFrame(draw)};ctx=c.getContext("2d");draw();return()=>{cancelAnimationFrame(raf);source?.disconnect();analyser?.disconnect();ac.close().catch(()=>{})}}catch{}},[videoRef]);return <canvas className="editorWaveform" ref={canvasRef} width="900" height="72" aria-label="Live audio waveform"/>}
 
@@ -270,7 +270,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
               {["9:16","16:9","1:1"].map(x=><button key={x} className={"editorTool "+(aspect===x?"active":"")} onClick={()=>{setAspect(x);setSaved(false)}}>{x}</button>)}
               <button className="editorTool" onClick={()=>setZoom(z=>clamp(z-.1,.8,1.4))}><ZoomOut size={15}/></button>
               <span className="editorZoom">{Math.round(zoom*100)}%</span>
-              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z+.1,.8,1.4))}><ZoomIn size={15}/></button><button className={"editorTool "+(autoReframe?"active":"")} onClick={()=>{setAutoReframe(v=>!v);setSaved(false)}} title="AI follows the main speaker or visual subject during vertical/square renders"><ScanFace size={15}/> Reframe</button>
+              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z+.1,.8,1.4))}><ZoomIn size={15}/></button><button className={"editorTool "+(autoReframe?"active":"")} onClick={()=>{setAutoReframe(v=>!v);setSaved(false)}} title="AI follows the main speaker or visual subject during vertical/square renders"><Scan size={15}/> Reframe</button>
             </div>
           </div>
 
