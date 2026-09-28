@@ -488,3 +488,34 @@
   .appShell .alphaConsentActions{flex-direction:column!important}
   .appShell .alphaConsentActions .btn{width:100%!important}
 }
+
+
+/* Expanded studio screen system */
+.appShell .workspaceAddon{max-width:1180px;margin:0 auto;padding:4px 0 32px;animation:az-page-in var(--az-dur-modal) var(--az-ease)}
+.appShell .workspaceAddon h2{margin:6px 0 8px;color:var(--az-text-primary);font-size:clamp(26px,3vw,38px);font-weight:700;letter-spacing:-.03em}
+.appShell .workspaceAddon>.muted{max-width:760px;line-height:1.65;margin-bottom:22px}
+.appShell .addonGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.appShell .addonCard{display:flex;align-items:flex-start;gap:14px;min-height:94px;padding:18px!important;background:#fff!important;border:1px solid var(--az-border)!important;border-radius:16px!important;transition:transform var(--az-dur-hover) var(--az-ease),box-shadow var(--az-dur-hover) var(--az-ease),border-color var(--az-dur-hover) var(--az-ease)}
+.appShell .addonCard>svg{color:var(--az-violet-600);flex:none;margin-top:2px}
+.appShell .addonCard:hover{transform:translateY(-2px);border-color:rgba(124,58,237,.25)!important;box-shadow:var(--az-shadow-md)}
+.appShell .addonCard b{color:var(--az-text-primary);display:block;margin-bottom:4px}
+.appShell .addonCard .muted{line-height:1.55}
+.appShell .addonLink{text-decoration:none;color:inherit}
+.appShell .addonNotice{display:flex;gap:12px;align-items:flex-start;padding:16px 18px;margin:0 0 16px;background:linear-gradient(135deg,var(--az-lavender-50),#fff)!important;border:1px solid rgba(124,58,237,.12)!important;border-radius:15px}
+.appShell .addonNotice>svg{color:var(--az-violet-600);flex:none;margin-top:2px}
+.appShell .addonNotice b{color:var(--az-text-primary)}
+.appShell .addonNotice .muted{margin:4px 0 0;line-height:1.55}
+.appShell .addonState{min-height:150px;display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;background:#fff;border:1px dashed var(--az-border-strong);border-radius:16px;color:var(--az-text-muted)}
+.appShell .addonState.error{color:var(--az-danger);border-color:#fecaca;background:#fffafa}
+.appShell .addonList{display:grid;gap:10px}
+.appShell .addonListRow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;padding:15px 17px;background:#fff;color:var(--az-text-primary);border:1px solid var(--az-border);border-radius:14px;transition:transform var(--az-dur-hover) var(--az-ease),border-color var(--az-dur-hover) var(--az-ease),box-shadow var(--az-dur-hover) var(--az-ease)}
+.appShell .addonListRow:hover{transform:translateY(-1px);border-color:rgba(124,58,237,.28);box-shadow:var(--az-shadow-sm)}
+.appShell .addonListRow>div{min-width:0}
+.appShell .addonListRow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appShell .addonListRow small{display:block;margin-top:4px;color:var(--az-text-muted)}
+.appShell .addonListRow>span{display:inline-flex;align-items:center;gap:6px;color:var(--az-violet-600);font-weight:600;font-size:13px}
+.appShell .addonMetric{display:flex;flex-direction:column;gap:6px;padding:20px!important}
+.appShell .addonMetric span{font-size:12px;color:var(--az-text-muted);text-transform:uppercase;letter-spacing:.08em}
+.appShell .addonMetric b{font:700 30px var(--az-font-display);color:var(--az-text-primary)}
+.appShell .addonAction{width:max-content;margin-top:16px;text-decoration:none}
+@media(max-width:720px){.appShell .addonGrid{grid-template-columns:1fr}.appShell .workspaceAddon{padding-bottom:22px}}
