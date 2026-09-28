@@ -85,6 +85,10 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
       if(assetError){setError(assetError.message);setLoading(false);return}
       if(!data?.storage_path){setError("This project has no uploaded media ready for editing.");setLoading(false);return}
       setAsset(data);
+      if(initialClip?.id){
+        const {data:versionRows}=await supabase.from("clip_versions").select("id,version,edit_data,render_status,created_at").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(12);
+        if(!cancelled)setVersions(versionRows||[]);
+      }else setVersions([]);
       if(initialClip?.project_id===project.id){const clipStart=Math.max(0,Number(initialClip.start_seconds)||0);const clipEnd=Math.max(clipStart,Number(initialClip.end_seconds)||0);setInPoint(Math.min(clipStart,Number(data.duration_seconds)||clipStart));if(clipEnd>clipStart)setOutPoint(Math.min(clipEnd,Number(data.duration_seconds)||clipEnd));}
       const {data:transcript}=await supabase.from("transcripts").select("id,language,status,created_at").eq("media_asset_id",data.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(transcript?.id){
