@@ -382,10 +382,10 @@ async function handleUpload(file){
   if(!supabase||!user||!workspace||!file)return;
   setBusy(true);setProgress(1);setUploadMsg("");
   try{
-  if(file.size>50*1024*1024){setUploadMsg("This direct-upload path supports files up to 50 MB on the current free storage. For a long-form video, use Drive, YouTube, Dropbox, OneDrive, S3/URL, or another downloadable source instead.");setBusy(false);return}
+  if(file.size>1024*1024*1024){setUploadMsg("This browser upload path supports videos up to 1 GB. For larger long-form sources, use a connected/downloadable source such as Drive, Dropbox, OneDrive, S3, or a direct URL.");setBusy(false);return}
   const isVideo=file.type.startsWith("video/")||/\.(mp4|mov|webm|m4v|avi)$/i.test(file.name);
   if(!isVideo){setUploadMsg("Please choose a video file.");setBusy(false);return}
-  const mimeType=file.type||({mp4:"video/mp4",mov:"video/quicktime",webm:"video/webm",m4v:"video/x-m4v",avi:"video/x-msvideo"}[file.name.split(".").pop()?.toLowerCase()]||"video/mp4");
+  const videoMeta=await new Promise((resolve,reject)=>{const el=document.createElement("video");el.preload="metadata";el.onloadedmetadata=()=>{const duration=Number(el.duration)||0;URL.revokeObjectURL(el.src);resolve({duration,width:el.videoWidth,height:el.videoHeight})};el.onerror=()=>{URL.revokeObjectURL(el.src);reject(new Error("The selected video could not be inspected by the browser."))};el.src=URL.createObjectURL(file)}).catch(error=>{setUploadMsg(error.message||"Could not inspect the selected video.");setBusy(false);return null});if(!videoMeta)return;if(videoMeta.duration>3600){setUploadMsg("This workspace currently accepts videos up to 60 minutes per upload.");setBusy(false);return}if(videoMeta.duration<=0){setUploadMsg("The selected video has no readable duration.");setBusy(false);return}const mimeType=file.type||({mp4:"video/mp4",mov:"video/quicktime",webm:"video/webm",m4v:"video/x-m4v",avi:"video/x-msvideo"}[file.name.split(".").pop()?.toLowerCase()]||"video/mp4");
   let fingerprint="";
   try{fingerprint=await fingerprintFile(file)}catch(error){console.error("Fingerprint failed",error);setUploadMsg("Could not inspect the selected video. Please retry.");setBusy(false);return}
   const existing=await supabase.from("media_assets").select("id,project_id").eq("workspace_id",workspace.id).eq("content_fingerprint",fingerprint).limit(1).maybeSingle();
