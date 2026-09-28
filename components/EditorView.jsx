@@ -17,6 +17,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const [inPoint,setInPoint]=useState(0);
   const [outPoint,setOutPoint]=useState(0);
   const [aspect,setAspect]=useState("9:16");
+  const [autoReframe,setAutoReframe]=useState(true);
   const [speed,setSpeed]=useState(1);
   const [muted,setMuted]=useState(false);
   const [zoom,setZoom]=useState(1);
@@ -110,6 +111,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
           setSpeed(Number(draft.speed)||1);
           setZoom(Number(draft.zoom)||1);
           setCaptions(draft.captions!==false);
+          setAutoReframe(draft.autoReframe!==false);
           setEffect(draft.effect||"none");
           setTransition(draft.transition||"cut");
           setTimelineHeight(Number(draft.timelineHeight)||230);
@@ -188,7 +190,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   };
   const saveDraft=async()=>{
     if(!project?.id)return;
-    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
+    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,autoReframe,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
     window.localStorage.setItem("alpha.editor."+project.id,JSON.stringify(data));
     if(initialClip?.id){
       const {data:latest}=await supabase.from("clip_versions").select("version").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(1).maybeSingle();
@@ -211,7 +213,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
-      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,clipId:initialClip?.id||null,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,effect,transition,aiPrompt})});
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,clipId:initialClip?.id||null,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,autoReframe,effect,transition,aiPrompt})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Could not start render.");
       const jobId=result.jobId;
@@ -268,7 +270,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
               {["9:16","16:9","1:1"].map(x=><button key={x} className={"editorTool "+(aspect===x?"active":"")} onClick={()=>{setAspect(x);setSaved(false)}}>{x}</button>)}
               <button className="editorTool" onClick={()=>setZoom(z=>clamp(z-.1,.8,1.4))}><ZoomOut size={15}/></button>
               <span className="editorZoom">{Math.round(zoom*100)}%</span>
-              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z+.1,.8,1.4))}><ZoomIn size={15}/></button>
+              <button className="editorTool" onClick={()=>setZoom(z=>clamp(z+.1,.8,1.4))}><ZoomIn size={15}/></button><button className={"editorTool "+(autoReframe?"active":"")} onClick={()=>{setAutoReframe(v=>!v);setSaved(false)}} title="AI follows the main speaker or visual subject during vertical/square renders"><ScanFace size={15}/> Reframe</button>
             </div>
           </div>
 
