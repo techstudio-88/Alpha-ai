@@ -11,8 +11,21 @@ const actions=[
   ["AI Assistant","Ask Alpha to help",Sparkles]
 ];
 
+const timeAgo=value=>{
+  const ms=Date.now()-new Date(value).getTime();
+  if(!Number.isFinite(ms)||ms<0)return "now";
+  const s=Math.floor(ms/1000);
+  if(s<60)return s+"s";
+  const m=Math.floor(s/60);
+  if(m<60)return m+"m";
+  const h=Math.floor(m/60);
+  if(h<24)return h+"h";
+  return Math.floor(h/24)+"d";
+};
+
 export default function StudioEnhancements(){
   const [session,setSession]=useState(null),[palette,setPalette]=useState(false),[query,setQuery]=useState(""),[activity,setActivity]=useState(false);
+  const [notifications,setNotifications]=useState([]),[events,setEvents]=useState([]);
   useEffect(()=>{
     let alive=true;
     supabase.auth.getSession().then(({data})=>alive&&setSession(data.session));
@@ -24,22 +37,46 @@ export default function StudioEnhancements(){
     window.addEventListener("keydown",key);
     return()=>{alive=false;subscription.unsubscribe();window.removeEventListener("keydown",key)};
   },[]);
+
+  useEffect(()=>{
+    let alive=true;
+    async function loadActivity(){
+      if(!session?.user?.id)return;
+      const [{data:notes},{data:evs}]=await Promise.all([
+        supabase.from("notifications").select("id,title,message,read_at,created_at").eq("user_id",session.user.id).order("created_at",{ascending:false}).limit(12),
+        supabase.from("product_events").select("id,event_name,metadata,created_at").eq("user_id",session.user.id).order("created_at",{ascending:false}).limit(12)
+      ]);
+      if(!alive)return;
+      setNotifications(notes||[]);
+      setEvents(evs||[]);
+    }
+    loadActivity();
+    return()=>{alive=false};
+  },[session?.user?.id]);
+
   if(!session)return null;
-  const go=(name)=>{
-    const map={"Upload media":"alpha:upload","Open editor":"alpha:open-editor","Schedule":"alpha:navigate","AI Assistant":"alpha:navigate"};
+
+  const go=name=>{
     if(name==="Schedule")window.dispatchEvent(new CustomEvent("alpha:navigate",{detail:"calendar"}));
     else if(name==="AI Assistant")window.dispatchEvent(new CustomEvent("alpha:navigate",{detail:"assistant"}));
-    else window.dispatchEvent(new CustomEvent(map[name]||name));
+    else if(name==="Open editor")window.dispatchEvent(new CustomEvent("alpha:navigate",{detail:"editor"}));
+    else window.dispatchEvent(new CustomEvent("alpha:upload"));
     setPalette(false);
   };
   const filtered=actions.filter(([n,d])=>(n+" "+d).toLowerCase().includes(query.toLowerCase()));
+  const activityItems=[
+    ...notifications.map(n=>({id:"n-"+n.id,title:n.title||"Notification",detail:n.message||"Workspace notification",created_at:n.created_at,type:"notification"})),
+    ...events.map(e=>({id:"e-"+e.id,title:e.event_name||"Workspace event",detail:e.metadata?.description||e.metadata?.action||"Product activity",created_at:e.created_at,type:"event"}))
+  ].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,10);
+  const unread=notifications.filter(n=>!n.read_at).length;
+
   return <>
     <div className="alphaStudioCommandBar">
       <div className="alphaStudioLive"><i/><span>Studio live</span><small>Workspace synced</small></div>
       <button className="alphaStudioSearch" onClick={()=>setPalette(true)}><Search size={15}/><span>Search workspace, clips, commands…</span><kbd>⌘K</kbd></button>
       <div className="alphaStudioTools">
         <button onClick={()=>window.dispatchEvent(new CustomEvent("alpha:upload"))}><Upload size={15}/><span>Import</span></button>
-        <button onClick={()=>setActivity(v=>!v)} className={activity?"active":""}><Bell size={15}/><i/></button>
+        <button onClick={()=>setActivity(v=>!v)} className={activity?"active":""} aria-label="Open activity"><Bell size={15}/>{unread>0&&<b className="alphaNotificationCount">{unread>99?"99+":unread}</b>}</button>
       </div>
     </div>
     <div className="alphaStudioContextRail" aria-hidden="true">
@@ -47,8 +84,7 @@ export default function StudioEnhancements(){
     </div>
     {activity&&<div className="alphaActivityPopover">
       <div><div><small>ACTIVITY CENTER</small><b>Workspace activity</b></div><button onClick={()=>setActivity(false)}><X size={16}/></button></div>
-      <section><span className="alphaActivityDot"/><div><b>Workspace ready</b><small>All studio services are connected</small></div><em>now</em></section>
-      <section><span className="alphaActivityDot purple"/><div><b>AI pipeline available</b><small>Import a source to begin analysis</small></div><em>ready</em></section>
+      {activityItems.length?activityItems.map(item=><section key={item.id}><span className={"alphaActivityDot "+(item.type==="event"?"purple":"")}/><div><b>{item.title}</b><small>{item.detail}</small></div><em>{timeAgo(item.created_at)}</em></section>):<div className="alphaActivityEmpty"><Activity size={18}/><span>No workspace activity yet.</span></div>}
       <button className="alphaActivityFooter" onClick={()=>setActivity(false)}>Close activity <ChevronRight size={14}/></button>
     </div>}
     {palette&&<div className="alphaCommandBackdrop" onClick={()=>setPalette(false)}>
