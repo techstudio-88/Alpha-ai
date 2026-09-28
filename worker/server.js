@@ -324,11 +324,26 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(!clip)throw new Error("Could not create or recover edited clip.");
     await patchJob(p.jobId,{payload:{...p,clipId:clip.id}});
     const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
-    let srtPath=null;
+    let srtPath=null,assPath=null;
     if(p.captions!==false){
       const tr=(await db("transcripts",{params:{media_asset_id:"eq."+asset.id,select:"id",order:"created_at.desc",limit:"1"}}))[0];
-      if(tr?.id){const rows=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,text",order:"start_ms.asc"}}).catch(()=>[]);const usable=(rows||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms));
-        if(usable.length){srtPath=path.join(dir2,"captions.srt");const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\\n"+String(x.text||"").replace(/\\r?\\n/g," ")+"\\n").join("\\n"),"utf8")}
+      if(tr?.id){
+        const rows=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,text",order:"start_ms.asc"}}).catch(()=>[]);
+        const usable=(rows||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms));
+        const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};
+        if(usable.length){srtPath=path.join(dir2,"captions.srt");fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\n"+String(x.text||"").replace(/\r?\n/g," ")+"\n").join("\n"),"utf8")}
+        const words=await db("transcript_words",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,word",order:"start_ms.asc"}}).catch(()=>[]);
+        const usableWords=(words||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms)&&String(x.word||"").trim());
+        if(usableWords.length){
+          const assTime=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),cs=Math.floor((ms%1000)/10);return String(h)+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+"."+String(cs).padStart(2,"0")};
+          const esc=w=>String(w).replace(/[{}]/g,"").replace(/\\/g,"\\\\");
+          const lines=[];let line=[],lineStart=0,lineEnd=0;
+          for(const w of usableWords){const ws=Math.max(0,Number(w.start_ms)/1000-start),we=Math.max(ws,Number(w.end_ms)/1000-start);if(!line.length)lineStart=ws;line.push({word:esc(w.word),duration:Math.max(1,Math.round((we-ws)*100))});lineEnd=we;if(line.length>=7||we-lineStart>=3.2){lines.push({start:lineStart,end:lineEnd,words:line});line=[]}}
+          if(line.length)lines.push({start:lineStart,end:lineEnd,words:line});
+          assPath=path.join(dir2,"captions.ass");
+          const header="[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Arial,20,&H00FFFFFF,&H00FFFF00,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,2,0,2,60,60,80,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n";
+          fs.writeFileSync(assPath,header+lines.map(x=>"Dialogue: 0,"+assTime(x.start)+","+assTime(x.end)+",Default,,0,0,0,, "+x.words.map(w=>"{\\k"+w.duration+"}"+w.word).join(" ")).join("\n"),"utf8");
+        }
       }
     }
     let reframeKeyframes=null;
@@ -345,7 +360,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,reframeKeyframes});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
     await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:nextVersion,render_status:"ready",storage_path:storagePath,edit_data:editData}});
