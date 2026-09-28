@@ -3,6 +3,8 @@
 import React,{useEffect,useMemo,useRef,useState}from"react";
 import{Activity,ArrowRight,BarChart3,CalendarDays,CheckCircle2,Clapperboard,Clock,Copy,Download,FileText,Image as ImageIcon,Layers3,Link2,Play,RefreshCw,Search,Share2,Sparkles,Subtitles,Target,TrendingUp,Upload,Video,WandSparkles,Zap}from"lucide-react";\nconst toast=(text,type="info")=>window.dispatchEvent(new CustomEvent("alpha:toast",{detail:{type,text}}));
 
+function toast(text,type="info"){if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("alpha:toast",{detail:{type,text}}))}
+
 function ScreenHead({eyebrow,title,sub,action}){return <div className="studioScreenHead"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p className="muted">{sub}</p></div>{action}</div>}
 
 function EmptyState({icon:Icon=Sparkles,title,text,action}){return <div className="studioEmpty"><div className="studioEmptyIcon"><Icon size={23}/></div><h3>{title}</h3><p>{text}</p>{action}</div>}
