@@ -179,23 +179,28 @@ self.onmessage = async event => {
     });
 
     const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
-    const segments = chunks
-      .map(x => {
-        const t = x.timestamp || [0, 0];
-        return {
-          start: Number(t[0] ?? 0),
-          end: Number(t[1] ?? t[0] ?? 0),
-          text: String(x.text || "").trim()
-        };
-      })
-      .filter(x => x.text && x.end > x.start);
+    const wordChunks = chunks.map(x => {
+      const t = x.timestamp || [0, 0];
+      return { start: Number(t[0] ?? 0), end: Number(t[1] ?? t[0] ?? 0), word: String(x.text || "").trim() };
+    }).filter(x => x.word && x.end > x.start);
+    const segments = wordChunks.map(x => ({
+      start: x.start,
+      end: x.end,
+      text: x.word
+    }));
+    const words = wordChunks.map(x => ({
+      start: x.start,
+      end: x.end,
+      word: x.word
+    }));
 
     post("progress", { index, value: 100 });
     post("done", {
       index,
       device: transcriberDevice,
       language: String(result?.language || result?.language_code || "").trim() || null,
-      segments
+      segments,
+      words
     });
   } catch (error) {
     transcriberPromise = null;
