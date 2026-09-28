@@ -14,7 +14,7 @@ import ConsentBanner from"../components/ConsentBanner";
 import PromptEditModal from"../components/PromptEditModal";
 import ScheduleModal from"../components/ScheduleModal";
 import {IntelligenceLabView,TranscriptView,ProcessingView,ClipReviewView,CaptionStudioView,RepurposeView,AnalyticsView,ThumbnailStudioView,AutomationView,ShareExportView,UtilitiesView} from "../components/StudioScreens";
-import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BillingPlansView,ApiWebhooksView,HelpCenterView} from "../components/StudioAddons";
+import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BrandKitView,BillingPlansView,ApiWebhooksView,HelpCenterView} from "../components/StudioAddons";
 import {ProjectDetailView,SearchView,ChangelogView,ReferralView,NotFoundView} from "../components/StudioUtilityScreens";
 const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
