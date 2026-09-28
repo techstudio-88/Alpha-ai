@@ -272,3 +272,219 @@
 .appShell .mobileNavBackdrop.open{opacity:1;pointer-events:auto}
 .appShell .mobileNavClose{width:32px;height:32px;border-radius:50%;background:var(--az-surface-alt);border:none;color:var(--az-text-secondary);font-size:18px;line-height:1}
 .appShell .mobileNavClose:hover{background:var(--az-lavender-50);color:var(--az-text-primary)}
+
+
+/* ==========================================================================
+   ALPHA.AI PHASE L2 — modal / picker surfaces
+   Keeps all existing behavior intact; visual-only system layer.
+   ========================================================================== */
+
+.appShell .onboardingBackdrop,
+.appShell .alphaConsentOverlay{
+  background:rgba(245,247,252,.78)!important;
+  backdrop-filter:blur(16px)!important;
+  -webkit-backdrop-filter:blur(16px)!important;
+  z-index:120!important;
+}
+.appShell .onboardingCard{
+  width:min(680px,calc(100vw - 28px))!important;
+  background:rgba(255,255,255,.98)!important;
+  color:var(--az-text-primary)!important;
+  border:1px solid rgba(124,58,237,.14)!important;
+  border-radius:24px!important;
+  box-shadow:0 28px 80px rgba(76,60,140,.18),0 8px 28px rgba(26,26,46,.08)!important;
+  overflow:hidden!important;
+}
+.appShell .onboardingTop,
+.appShell .onboardingFooter{border-color:var(--az-border)!important}
+.appShell .onboardingProgress span{background:var(--az-border)!important}
+.appShell .onboardingProgress span.on{background:var(--az-grad-violet-blue)!important}
+.appShell .onboardingCount,
+.appShell .onboardingCopy b,
+.appShell .onboardHint{color:var(--az-violet-600)!important}
+.appShell .onboardingIcon{
+  background:var(--az-grad-subtle-bg)!important;
+  border:1px solid rgba(124,58,237,.12)!important;
+  color:var(--az-violet-600)!important;
+}
+.appShell .onboardingCopy h2{color:var(--az-text-primary)!important}
+.appShell .onboardingCopy p{color:var(--az-text-secondary)!important}
+.appShell .onboardInput,
+.appShell .onboardChoices .choice{
+  background:#fff!important;
+  color:var(--az-text-primary)!important;
+  border:1px solid var(--az-border)!important;
+  border-radius:12px!important;
+}
+.appShell .onboardChoices .choice:hover,
+.appShell .onboardChoices .choice.selected{
+  border-color:rgba(124,58,237,.45)!important;
+  background:var(--az-lavender-50)!important;
+  color:var(--az-violet-600)!important;
+  box-shadow:0 4px 16px rgba(124,58,237,.08)!important;
+}
+.appShell .onboardBack{color:var(--az-text-secondary)!important}
+.appShell .onboardPrivacy{color:var(--az-text-muted)!important}
+.appShell .onboardError{margin-top:12px!important}
+
+.appShell .alphaConsentCard{
+  width:min(620px,calc(100vw - 28px))!important;
+  background:#fff!important;
+  color:var(--az-text-primary)!important;
+  border:1px solid var(--az-border)!important;
+  border-radius:22px!important;
+  box-shadow:0 24px 70px rgba(76,60,140,.18)!important;
+}
+.appShell .alphaConsentCard h3{color:var(--az-text-primary)!important}
+.appShell .alphaConsentCard>p{color:var(--az-text-secondary)!important;line-height:1.7}
+.appShell .alphaConsentLinks button{
+  background:var(--az-lavender-50)!important;
+  color:var(--az-violet-600)!important;
+  border:1px solid rgba(124,58,237,.12)!important;
+  border-radius:10px!important;
+  transition:transform var(--az-dur-hover) var(--az-ease),background var(--az-dur-hover) var(--az-ease)!important;
+}
+.appShell .alphaConsentLinks button:hover{transform:translateY(-1px);background:var(--az-lavender-100)!important}
+.appShell .alphaConsentActions{gap:10px!important}
+.appShell .alphaConsentActions .btn:first-child{
+  background:#fff!important;color:var(--az-text-primary)!important;border:1px solid var(--az-border)!important;
+}
+.appShell .alphaConsentActions .btn.primary{background:var(--az-grad-violet-blue)!important;color:#fff!important}
+
+.appShell .alphaNotificationCenter{position:relative}
+.appShell .alphaNotificationButton{
+  width:40px!important;height:40px!important;border-radius:12px!important;
+  display:grid!important;place-items:center!important;
+  color:var(--az-text-secondary)!important;background:#fff!important;
+  border:1px solid var(--az-border)!important;
+  box-shadow:var(--az-shadow-xs)!important;
+}
+.appShell .alphaNotificationButton:hover{color:var(--az-violet-600)!important;border-color:rgba(124,58,237,.3)!important}
+.appShell .alphaNotificationButton>span{
+  background:var(--az-grad-violet-blue)!important;color:#fff!important;
+  min-width:18px!important;height:18px!important;border-radius:999px!important;
+  font:600 10px var(--az-font)!important;display:grid!important;place-items:center!important;
+  border:2px solid #fff!important;
+}
+.appShell .alphaNotificationPanel{
+  position:absolute!important;right:0!important;top:48px!important;
+  width:min(390px,calc(100vw - 24px))!important;
+  background:rgba(255,255,255,.98)!important;
+  border:1px solid var(--az-border)!important;border-radius:18px!important;
+  box-shadow:0 18px 50px rgba(76,60,140,.16)!important;
+  overflow:hidden!important;z-index:100!important;
+  animation:az-modal-in var(--az-dur-modal) var(--az-ease)!important;
+}
+.appShell .alphaNotificationHead{padding:14px 16px!important;border-bottom:1px solid var(--az-border)!important}
+.appShell .alphaNotificationHead b{color:var(--az-text-primary)!important}
+.appShell .alphaNotificationHead small,
+.appShell .alphaNotificationItem small{color:var(--az-text-muted)!important}
+.appShell .alphaNotificationHead button{
+  color:var(--az-violet-600)!important;background:var(--az-lavender-50)!important;border-radius:8px!important;
+}
+.appShell .alphaNotificationItem{
+  width:100%!important;text-align:left!important;background:#fff!important;color:var(--az-text-primary)!important;
+  border:0!important;border-bottom:1px solid var(--az-border)!important;padding:13px 16px!important;
+}
+.appShell .alphaNotificationItem:hover{background:#faf9ff!important}
+.appShell .alphaNotificationItem.unread{background:linear-gradient(90deg,rgba(124,58,237,.055),#fff)!important}
+.appShell .alphaNotificationItem b{color:var(--az-text-primary)!important}
+.appShell .alphaNotificationItem p{color:var(--az-text-secondary)!important}
+.appShell .alphaNotificationEmpty{padding:32px 16px!important;color:var(--az-text-muted)!important;text-align:center}
+
+.appShell .driveBrowser{
+  background:#fff!important;color:var(--az-text-primary)!important;
+  border:1px solid var(--az-border)!important;border-radius:18px!important;
+  box-shadow:var(--az-shadow-sm)!important;overflow:hidden!important;
+}
+.appShell .driveConnect,.appShell .driveSetup{
+  padding:32px 24px!important;text-align:center!important;
+  background:linear-gradient(180deg,#fff 0%,#faf9ff 100%)!important;
+}
+.appShell .driveLogo{
+  width:52px!important;height:52px!important;margin:0 auto 12px!important;
+  display:grid!important;place-items:center!important;border-radius:15px!important;
+  background:var(--az-lavender-50)!important;color:var(--az-violet-600)!important;
+  border:1px solid rgba(124,58,237,.12)!important;
+}
+.appShell .driveConnect h3,.appShell .driveSetup h3{color:var(--az-text-primary)!important}
+.appShell .driveConnect p,.appShell .driveSetup p{color:var(--az-text-secondary)!important}
+.appShell .driveToolbar{background:#fff!important;border-bottom:1px solid var(--az-border)!important}
+.appShell .driveSearch{background:#f8f8fc!important;border:1px solid var(--az-border)!important;border-radius:10px!important}
+.appShell .driveSearch input{background:transparent!important;border:0!important;color:var(--az-text-primary)!important}
+.appShell .driveMeta{color:var(--az-text-muted)!important;background:#faf9ff!important;border-bottom:1px solid var(--az-border)!important}
+.appShell .driveFile{
+  background:#fff!important;color:var(--az-text-primary)!important;border:1px solid var(--az-border)!important;
+  border-radius:12px!important;margin:8px 12px!important;
+  transition:border-color var(--az-dur-hover) var(--az-ease),transform var(--az-dur-hover) var(--az-ease),background var(--az-dur-hover) var(--az-ease)!important;
+}
+.appShell .driveFile:hover{border-color:rgba(124,58,237,.32)!important;background:#faf9ff!important;transform:translateY(-1px)}
+.appShell .driveFile.selected{border-color:var(--az-violet-500)!important;background:var(--az-lavender-50)!important}
+.appShell .driveFileIcon{background:var(--az-lavender-50)!important;color:var(--az-violet-600)!important;border-radius:10px!important}
+.appShell .driveFile b{color:var(--az-text-primary)!important}
+.appShell .driveFile small{color:var(--az-text-muted)!important}
+.appShell .driveFooter{background:#fff!important;border-top:1px solid var(--az-border)!important;color:var(--az-text-secondary)!important}
+.appShell .driveEmpty{color:var(--az-text-muted)!important;background:#fafbfe!important}
+
+.appShell .modal{
+  background:rgba(30,27,50,.22)!important;
+  backdrop-filter:blur(10px)!important;
+  -webkit-backdrop-filter:blur(10px)!important;
+}
+.appShell .modalCard{
+  width:min(620px,calc(100vw - 28px))!important;
+  background:rgba(255,255,255,.98)!important;
+  color:var(--az-text-primary)!important;
+  border:1px solid rgba(124,58,237,.13)!important;
+  border-radius:20px!important;
+  box-shadow:0 24px 70px rgba(76,60,140,.18)!important;
+  animation:az-modal-in var(--az-dur-modal) var(--az-ease)!important;
+}
+.appShell .modalCard h2{color:var(--az-text-primary)!important}
+.appShell .modalCard .muted{color:var(--az-text-secondary)!important}
+.appShell .modalCard .close{
+  background:#f8f8fc!important;color:var(--az-text-muted)!important;
+  border:1px solid var(--az-border)!important;border-radius:10px!important;
+}
+.appShell .modalCard .close:hover{color:var(--az-text-primary)!important;border-color:var(--az-border-strong)!important}
+.appShell .modalCard .assistantInput,
+.appShell .modalCard .editorSelect,
+.appShell .modalCard input,
+.appShell .modalCard select,
+.appShell .modalCard textarea{
+  background:#fff!important;color:var(--az-text-primary)!important;border:1px solid var(--az-border)!important;
+  border-radius:12px!important;
+}
+.appShell .modalCard .assistantInput{min-height:132px!important;resize:vertical!important}
+.appShell .modalCard .assistantInput:focus,
+.appShell .modalCard .editorSelect:focus,
+.appShell .modalCard input:focus,
+.appShell .modalCard select:focus,
+.appShell .modalCard textarea:focus{
+  outline:none!important;border-color:var(--az-violet-500)!important;
+  box-shadow:0 0 0 3px rgba(124,58,237,.12)!important;
+}
+.appShell .modalCard .btn.primary{
+  background:var(--az-grad-violet-blue)!important;color:#fff!important;
+  box-shadow:var(--az-shadow-sm)!important;
+}
+.appShell .modalCard .message{
+  background:var(--az-lavender-50)!important;color:var(--az-violet-700)!important;
+  border:1px solid rgba(124,58,237,.12)!important;border-radius:10px!important;
+}
+.appShell .modalCard .message:has(+ .btn){}
+.appShell .modalCard .editorSelect option{background:#fff!important;color:var(--az-text-primary)!important}
+
+.appShell .brand{
+  background:#fff!important;border:1px solid rgba(124,58,237,.10)!important;
+  border-radius:12px!important;padding:5px 9px!important;
+  box-shadow:0 2px 10px rgba(76,60,140,.07)!important;
+}
+.appShell .side .brand{padding:4px 8px!important}
+.appShell .alphaLogoExact{mix-blend-mode:normal!important;filter:none!important}
+@media(max-width:700px){
+  .appShell .alphaNotificationPanel{right:-8px!important}
+  .appShell .onboardingCard,.appShell .alphaConsentCard,.appShell .modalCard{border-radius:18px!important}
+  .appShell .alphaConsentActions{flex-direction:column!important}
+  .appShell .alphaConsentActions .btn{width:100%!important}
+}
