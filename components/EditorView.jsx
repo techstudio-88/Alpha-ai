@@ -195,6 +195,8 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
       const nextVersion=Number(latest?.version||0)+1;
       const {error:versionError}=await supabase.from("clip_versions").insert({clip_id:initialClip.id,version:nextVersion,edit_data:data,render_status:"draft"});
       if(versionError){setSaved(false);setError("Draft saved locally, but version history could not be recorded.");return}
+      const {data:versionRows}=await supabase.from("clip_versions").select("id,version,edit_data,render_status,created_at").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(12);
+      setVersions(versionRows||[]);
     }
     setSaved(true);
   };
