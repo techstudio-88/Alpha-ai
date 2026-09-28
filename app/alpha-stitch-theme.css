@@ -1,0 +1,110 @@
+/* Alpha.ai Stitch visual system — Black + Electric Blue + Cyan */
+:root{
+  --stitch-bg:#070a0f;
+  --stitch-surface:#0c1118;
+  --stitch-surface-2:#111821;
+  --stitch-surface-3:#171f2a;
+  --stitch-line:#26313d;
+  --stitch-text:#e8f0f5;
+  --stitch-muted:#8d9aa8;
+  --stitch-blue:#2563ff;
+  --stitch-cyan:#00f2fe;
+  --stitch-cyan-soft:#6ff6ff;
+}
+html,body{background:var(--stitch-bg)!important;color:var(--stitch-text)!important}
+html[data-theme="light"],html[data-theme="dusk"],html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="light"] body,html[data-theme="dusk"] body{background:var(--stitch-bg)!important;color:var(--stitch-text)!important}
+body{font-family:Geist,Inter,system-ui,sans-serif}
+button,input,textarea,select{font-family:inherit}
+.side,.appShell .side,.alphaStudioProjectRail{background:#080c12!important;border-color:var(--stitch-line)!important}
+.sideTop{background:#0a0f15!important;border-bottom:1px solid rgba(132,148,149,.16)!important}
+.sideTop .alphaLogoExact{filter:drop-shadow(0 0 18px rgba(0,242,254,.16))!important}
+.nav button{color:#849495!important;border-radius:8px!important}
+.nav button:hover{background:#111821!important;color:#e8f0f5!important}
+.nav button.active{background:#171f2a!important;color:#e8f0f5!important;box-shadow:0 0 14px -2px rgba(0,242,254,.35)!important}
+.workspaceMini{background:#0c1118!important;color:#8d9aa8!important;border-color:#26313d!important}
+.themeSwitcher{display:none!important}
+.signout{color:#849495!important}
+.signout:hover{background:#111821!important;color:#e8f0f5!important}
+.main,.app,.appShell,.alphaStudioWorkspaceFrame{background:var(--stitch-bg)!important}
+.alphaStudioTopbar{background:rgba(10,15,21,.94)!important;border-color:#26313d!important;color:#e8f0f5!important;backdrop-filter:blur(18px)}
+.alphaStudioTopbarBrand{color:#e8f0f5!important}
+.alphaStudioTopbarBrand .alphaStudioPulse{background:var(--stitch-cyan)!important;box-shadow:0 0 10px rgba(0,242,254,.55)!important}
+.alphaStudioModes button{color:#849495!important}
+.alphaStudioModes button.active{color:var(--stitch-cyan-soft)!important;background:#171f2a!important}
+.alphaStudioTopSearch{background:#0c1118!important;border-color:#26313d!important;color:#849495!important}
+.alphaStudioLiveBadge{background:#0c1118!important;color:var(--stitch-cyan-soft)!important;border-color:#26313d!important}
+.alphaStudioProjectRail{border-right:1px solid #26313d!important}
+.alphaStudioProjectRail button{color:#849495!important}
+.alphaStudioProjectRail button:hover,.alphaStudioProjectRail button.active{background:#171f2a!important;color:var(--stitch-cyan-soft)!important;box-shadow:0 0 12px -2px rgba(0,242,254,.28)!important}
+.appUtilityBar{background:rgba(7,10,15,.84)!important;border-color:#26313d!important;color:#849495!important}
+.card,.card3dColor,.settingsCard,.workspaceFeaturePage,.appDesignPanel,.projectCardEnhanced,.projectCard,.clipCard,.mediaCard,.templateCard,.calendarCard,.insightCard,.assistantInfoCard,.assistantComposer,.assistantHeroCard,.dashboardShortcut,.dashboardActivity,.dashboardPipeline{background:linear-gradient(145deg,#0c1118,#101720)!important;border-color:#26313d!important;color:var(--stitch-text)!important;box-shadow:0 16px 50px rgba(0,0,0,.28)!important}
+.card:hover,.projectCardEnhanced:hover,.projectCard:hover,.clipCard:hover,.templateCard:hover{border-color:rgba(0,242,254,.30)!important;box-shadow:0 20px 60px rgba(0,0,0,.35),0 0 20px rgba(0,242,254,.05)!important}
+.eyebrow{color:var(--stitch-cyan-soft)!important;background:rgba(0,242,254,.07)!important;border-color:rgba(0,242,254,.17)!important}
+h1,h2,h3,h4,b,strong{color:#e8f0f5}
+.muted,small{color:#8d9aa8!important}
+.gradient{background:linear-gradient(90deg,#e8f0f5,#6ff6ff,#2563ff)!important;background-clip:text!important;-webkit-background-clip:text!important;-webkit-text-fill-color:transparent!important}
+.btn{background:#111821!important;color:#e8f0f5!important;border-color:#2b3947!important;box-shadow:none!important}
+.btn:hover{background:#171f2a!important;border-color:#3b5368!important;transform:translateY(-1px)!important}
+.btn.primary{background:linear-gradient(100deg,#2563ff,#00d9ff)!important;color:#001114!important;border-color:transparent!important;box-shadow:0 0 22px rgba(0,217,255,.16)!important}
+.btn.primary:hover{box-shadow:0 0 30px rgba(0,217,255,.25)!important}
+.btn.danger{background:#241316!important;color:#ffb4ab!important;border-color:#5a292e!important}
+.input,.assistantInput,select.input,textarea.input{background:#090e14!important;color:#e8f0f5!important;border-color:#26313d!important}
+.input:focus,.assistantInput:focus{border-color:#00d9ff!important;box-shadow:0 0 0 3px rgba(0,217,255,.10)!important}
+.searchBox{background:#090e14!important;border-color:#26313d!important}
+.searchBox input{background:transparent!important;color:#e8f0f5!important}
+.statusBadge,.badge,.chip,.pill{background:#111821!important;color:#6ff6ff!important;border-color:#26313d!important}
+.progressBar,.progress,.progressWrap .progressBar{background:#1a232e!important}
+.progressBar i,.progress>*,.progressBar>*{background:linear-gradient(90deg,#2563ff,#00f2fe)!important;box-shadow:0 0 12px rgba(0,242,254,.35)!important}
+.cloudLoader .quantumRed span,.cloudLoader .quantumYellow span,.cloudLoader .quantumGreen span{background:#00f2fe!important}
+.cloudLoader .quantumBlue span{background:#2563ff!important}
+.landing,.authWrap{background:#070a0f!important;color:#e8f0f5!important}
+.landingNav{background:rgba(7,10,15,.78)!important;border-color:#26313d!important}
+.authCardPro{background:#0c1118!important;border-color:#26313d!important}
+.authPanel{background:#0c1118!important}
+.authVisual{background:radial-gradient(circle at 30% 30%,rgba(0,242,254,.16),transparent 30%),linear-gradient(145deg,#070a0f,#101b29)!important}
+.socialBtn{background:#111821!important;color:#e8f0f5!important;border-color:#26313d!important}
+.authPanel input{background:#090e14!important;color:#e8f0f5!important;border-color:#26313d!important}
+.uploadModal,.modalCard{background:#0c1118!important;border-color:#26313d!important;color:#e8f0f5!important}
+.fileDrop,.linkImportPanel,.sourceTabs{background:#090e14!important;border-color:#26313d!important}
+.sourceTabs button{color:#8d9aa8!important}
+.sourceTabs button.selected{background:#171f2a!important;color:#6ff6ff!important;border-color:rgba(0,242,254,.25)!important}
+.message{background:#101821!important;color:#b9cacb!important;border-color:#26313d!important}
+.notificationCenter,.notificationPanel,.activityPanel,.commandPalette{background:#0c1118!important;color:#e8f0f5!important;border-color:#26313d!important}
+.notificationItem,.activityItem{background:#0c1118!important;border-color:#1d2833!important}
+.mobileTabBar{background:rgba(8,12,18,.96)!important;border-color:#26313d!important}
+.mobileTabBar button{color:#849495!important}
+.mobileTabBar button.active{color:#6ff6ff!important}
+
+/* Expanded Stitch screens */
+.studioScreen{min-height:calc(100vh - 150px);padding:8px 2px 48px}
+.studioScreenHead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin:12px 0 22px}
+.studioScreenHead h1{font-family:"Space Grotesk",Inter,sans-serif;font-size:clamp(28px,3.2vw,42px);line-height:1.04;letter-spacing:-.04em;margin:7px 0 8px}
+.studioScreenHead p{max-width:720px;margin:0;font-size:14px}
+.studioToolbar{display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:10px}
+.studioCount{margin-left:auto;color:#849495;font:600 11px "JetBrains Mono",monospace}
+.studioGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.studioClipCard{padding:0;text-align:left;border:1px solid #26313d;background:#0c1118;border-radius:10px;overflow:hidden;color:#e8f0f5;cursor:pointer;transition:.22s}
+.studioClipCard:hover{transform:translateY(-3px);border-color:rgba(0,242,254,.32);box-shadow:0 16px 42px rgba(0,0,0,.32)}
+.studioClipVisual{height:170px;display:flex;align-items:center;justify-content:center;position:relative;background:radial-gradient(circle at 50% 40%,rgba(0,242,254,.12),transparent 35%),#080c12;color:#6ff6ff}
+.studioClipVisual>span{position:absolute;left:10px;bottom:9px;font:600 10px "JetBrains Mono",monospace;color:#849495}
+.studioClipVisual i{position:absolute;right:10px;bottom:9px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#171f2a;color:#6ff6ff}
+.studioClipBody{padding:14px}.studioCardTop{display:flex;justify-content:space-between;gap:10px}.studioCardTop span{color:#00d9ff;font:600 10px "JetBrains Mono",monospace}.studioClipBody p{font-size:12px;color:#8d9aa8;min-height:32px}.studioSignalRow{display:flex;gap:12px;color:#849495;font:500 10px "JetBrains Mono",monospace}.studioSignalRow span{display:flex;gap:5px;align-items:center}
+.studioEmpty{border:1px dashed #2b3947;border-radius:12px;min-height:270px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:30px;background:#090e14}.studioEmptyIcon{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;color:#6ff6ff;background:#111821;border:1px solid #26313d;box-shadow:0 0 25px rgba(0,242,254,.08)}.studioEmpty h3{margin:14px 0 4px}.studioEmpty p{max-width:480px;color:#8d9aa8;font-size:13px}
+.studioSkeleton{height:280px;border-radius:10px;background:linear-gradient(110deg,#0c1118,#171f2a,#0c1118);background-size:220% 100%;animation:stitchShimmer 1.4s linear infinite}.studioTableSkeleton{height:360px;border-radius:12px;background:linear-gradient(110deg,#0c1118,#171f2a,#0c1118);background-size:220% 100%;animation:stitchShimmer 1.4s linear infinite}
+@keyframes stitchShimmer{to{background-position:-220% 0}}
+.studioStats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}.studioStats .card{padding:16px}.studioStats small{font:600 10px "JetBrains Mono",monospace;letter-spacing:.08em}.studioStats strong{display:block;font:600 30px "Space Grotesk";margin:7px 0}.studioStats span{font-size:11px;color:#849495}
+.studioJobList{display:flex;flex-direction:column;gap:7px}.studioJobRow{display:grid;grid-template-columns:34px 1.5fr auto 1fr 48px;gap:14px;align-items:center;padding:12px 14px;border:1px solid #26313d;background:#0c1118;border-radius:9px}.studioJobRow small{font-size:10px}.studioJobRow>div:nth-child(2){display:flex;flex-direction:column;gap:3px}.jobPulse{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#111821;color:#6ff6ff}.jobProgress{height:5px;background:#1a232e;border-radius:99px;overflow:hidden}.jobProgress i{display:block;height:100%;background:linear-gradient(90deg,#2563ff,#00f2fe);box-shadow:0 0 12px rgba(0,242,254,.4)}
+.transcriptStudio,.reviewLab,.captionStudio,.repurposeGrid,.thumbnailStudio{display:grid;grid-template-columns:1.25fr .9fr;gap:14px}.studioVideoPanel,.studioTranscriptPanel,.reviewPlayer,.reviewInspector,.captionPreview,.captionControls{min-height:520px}.studioPanelHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #26313d}.studioPanelHead small{display:block;margin-top:3px}.studioVideoPlaceholder{height:calc(100% - 55px);min-height:410px;background:radial-gradient(circle at 50% 40%,rgba(0,242,254,.10),transparent 34%),#070a0f;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#849495}.studioVideoPlaceholder svg{color:#6ff6ff}.studioTranscriptPanel{overflow:hidden}.transcriptText{padding:8px;max-height:520px;overflow:auto}.transcriptText button{width:100%;display:grid;grid-template-columns:55px 1fr;text-align:left;gap:12px;padding:10px;border:0;border-bottom:1px solid #17212c;background:transparent;color:#c9d4db}.transcriptText button:hover{background:#111821}.transcriptText time{font:600 10px "JetBrains Mono",monospace;color:#00d9ff}.studioListStrip{display:flex;gap:7px;overflow:auto;margin-top:12px}.studioListStrip button{min-width:150px;text-align:left;background:#0c1118;color:#8d9aa8;border:1px solid #26313d;border-radius:8px;padding:9px}.studioListStrip button.active{color:#6ff6ff;border-color:#00d9ff}.studioListStrip small{display:block;margin-top:3px}
+.reviewLab{grid-template-columns:1.5fr .65fr}.reviewPlayer{padding:0;overflow:hidden}.reviewCanvas{min-height:540px;background:radial-gradient(circle at 50% 35%,rgba(37,99,255,.13),transparent 30%),#06090d;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#849495}.reviewCanvas svg{color:#6ff6ff}.reviewTimeline{height:8px;margin:10px 14px;background:#1a232e;border-radius:99px;overflow:hidden}.reviewTimeline i{display:block;height:100%;background:linear-gradient(90deg,#2563ff,#00f2fe)}.reviewControls{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #26313d;color:#849495;font:600 11px "JetBrains Mono"}.reviewControls button{background:#111821;border:1px solid #26313d;color:#6ff6ff;border-radius:7px;width:30px;height:30px}.reviewInspector{padding:0 0 16px}.signalMetric{display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #17212c;color:#849495;font-size:12px}.signalMetric b{color:#e8f0f5}
+.captionPreview,.captionControls{padding:0;overflow:hidden}.captionControls{padding-bottom:16px}.captionStyleGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px}.captionStyleGrid button{padding:12px;text-align:left;border:1px solid #26313d;border-radius:8px;background:#090e14;color:#c9d4db}.captionStyleGrid button.active{border-color:#00d9ff;background:#111821;color:#6ff6ff}.captionStyleGrid small{display:block;margin-top:4px}.captionControls label{display:block;padding:7px 14px;color:#8d9aa8;font-size:11px}.captionControls label .input{margin-top:6px}
+.platformChips{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.platformChips span{display:flex;align-items:center;gap:5px;padding:7px 9px;background:#111821;border:1px solid #26313d;border-radius:999px;font-size:10px;color:#8d9aa8}
+.repurposeGrid{grid-template-columns:.7fr 1.3fr}.repurposeGrid>.card,.thumbnailStudio>.card{padding:16px}.repurposeOutput{min-height:420px}.repurposeActions{display:flex;gap:8px;margin-top:20px}.thumbnailCanvas{margin-top:14px;min-height:390px;border-radius:10px;background:radial-gradient(circle at 50% 40%,rgba(0,242,254,.10),transparent 34%),#070a0f;border:1px solid #26313d;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;text-align:center;padding:30px;color:#8d9aa8}.thumbnailCanvas svg{color:#6ff6ff}.thumbnailCanvas b{color:#e8f0f5}.thumbnailCanvas span{max-width:420px;font-size:12px}
+.analyticsPanels{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.analyticsPanels .card{padding:16px}.analyticsBar{display:grid;grid-template-columns:110px 1fr 42px;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #17212c;font-size:12px}.analyticsBar i{height:7px;background:#1a232e;border-radius:99px;overflow:hidden}.analyticsBar i b{display:block;height:100%;background:linear-gradient(90deg,#2563ff,#00f2fe)}
+.automationBuilder{padding:18px;display:grid;grid-template-columns:repeat(3,1fr) auto;gap:14px;align-items:end}.automationStep{display:flex;gap:10px;align-items:flex-start}.automationStep>span{font:600 11px "JetBrains Mono";color:#00d9ff;padding-top:10px}.automationStep>div{flex:1}.automationStep b{display:block;margin-bottom:6px;font-size:12px}.automationRules{display:flex;flex-direction:column;gap:8px;margin-top:14px}.automationRules .card{display:flex;justify-content:space-between;align-items:center;padding:14px 16px}.automationRules small{display:block;margin-top:3px}
+.sharePortal{min-height:460px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:40px}.shareVisual{display:flex;align-items:center;flex-direction:column;gap:10px}.shareVisual svg{color:#6ff6ff}.shareVisual span{color:#8d9aa8}.shareActions{display:flex;gap:8px;margin-top:22px}
+.utilityGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.utilityCard{padding:18px;text-align:left;position:relative}.utilityCard>span{display:grid;place-items:center;width:38px;height:38px;border-radius:9px;background:#111821;color:#6ff6ff;margin-bottom:14px}.utilityCard p{color:#8d9aa8;font-size:12px;max-width:280px}.utilityCard>svg{position:absolute;right:16px;top:18px;color:#526170}
+.full{width:100%}
+@media(max-width:1100px){.studioGrid{grid-template-columns:repeat(2,1fr)}.studioStats{grid-template-columns:repeat(2,1fr)}.utilityGrid{grid-template-columns:repeat(2,1fr)}.automationBuilder{grid-template-columns:1fr 1fr}.automationBuilder>.btn{grid-column:1/-1}.transcriptStudio,.reviewLab,.captionStudio,.repurposeGrid,.thumbnailStudio,.analyticsPanels{grid-template-columns:1fr}}
+@media(max-width:700px){.studioScreenHead{align-items:flex-start;flex-direction:column}.studioGrid,.utilityGrid,.studioStats{grid-template-columns:1fr}.studioJobRow{grid-template-columns:34px 1fr auto}.studioJobRow .jobProgress,.studioJobRow>small:last-child{display:none}.automationBuilder{grid-template-columns:1fr}.studioVideoPanel,.studioTranscriptPanel,.reviewPlayer,.reviewInspector,.captionPreview,.captionControls{min-height:380px}.studioVideoPlaceholder,.reviewCanvas{min-height:300px}.studioToolbar{flex-wrap:wrap}.studioCount{margin-left:0}.repurposeActions,.shareActions{flex-direction:column;width:100%}}
+@media(prefers-reduced-motion:reduce){.studioSkeleton,.studioTableSkeleton{animation:none}}
