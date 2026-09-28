@@ -53,9 +53,15 @@ export default function AIChatView({workspace,supabase,onNavigate}){
  }
  async function saveSchedule(){
   if(!clip||!scheduledFor)return;
-  const{error}=await supabase.from("scheduled_posts").insert({workspace_id:workspace.id,clip_id:clip.id,platform,scheduled_for:new Date(scheduledFor).toISOString(),status:"scheduled",payload:{source:"ai_chat",title:clip.title}});
+  const when=new Date(scheduledFor).toISOString();
+  const{error}=await supabase.from("scheduled_posts").insert({workspace_id:workspace.id,clip_id:clip.id,platform,scheduled_for:when,status:"scheduled",payload:{source:"ai_chat",title:clip.title}});
   if(error)return setMessages(v=>[...v,{role:"assistant",text:"Scheduling failed: "+error.message}]);
-  setMessages(v=>[...v,{role:"assistant",text:`Scheduled “${clip.title}” for ${platform}.`}]);
+  if(platform==="YouTube"){
+    const{data:{session}}=await supabase.auth.getSession();
+    const{error:pe}=await supabase.from("publish_jobs").insert({workspace_id:workspace.id,user_id:session?.user?.id,clip_id:clip.id,platform:"youtube",status:"queued",scheduled_for:when,metadata:{title:clip.title,source:"ai_chat"}});
+    if(pe)return setMessages(v=>[...v,{role:"assistant",text:"Saved to calendar, but publishing job could not be queued: "+pe.message}]);
+  }
+  setMessages(v=>[...v,{role:"assistant",text:"Scheduled "+clip.title+" for "+platform+"."}]);
  }
  async function updateSpec(patch){
   if(!clip)return;
