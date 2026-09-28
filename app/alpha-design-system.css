@@ -516,6 +516,6 @@
 .appShell .addonListRow>span{display:inline-flex;align-items:center;gap:6px;color:var(--az-violet-600);font-weight:600;font-size:13px}
 .appShell .addonMetric{display:flex;flex-direction:column;gap:6px;padding:20px!important}
 .appShell .addonMetric span{font-size:12px;color:var(--az-text-muted);text-transform:uppercase;letter-spacing:.08em}
-.appShell .addonMetric b{font:700 30px var(--az-font-display);color:var(--az-text-primary)}
+.appShell .addonMetric b{font:700 30px var(--az-font);color:var(--az-text-primary)}
 .appShell .addonAction{width:max-content;margin-top:16px;text-decoration:none}
 @media(max-width:720px){.appShell .addonGrid{grid-template-columns:1fr}.appShell .workspaceAddon{padding-bottom:22px}}
