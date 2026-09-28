@@ -39,7 +39,8 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const [blockHeight,setBlockHeight]=useState(52);
   const [layoutTemplate,setLayoutTemplate]=useState("vertical-pro");
   const [fullscreenAsk,setFullscreenAsk]=useState(false),[shortcutsOpen,setShortcutsOpen]=useState(false),[splitView,setSplitView]=useState(false),[history,setHistory]=useState([]),[future,setFuture]=useState([]);
-  const [rendering,setRendering]=useState(false);\n  const [versions,setVersions]=useState([]);
+  const [rendering,setRendering]=useState(false);
+  const [versions,setVersions]=useState([]);
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null); const historyRef=useRef(null);
   const editorRef=useRef(null);
