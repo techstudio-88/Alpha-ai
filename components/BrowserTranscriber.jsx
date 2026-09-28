@@ -187,6 +187,28 @@ export default function BrowserTranscriber({ workspace }) {
             }
           }
 
+          if (result.words?.length) {
+            const wordRows = result.words.map(word => ({
+              transcript_id: payload.transcriptId,
+              start_ms: Math.round((Number(word.start) + Number(chunk.start)) * 1000),
+              end_ms: Math.round((Number(word.end) + Number(chunk.start)) * 1000),
+              word: String(word.word || "").trim()
+            })).filter(row => row.word && row.end_ms > row.start_ms);
+            if (wordRows.length) {
+              const existingWords = await supabase.from("transcript_words")
+                .select("id")
+                .eq("transcript_id", payload.transcriptId)
+                .gte("start_ms", startMs)
+                .lt("start_ms", endMs)
+                .limit(1);
+              if (existingWords.error) throw existingWords.error;
+              if (!(existingWords.data || []).length) {
+                const insertedWords = await supabase.from("transcript_words").insert(wordRows);
+                if (insertedWords.error) throw insertedWords.error;
+              }
+            }
+          }
+
           const textRows = await supabase
             .from("transcript_segments")
             .select("text,start_ms,end_ms")
