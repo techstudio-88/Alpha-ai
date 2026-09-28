@@ -577,6 +577,28 @@ app.post("/process",async(req,res)=>{
     authStore.run(dbAuth,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
+app.post("/assistant/plan",async(req,res)=>{
+  try{
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
+    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    const prompt=String(req.body?.prompt||"").trim();
+    if(!prompt)return res.status(400).json({error:"Prompt is required."});
+    const transcript=String(req.body?.transcript||"").slice(0,60000);
+    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const instruction=`You are Alpha.ai's professional short-form video editor. Return ONLY valid JSON.
+Schema: {"summary":"string","clips":[{"a":0,"b":0,"title":"string","score":0,"reason":"string","aspect":"9:16","captionStyle":"pop","captionColor":"#00f2fe","hook":"string","zooms":[],"cuts":[],"transitions":"cut","broll":[],"overlays":[]}]}
+The transcript is an indexed list where each token is "index:word". Choose 3-6 clips, normally 20-60 seconds, starting with a hook and ending on a complete thought. a/b MUST be transcript word indexes. score is 0-100. Use aspect 9:16, 1:1 or 16:9; captionStyle pop/bold/minimal/none; transitions cut/fade/flash. cuts are [[fromWordIndex,toWordIndex]]. zooms are word indexes. broll is [{"at":wordIndex,"idea":"string"}]. overlays is [{"text":"string","at":wordIndex,"dur":2}].
+User request: ${prompt}
+Transcript:
+${transcript}`;
+    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:instruction});
+    const text=String(result.text||"").trim();
+    const match=text.match(/\{[\s\S]*\}/);
+    if(!match)throw new Error("Gemini returned no clip plan JSON.");
+    let plan;try{plan=JSON.parse(match[0])}catch{throw new Error("Gemini returned invalid clip plan JSON.");}
+    return res.json({ok:true,plan});
+  }catch(e){console.error("assistant/plan",e);return res.status(500).json({error:e.message||"Clip planning failed."})}
+});
 app.post("/assistant",async(req,res)=>{
   try{
     if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
