@@ -2,7 +2,7 @@
 // Landing renders immediately; auth is hydrated in the background.
 import React,{useEffect,useState,useRef}from"react";
 import * as tus from "tus-js-client";
-import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,FlaskConical,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Palette,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo,Images,Mic2,CreditCard,Code2,HelpCircle,History,Gift}from"lucide-react";
+import{ArrowRight,CheckCircle2,BarChart3,FolderKanban,FlaskConical,Clapperboard,Scissors,CalendarDays,LayoutTemplate,Sparkles,Settings,LogOut,Plus,Play,Upload,Video,Clock,Zap,Github,ShieldCheck,Lock,Mail,ChevronRight,MousePointer2,Layers3,WandSparkles,TrendingUp,Sun,Moon,Search,Users,Bell,SlidersHorizontal,Check,MoreHorizontal,Activity,Grid2X2,List,GripVertical,Trash2,Info,Copy,Pin,PinOff,Palette,Undo2,Redo2,ChevronLeft,ChevronDown,X,Command,Move,RefreshCw,CheckCircle,AlertCircle,FileVideo,Images,Mic2,CreditCard,Code2,HelpCircle,History,Gift,MessageCircle,Share2}from"lucide-react";
 import{supabase}from"../lib/supabase";
 import OnboardingWizard from"../components/OnboardingWizard";
 import GoogleDriveBrowser from"../components/GoogleDriveBrowser";
@@ -14,7 +14,7 @@ import ConsentBanner from"../components/ConsentBanner";
 import PromptEditModal from"../components/PromptEditModal";
 import ScheduleModal from"../components/ScheduleModal";
 import {IntelligenceLabView,TranscriptView,ProcessingView,ClipReviewView,CaptionStudioView,RepurposeView,AnalyticsView,ThumbnailStudioView,AutomationView,ShareExportView,UtilitiesView} from "../components/StudioScreens";
-import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BrandKitView,BillingPlansView,ApiWebhooksView,HelpCenterView,ExperimentationView,TrendIntelligenceView,SecurityAuditView} from "../components/StudioAddons";
+import {MediaLibraryView,VoiceDubbingView,BrollFinderView,ApprovalsView,TeamRolesView,BrandKitView,BillingPlansView,ApiWebhooksView,HelpCenterView,SocialAccountsView,ReviewCommentsView,ExperimentationView,TrendIntelligenceView,SecurityAuditView} from "../components/StudioAddons";
 import {ProjectDetailView,SearchView,ChangelogView,ReferralView,NotFoundView} from "../components/StudioUtilityScreens";
 import ClipLabView from "../components/ClipLabView";
 const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
@@ -254,6 +254,8 @@ function WorkspaceModule({view,workspace,projects,user,onUpload,onRefresh,filter
  if(view==="broll")return <BrollFinderView workspace={workspace}/>;
  if(view==="approvals")return <ApprovalsView workspace={workspace} supabase={supabase} onOpenClip={c=>{setSelectedStudioClip(c);setView?.("review")}}/>;
  if(view==="team")return <TeamRolesView workspace={workspace} supabase={supabase}/>;
+ if(view==="social")return <SocialAccountsView workspace={workspace} supabase={supabase}/>;
+ if(view==="comments")return <ReviewCommentsView workspace={workspace} supabase={supabase} clipId={selectedStudioClip?.id}/>;
  if(view==="billing")return <BillingPlansView workspace={workspace} supabase={supabase}/>;
  if(view==="api")return <ApiWebhooksView workspace={workspace} supabase={supabase}/>;
  if(view==="experiments")return <ExperimentationView workspace={workspace} supabase={supabase}/>; if(view==="trends")return <TrendIntelligenceView workspace={workspace} supabase={supabase}/>; if(view==="security")return <SecurityAuditView workspace={workspace} supabase={supabase}/>; if(view==="help")return <HelpCenterView/>;
