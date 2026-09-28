@@ -181,10 +181,16 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const reset=()=>{
     setInPoint(0);setOutPoint(duration);setAspect("9:16");setSpeed(1);setZoom(1);setSaved(false);
   };
-  const saveDraft=()=>{
+  const saveDraft=async()=>{
     if(!project?.id)return;
     const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
     window.localStorage.setItem("alpha.editor."+project.id,JSON.stringify(data));
+    if(initialClip?.id){
+      const {data:latest}=await supabase.from("clip_versions").select("version").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(1).maybeSingle();
+      const nextVersion=Number(latest?.version||0)+1;
+      const {error:versionError}=await supabase.from("clip_versions").insert({clip_id:initialClip.id,version:nextVersion,edit_data:data,render_status:"draft"});
+      if(versionError){setSaved(false);setError("Draft saved locally, but version history could not be recorded.");return}
+    }
     setSaved(true);
   };
   const jump=(t)=>{
