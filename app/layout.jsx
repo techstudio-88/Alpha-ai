@@ -4,6 +4,7 @@ import "./tool-suite.css";
 import "./alpha-studio-ui.css";
 import "./alpha-stitch-theme.css";
 import "./alpha-stitch-addons.css";
+import "./alpha-luxury.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 import StudioEnhancements from "../components/StudioEnhancements";
