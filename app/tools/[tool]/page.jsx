@@ -1,1 +1,25 @@
-"use client";import{useState}from"react";const names={"ai-hook-generator":"Hook Generator","shorts-title-generator":"Shorts Title Generator","caption-generator":"Caption Generator","clip-ideas-generator":"Clip Ideas Generator","podcast-to-shorts-planner":"Podcast to Shorts Planner"};const map={"ai-hook-generator":"hook","shorts-title-generator":"title","caption-generator":"caption","clip-ideas-generator":"ideas","podcast-to-shorts-planner":"podcast"};export default function Page({params}){const [input,setInput]=useState("");const [out,setOut]=useState("");const [busy,setBusy]=useState(false);const tool=map[params.tool]||"ideas";async function run(){setBusy(true);setOut("");try{const r=await fetch("/api/tools/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({tool,input})});const j=await r.json();setOut(j.text||j.error||"No result.")}finally{setBusy(false)}}return <main className="seo-page"><h1>{names[params.tool]||"Free AI Tool"}</h1><p>Paste a topic, transcript or content idea.</p><textarea value={input} onChange={e=>setInput(e.target.value)} rows={10} style={{width:"100%",maxWidth:800}}/><br/><button onClick={run} disabled={busy||!input.trim()}>{busy?"Generating…":"Generate"}</button>{out&&<pre style={{whiteSpace:"pre-wrap"}}>{out}</pre>}</main>}
+import { notFound } from "next/navigation";
+import ToolClient from "./ToolClient";
+
+const names={
+  "ai-hook-generator":"Hook Generator",
+  "shorts-title-generator":"Shorts Title Generator",
+  "caption-generator":"Caption Generator",
+  "clip-ideas-generator":"Clip Ideas Generator",
+  "podcast-to-shorts-planner":"Podcast to Shorts Planner"
+};
+const map={
+  "ai-hook-generator":"hook",
+  "shorts-title-generator":"title",
+  "caption-generator":"caption",
+  "clip-ideas-generator":"ideas",
+  "podcast-to-shorts-planner":"podcast"
+};
+
+export function generateStaticParams(){return Object.keys(map).map(tool=>({tool}));}
+
+export default async function Page({params}){
+  const {tool}=await params;
+  if(!map[tool]) notFound();
+  return <ToolClient tool={tool} names={names}/>;
+}
