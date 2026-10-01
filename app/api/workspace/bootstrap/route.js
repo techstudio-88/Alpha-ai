@@ -34,8 +34,10 @@ export async function POST(request){
   if(membership.error)throw membership.error;
   const sub=await admin.from("subscriptions").upsert({workspace_id:workspace.id,plan:"free",status:"active"},{onConflict:"workspace_id"}).select().maybeSingle();
   if(sub.error)throw sub.error;
-  const usage=await admin.from("usage").upsert({workspace_id:workspace.id,period_start:new Date().toISOString().slice(0,7)+"-01"},{onConflict:"workspace_id,period_start"}).select().maybeSingle();
-  if(usage.error)throw usage.error;
+  const periodStart=new Date().toISOString().slice(0,7)+"-01";
+  const existingUsage=await admin.from("usage").select("workspace_id").eq("workspace_id",workspace.id).eq("period_start",periodStart).maybeSingle();
+  if(existingUsage.error)throw existingUsage.error;
+  if(!existingUsage.data){const usage=await admin.from("usage").insert({workspace_id:workspace.id,period_start:periodStart});if(usage.error)throw usage.error;}
   return Response.json({workspace});
  }catch(e){return Response.json({error:e?.message||"Unable to prepare your workspace."},{status:500})}
 }
