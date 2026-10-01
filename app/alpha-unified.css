@@ -2854,3 +2854,21 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
 @media(max-width:700px){.alphaStudioWorkspaceFrame>.side.mobileOpen{top:52px!important;height:calc(100dvh - 52px)!important}.mobileMenuButton{top:62px!important}.editorFullscreenPrompt{padding:12px!important}.editorFullscreenCard{width:min(440px,100%);max-height:calc(100dvh - 24px)}}
 
 /* QA baseline redeploy */
+
+/* === MOBILE STUDIO OVERRIDES: keep the desktop project rail out of the mobile canvas === */
+@media (max-width:1050px){
+  .alphaStudioProjectRail{display:none!important}
+  .alphaStudioWorkspaceFrame>.main{margin-left:0!important;width:100%!important}
+  .alphaStudioWorkspaceFrame>.side{display:block!important;left:0!important;top:0!important;height:100vh!important;width:min(290px,82vw)!important;max-width:290px!important;padding:20px!important;transform:translateX(-105%)!important;z-index:120!important}
+  .alphaStudioWorkspaceFrame>.side.mobileOpen{transform:translateX(0)!important}
+  .alphaStudioWorkspaceFrame>.side .mobileNavClose{display:flex!important}
+}
+@media (max-width:600px){
+  .alphaStudioWorkspaceFrame{padding-top:58px!important;min-height:calc(100vh - 58px)}
+  .alphaStudioWorkspaceFrame>.main{padding:72px 16px 96px!important;box-sizing:border-box;overflow-x:hidden}
+  .alphaStudioWorkspaceFrame>.side{width:min(290px,82vw)!important;box-sizing:border-box;overflow-y:auto;overflow-x:hidden}
+  .alphaStudioWorkspaceFrame>.side .nav{width:100%;box-sizing:border-box}
+  .alphaStudioWorkspaceFrame>.side .navGroup,.alphaStudioWorkspaceFrame>.side .navGroupLabel,.alphaStudioWorkspaceFrame>.side .nav button{max-width:100%;box-sizing:border-box}
+  .alphaStudioWorkspaceFrame>.side .nav button{display:flex;align-items:center;width:100%;min-width:0}
+  .alphaStudioWorkspaceFrame>.side .nav button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
