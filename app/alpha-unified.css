@@ -2872,3 +2872,13 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .alphaStudioWorkspaceFrame>.side .nav button{display:flex;align-items:center;width:100%;min-width:0}
   .alphaStudioWorkspaceFrame>.side .nav button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
+
+/* === MOBILE QA PASS 2: utility bar, drawer footer, and bottom dock spacing === */
+@media (max-width:700px){
+  .alphaStudioWorkspaceFrame>.main{padding:0 16px 112px!important;box-sizing:border-box}
+  .alphaStudioWorkspaceFrame .appUtilityBar{position:sticky!important;top:0!important;z-index:75!important;margin:0 -16px 16px!important;padding:10px 16px 10px 64px!important;min-height:48px!important;box-sizing:border-box;background:rgba(255,255,255,.96)!important;backdrop-filter:blur(18px);border-bottom:1px solid #e5e9f2!important}
+  .alphaStudioWorkspaceFrame>.side .nav{padding-bottom:84px!important}
+  .alphaStudioWorkspaceFrame>.side .signout{bottom:12px!important;z-index:3!important;background:rgba(255,255,255,.96)!important;box-shadow:0 -8px 18px rgba(30,40,70,.06)}
+  .alphaStudioWorkspaceFrame .mobileTabBar{bottom:8px!important;z-index:110!important}
+  .alphaStudioWorkspaceFrame .main>*:last-child{scroll-margin-bottom:112px}
+}
