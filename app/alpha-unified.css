@@ -2882,3 +2882,12 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .alphaStudioWorkspaceFrame .mobileTabBar{bottom:8px!important;z-index:110!important}
   .alphaStudioWorkspaceFrame .main>*:last-child{scroll-margin-bottom:112px}
 }
+
+/* === QA FIXES: workspace sidebar and processing summary === */
+@media (min-width:701px){
+  .alphaStudioWorkspaceFrame>.side .nav{padding-bottom:150px!important}
+  .alphaStudioWorkspaceFrame>.side .signout{z-index:5}
+}
+.studioStats .card small{display:block;line-height:1.2}
+.studioStats .card strong{display:block;margin-top:5px;line-height:1.1}
+.studioStats .card span{display:block;margin-top:4px;line-height:1.35}
