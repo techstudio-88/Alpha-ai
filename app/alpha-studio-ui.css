@@ -799,3 +799,15 @@ html[data-theme="light"] .performanceTableRow time{color:#8a94a7}
 .navGroupLabel{padding:7px 10px 5px;font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--muted,#7a8190)}
 .navGroup button{width:100%;display:flex;align-items:center;gap:10px;text-align:left}
 @media(max-width:820px){.navGroupLabel{padding-left:8px}.navGroup{padding-bottom:8px;margin-bottom:6px}}
+
+/* Phase 6 — transcript editing and word timing */
+.transcriptEditableRow{position:relative;border-bottom:1px solid var(--line,#e8eaf0);padding:6px 8px}
+.transcriptEditableRow .transcriptSeek{width:100%;border:0;background:transparent;display:flex;gap:12px;text-align:left;padding:7px 4px;color:inherit}
+.transcriptEditableRow .transcriptSeek time{min-width:48px;color:var(--muted,#7a8190);font-variant-numeric:tabular-nums}
+.transcriptEditableRow .transcriptSeek span{flex:1;line-height:1.55}
+.transcriptEditableRow textarea{display:block;width:100%;margin-top:5px;border:1px solid var(--line,#dfe3eb);border-radius:10px;padding:8px;background:var(--surface,#fff);color:inherit;resize:vertical}
+.transcriptRowActions{display:flex;gap:6px;padding:0 4px 5px 64px;opacity:.7}
+.transcriptEditableRow:hover .transcriptRowActions,.transcriptEditableRow:focus-within .transcriptRowActions{opacity:1}
+.transcriptWordTiming{display:flex;flex-wrap:wrap;gap:5px;padding:7px 8px 8px 64px;border-top:1px dashed var(--line,#e8eaf0)}
+.transcriptWordTiming span{padding:3px 6px;border-radius:7px;background:var(--surface-2,#f5f6fa);font-size:11px;cursor:help}
+@media(max-width:820px){.transcriptRowActions{padding-left:4px}.transcriptWordTiming{padding-left:4px}.transcriptEditableRow .transcriptSeek{gap:8px}}
