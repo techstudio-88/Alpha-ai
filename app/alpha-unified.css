@@ -240,20 +240,17 @@ html[data-theme="light"]{color-scheme:light;background:#f4f5f8}
 [data-theme="light"] .authPanel{background:#fff;color:#171a21}
 [data-theme="light"] .authVisual{background:#11133c}
 
-/* === DARK-ONLY PRODUCT THEME === */
-html,body{background:#06070b!important;color:#f4f6fb}
-html[data-theme="dark"],html[data-theme="light"]{color-scheme:dark;background:#06070b}
-body{background:#06070b!important}
-.landing,.app{background:#06070b!important;color:#f4f6fb}
-.landingNav{background:rgba(6,7,11,.72);border-color:#ffffff08}
-.landingNav.navScrolled{background:rgba(6,7,11,.92)}
-.heroGatewayBackground{opacity:.58!important;mix-blend-mode:screen}
-.heroLarge .heroGatewayBackground{border:0!important;border-radius:0!important;box-shadow:none!important}
-.heroLarge{background:radial-gradient(circle at 50% 24%,#17112f 0,transparent 34%),radial-gradient(circle at 82% 55%,#071d24 0,transparent 27%),#06070b}
+/* === PRODUCT THEME — SCOPED BY MODE === */
+html[data-theme="dark"],html[data-theme="dark"] body{background:#06070b!important;color:#f4f6fb}
+html[data-theme="dark"] .landing,html[data-theme="dark"] .app{background:#06070b!important;color:#f4f6fb}
+html[data-theme="dark"] .landingNav{background:rgba(6,7,11,.72);border-color:#ffffff08}
+html[data-theme="dark"] .landingNav.navScrolled{background:rgba(6,7,11,.92)}
+html[data-theme="dark"] .heroGatewayBackground{opacity:.58!important;mix-blend-mode:screen}
+html[data-theme="dark"] .heroLarge .heroGatewayBackground{border:0!important;border-radius:0!important;box-shadow:none!important}
+html[data-theme="dark"] .heroLarge{background:radial-gradient(circle at 50% 24%,#17112f 0,transparent 34%),radial-gradient(circle at 82% 55%,#071d24 0,transparent 27%),#06070b}
 .heroLarge .heroContent{z-index:4}
 .heroLarge .productStage{z-index:3}
-.heroLarge .eyebrow{background:#07080c99;border-color:#ffffff0c}
-
+html[data-theme="dark"] .heroLarge .eyebrow{background:#07080c99;border-color:#ffffff0c}
 /* Vertical 6-step journey on the public home page */
 .workflowJourney{max-width:900px;margin:58px auto 0;position:relative}
 .workflowStep{display:grid;grid-template-columns:76px 58px 1fr 24px;gap:18px;align-items:center;min-height:116px;padding:18px 20px;border:1px solid #ffffff09;border-radius:18px;background:linear-gradient(100deg,#0c0e14,#0a0c11);position:relative;transition:.35s}
