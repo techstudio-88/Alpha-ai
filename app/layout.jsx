@@ -26,7 +26,7 @@ export const metadata = {
     card: "summary_large_image", image: ["/og-image.svg"], title: "Alpha.ai — Turn Long Videos Into Content That Gets Watched.",
     description: "AI video clipping, captions, smart reframe, editing and publishing in one workspace.",
   },
-  themeColor: "#07080d",
+  themeColor: "#ffffff",
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 } },
 };
 
