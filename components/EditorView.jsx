@@ -69,6 +69,10 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   useEffect(()=>{
     if(project?.id)setSelectedId(project.id);
   },[project?.id]);
+  useEffect(()=>{
+    const apply=e=>{const t=e.detail;if(!t)return;const cfg=t.config||{};if(cfg.aspectRatio)setAspect(cfg.aspectRatio);if(cfg.reframe)setAutoReframe(cfg.reframe!=="Center");if(cfg.captionStyle)setCaptions(cfg.captionStyle!=="None");setLayoutTemplate(t.id||t.name||"custom");setSaved(false);setRenderMessage("Template applied. Save or render to use it.")};
+    window.addEventListener("alpha:apply-template",apply);return()=>window.removeEventListener("alpha:apply-template",apply);
+  },[]);
 
   useEffect(()=>{if(typeof window!=="undefined"&&localStorage.getItem("alpha.editor.fullscreen.ask.v1")!=="1")setFullscreenAsk(true)},[]);
   const templates={"vertical-pro":{label:"Vertical Pro",aspect:"9:16",zoom:1},"wide-cinema":{label:"Wide Cinema",aspect:"16:9",zoom:1},"square-social":{label:"Square Social",aspect:"1:1",zoom:1},"vertical-focus":{label:"Vertical Focus",aspect:"9:16",zoom:1.12}};
