@@ -20,7 +20,7 @@ const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
 const AUTH_CALLBACK_URL=`${SITE_URL}/auth/callback`;
 const NAV_GROUPS=[
-  {id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban],["project","Project Detail",FolderKanban],["search","Search",Search],["library","Media Library",Images]]},
+  {id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban],["library","Media Library",Images]]},
   {id:"create",label:"Create",items:[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle]]},
   {id:"publish",label:"Publish",items:[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["share","Share / Export",ArrowRight]]},
   {id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles],["utilities","Utilities",Settings]]},
