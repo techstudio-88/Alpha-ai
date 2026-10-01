@@ -1,14 +1,11 @@
-/* Alpha.ai — Stitch (dark) add-ons
-   Carries over the still-needed, non-theme parts of the retired light system.
-   Stitch tokens: bg #070a0f, surfaces #0c1118/#111821, line #26313d,
-   text #e8f0f5, muted #8d9aa8, cyan #00d9ff. */
+/* Alpha.ai studio add-ons — theme-aware layer */
 
 /* ---- Accent cycler (top bar palette button) ---- */
-:root{--alpha-accent:#8b5cf6;--alpha-accent-soft:rgba(139,92,246,.16)}
+:root{--alpha-accent:#7c3aed;--alpha-accent-soft:rgba(124,58,237,.12);--addon-surface:#ffffff;--addon-surface-2:#f7f7fb;--addon-line:#e5e7eb;--addon-text:#1f2937;--addon-muted:#667085}
 html[data-accent="cyan"]{--alpha-accent:#00d9ff;--alpha-accent-soft:rgba(0,217,255,.14)}
 html[data-accent="lime"]{--alpha-accent:#a3e635;--alpha-accent-soft:rgba(163,230,53,.14)}
 html[data-accent="orange"]{--alpha-accent:#fb923c;--alpha-accent-soft:rgba(251,146,60,.14)}
-.alphaAccentButton{width:34px;height:34px;display:grid;place-items:center;border:1px solid #26313d;border-radius:8px;background:#0c1118;color:var(--alpha-accent);cursor:pointer;transition:border-color .18s,background .18s}
+.alphaAccentButton{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--addon-line);border-radius:8px;background:var(--addon-surface);color:var(--alpha-accent);cursor:pointer;transition:border-color .18s,background .18s}
 .alphaAccentButton:hover{border-color:var(--alpha-accent);background:var(--alpha-accent-soft)}
 .alphaAccentButton:focus-visible,.alphaStudioTopSearch:focus-visible,.btn:focus-visible,.nav button:focus-visible{outline:2px solid var(--alpha-accent);outline-offset:2px}
 .globalCommandMount{position:relative}
@@ -17,24 +14,24 @@ html[data-accent="orange"]{--alpha-accent:#fb923c;--alpha-accent-soft:rgba(251,1
 
 /* ---- Add-on studio screens (StudioAddons / StudioUtilityScreens) ---- */
 .workspaceAddon{max-width:1180px;margin:0 auto;padding:4px 0 32px}
-.workspaceAddon h2{margin:6px 0 8px;color:#e8f0f5;font-size:clamp(26px,3vw,38px);font-weight:700;letter-spacing:-.03em}
+.workspaceAddon h2{margin:6px 0 8px;color:var(--addon-text);font-size:clamp(26px,3vw,38px);font-weight:700;letter-spacing:-.03em}
 .workspaceAddon>.muted{max-width:760px;line-height:1.65;margin-bottom:22px}
 .addonGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.addonCard{display:flex;align-items:flex-start;gap:14px;min-height:94px;padding:18px;background:linear-gradient(145deg,#0c1118,#101720);border:1px solid #26313d;border-radius:12px;color:#e8f0f5;transition:transform .2s,border-color .2s,box-shadow .2s}
+.addonCard{display:flex;align-items:flex-start;gap:14px;min-height:94px;padding:18px;background:linear-gradient(145deg,#ffffff,#f7f7fb);border:1px solid #26313d;border-radius:12px;color:#e8f0f5;transition:transform .2s,border-color .2s,box-shadow .2s}
 .addonCard>svg{color:#6ff6ff;flex:none;margin-top:2px}
 .addonCard:hover{transform:translateY(-2px);border-color:rgba(0,242,254,.30);box-shadow:0 16px 44px rgba(0,0,0,.35)}
 .addonCard b{color:#e8f0f5;display:block;margin-bottom:4px}
 .addonCard .muted{line-height:1.55}
 .addonLink{text-decoration:none;color:inherit}
-.addonNotice{display:flex;gap:12px;align-items:flex-start;padding:16px 18px;margin:0 0 16px;background:linear-gradient(135deg,rgba(0,217,255,.06),#0c1118);border:1px solid rgba(0,242,254,.17);border-radius:12px;color:#e8f0f5}
+.addonNotice{display:flex;gap:12px;align-items:flex-start;padding:16px 18px;margin:0 0 16px;background:linear-gradient(135deg,rgba(124,58,237,.06),#ffffff);border:1px solid rgba(0,242,254,.17);border-radius:12px;color:#e8f0f5}
 .addonNotice>svg{color:#6ff6ff;flex:none;margin-top:2px}
 .addonNotice b{color:#e8f0f5}
 .addonNotice .muted{margin:4px 0 0;line-height:1.55}
-.addonState{min-height:150px;display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;background:#090e14;border:1px dashed #2b3947;border-radius:12px;color:#8d9aa8}
-.addonState.error{color:#ffb4ab;border-color:#5a292e;background:#160e10}
+.addonState{min-height:150px;display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;background:var(--addon-surface-2);border:1px dashed #2b3947;border-radius:12px;color:var(--addon-muted)}
+.addonState.error{color:#ffb4ab;border-color:#5a292e;background:#fff5f5}
 .addonList{display:grid;gap:10px}
-.addonListRow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;padding:15px 17px;background:#0c1118;color:#e8f0f5;border:1px solid #26313d;border-radius:10px;transition:transform .18s,border-color .18s,background .18s}
-.addonListRow:hover{transform:translateY(-1px);border-color:rgba(0,242,254,.30);background:#111821}
+.addonListRow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;padding:15px 17px;background:var(--addon-surface);color:#e8f0f5;border:1px solid #26313d;border-radius:10px;transition:transform .18s,border-color .18s,background .18s}
+.addonListRow:hover{transform:translateY(-1px);border-color:rgba(0,242,254,.30);background:#f5f3ff}
 .addonListRow>div{min-width:0}
 .addonListRow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .addonListRow small{display:block;margin-top:4px}
