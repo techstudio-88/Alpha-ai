@@ -1,4 +1,5 @@
 import "./alpha-unified.css";
+import "./alpha-onboarding.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 import StudioEnhancements from "../components/StudioEnhancements";
