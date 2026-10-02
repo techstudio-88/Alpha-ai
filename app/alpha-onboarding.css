@@ -1,0 +1,243 @@
+.alphaWelcome{
+  position:fixed;
+  inset:0;
+  z-index:100;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  isolation:isolate;
+  background:#f9fbff;
+  color:#111827;
+}
+.alphaWelcomeBackdrop{
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(900px 620px at 50% 34%,rgba(119,91,239,.14),transparent 62%),
+    radial-gradient(680px 460px at 16% 78%,rgba(17,190,207,.10),transparent 70%),
+    radial-gradient(700px 500px at 88% 18%,rgba(101,213,164,.10),transparent 70%),
+    linear-gradient(180deg,#ffffff 0%,#f8faff 55%,#f3f7fc 100%);
+}
+.alphaWelcomeBackdrop::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  opacity:.55;
+  background-image:
+    linear-gradient(rgba(91,82,220,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(91,82,220,.035) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:linear-gradient(to bottom,black,transparent 88%);
+}
+.alphaWelcomeGlow{
+  position:absolute;
+  border-radius:50%;
+  filter:blur(70px);
+  pointer-events:none;
+}
+.alphaWelcomeGlowOne{
+  width:420px;
+  height:420px;
+  left:50%;
+  top:15%;
+  transform:translateX(-50%);
+  background:rgba(118,88,236,.11);
+  animation:alphaWelcomeFloat 6s ease-in-out infinite;
+}
+.alphaWelcomeGlowTwo{
+  width:300px;
+  height:300px;
+  right:8%;
+  bottom:4%;
+  background:rgba(22,190,202,.08);
+  animation:alphaWelcomeFloat 7s ease-in-out infinite reverse;
+}
+.alphaWelcomeInner{
+  position:relative;
+  z-index:2;
+  width:min(760px,calc(100vw - 32px));
+  min-height:min(760px,calc(100vh - 32px));
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:42px 24px 34px;
+}
+.alphaWelcomeLogoStage{
+  position:relative;
+  width:min(480px,78vw);
+  aspect-ratio:16/9;
+  display:grid;
+  place-items:center;
+  margin-top:-18px;
+}
+.alphaWelcomeHalo{
+  position:absolute;
+  width:250px;
+  height:250px;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(124,92,237,.16),rgba(124,92,237,.035) 48%,transparent 72%);
+  filter:blur(2px);
+  transform:scale(.72);
+  opacity:0;
+  animation:alphaWelcomeHalo 1.7s cubic-bezier(.16,.8,.25,1) .08s forwards;
+}
+.alphaWelcomeLogo{
+  position:relative;
+  z-index:2;
+  width:min(390px,74vw);
+  height:auto;
+  object-fit:contain;
+  opacity:0;
+  transform:translateY(28px) scale(.74);
+  filter:blur(8px) drop-shadow(0 22px 42px rgba(54,43,127,.10));
+  animation:alphaWelcomeLogoIn 1.55s cubic-bezier(.16,.84,.25,1) .12s forwards;
+  user-select:none;
+}
+.alphaWelcomeLogoStage.isRevealed .alphaWelcomeLogo{
+  animation:alphaWelcomeLogoSettle .7s cubic-bezier(.2,.8,.2,1) forwards;
+}
+.alphaWelcomeShine{
+  position:absolute;
+  z-index:3;
+  left:12%;
+  top:16%;
+  width:76%;
+  height:68%;
+  pointer-events:none;
+  opacity:0;
+  transform:translateX(-65%) skewX(-16deg);
+  background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.72) 45%,transparent 58%);
+  mix-blend-mode:screen;
+  animation:alphaWelcomeShine 1.15s ease-out .72s forwards;
+}
+.alphaWelcomeCopy{
+  max-width:620px;
+  margin-top:-2px;
+  animation:alphaWelcomeCopyIn .7s ease-out 1.05s both;
+}
+.alphaWelcomeEyebrow{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 11px;
+  border:1px solid rgba(104,87,211,.14);
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  box-shadow:0 8px 28px rgba(30,40,80,.05);
+  color:#6758c8;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.16em;
+}
+.alphaWelcomeEyebrow::before{
+  content:"";
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#7556df,#13b9ca);
+  box-shadow:0 0 14px rgba(117,86,223,.4);
+}
+.alphaWelcomeCopy h1{
+  margin:16px 0 10px;
+  font-size:clamp(30px,4.5vw,48px);
+  line-height:1.04;
+  letter-spacing:-.045em;
+  color:#17203a;
+}
+.alphaWelcomeCopy p{
+  margin:0 auto;
+  max-width:540px;
+  color:#667085;
+  font-size:15px;
+  line-height:1.7;
+}
+.alphaWelcomeStart{
+  margin-top:28px;
+  min-width:150px;
+  height:52px;
+  padding:0 18px 0 22px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:18px;
+  border:0;
+  border-radius:16px;
+  color:#fff;
+  background:linear-gradient(135deg,#7655df,#4d70e8 58%,#15b8c7);
+  box-shadow:0 18px 42px rgba(91,76,206,.25),inset 0 1px 0 rgba(255,255,255,.32);
+  font-size:15px;
+  font-weight:800;
+  cursor:pointer;
+  transition:transform .2s ease,box-shadow .2s ease,filter .2s ease;
+  animation:alphaWelcomeButtonIn .7s ease-out 1.28s both;
+}
+.alphaWelcomeStart:hover{
+  transform:translateY(-2px) scale(1.015);
+  box-shadow:0 22px 48px rgba(91,76,206,.30),inset 0 1px 0 rgba(255,255,255,.38);
+  filter:saturate(1.06);
+}
+.alphaWelcomeStart:active{transform:translateY(0) scale(.99)}
+.alphaWelcomeArrow{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:rgba(255,255,255,.16);
+  font-size:17px;
+}
+.alphaWelcomeHint{
+  margin-top:13px;
+  color:#98a2b3;
+  font-size:11px;
+  animation:alphaWelcomeCopyIn .7s ease-out 1.42s both;
+}
+@keyframes alphaWelcomeLogoIn{
+  0%{opacity:0;transform:translateY(28px) scale(.74);filter:blur(8px) drop-shadow(0 22px 42px rgba(54,43,127,.10))}
+  60%{opacity:1;transform:translateY(-4px) scale(1.025);filter:blur(0) drop-shadow(0 24px 48px rgba(54,43,127,.14))}
+  100%{opacity:1;transform:translateY(0) scale(1);filter:blur(0) drop-shadow(0 18px 38px rgba(54,43,127,.12))}
+}
+@keyframes alphaWelcomeLogoSettle{
+  from{transform:translateY(0) scale(1)}
+  to{transform:translateY(0) scale(1.012)}
+}
+@keyframes alphaWelcomeHalo{
+  0%{opacity:0;transform:scale(.72)}
+  55%{opacity:1;transform:scale(1.08)}
+  100%{opacity:.78;transform:scale(1)}
+}
+@keyframes alphaWelcomeShine{
+  0%{opacity:0;transform:translateX(-65%) skewX(-16deg)}
+  18%{opacity:.75}
+  100%{opacity:0;transform:translateX(65%) skewX(-16deg)}
+}
+@keyframes alphaWelcomeCopyIn{
+  from{opacity:0;transform:translateY(16px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes alphaWelcomeButtonIn{
+  from{opacity:0;transform:translateY(12px) scale(.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@keyframes alphaWelcomeFloat{
+  0%,100%{transform:translate(-50%,0) scale(1)}
+  50%{transform:translate(-50%,12px) scale(1.04)}
+}
+@media(max-width:600px){
+  .alphaWelcomeInner{padding:26px 18px 24px}
+  .alphaWelcomeLogoStage{width:min(440px,96vw);margin-top:-8px}
+  .alphaWelcomeLogo{width:min(360px,88vw)}
+  .alphaWelcomeCopy h1{font-size:31px}
+  .alphaWelcomeCopy p{font-size:14px}
+  .alphaWelcomeStart{width:min(240px,80vw)}
+}
+@media(prefers-reduced-motion:reduce){
+  .alphaWelcomeLogo,.alphaWelcomeHalo,.alphaWelcomeShine,.alphaWelcomeCopy,.alphaWelcomeStart,.alphaWelcomeHint,.alphaWelcomeGlowOne,.alphaWelcomeGlowTwo{
+    animation:none!important;
+    opacity:1;
+    transform:none;
+    filter:none;
+  }
+}
