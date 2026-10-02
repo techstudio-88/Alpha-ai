@@ -20,11 +20,11 @@ const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
 const AUTH_CALLBACK_URL=`${SITE_URL}/auth/callback`;
 const NAV_GROUPS=[
-  {id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban],["library","Media Library",Images]]},
-  {id:"create",label:"Create",items:[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle]]},
-  {id:"publish",label:"Publish",items:[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["share","Share / Export",ArrowRight]]},
-  {id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles],["utilities","Utilities",Settings]]},
-  {id:"workspace-admin",label:"Workspace & Support",items:[["team","Team & Roles",Users],["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["help","Help Center",HelpCircle],["changelog","Changelog",History],["referral","Referral Program",Gift],["settings","Settings",Settings]]}
+{id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban]],subgroups:[{label:"Library",items:[["library","Media Library",Images]]}]},
+{id:"create",label:"Create",items:[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles]],subgroups:[{label:"Production",items:[["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors]]},{label:"Polish",items:[["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle]}]},
+{id:"publish",label:"Publish",items:[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles]],subgroups:[{label:"Content & Brand",items:[["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images]]},{label:"Distribution",items:[["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["share","Share / Export",ArrowRight]]]},
+{id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles]],subgroups:[{label:"Tools",items:[["utilities","Utilities",Settings]]}]},
+{id:"workspace-admin",label:"Workspace",items:[["team","Team & Roles",Users],["settings","Settings",Settings]],subgroups:[{label:"Account",items:[["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["help","Help Center",HelpCircle]]},{label:"More",items:[["changelog","Changelog",History],["referral","Referral Program",Gift]]}]}
 ];
 const NAV=NAV_GROUPS.flatMap(g=>g.items);
 
@@ -33,31 +33,31 @@ function normalizeSourceUrl(raw){try{const u=new URL(String(raw).trim());if(u.pr
 async function fingerprintFile(file){const sampleSize=Math.min(2*1024*1024,Math.floor(file.size/2));const first=new Uint8Array(await file.slice(0,sampleSize).arrayBuffer());const last=new Uint8Array(await file.slice(Math.max(0,file.size-sampleSize),file.size).arrayBuffer());const meta=new TextEncoder().encode([file.size,file.type,file.lastModified].join("|"));const data=new Uint8Array(meta.length+first.length+last.length);data.set(meta,0);data.set(first,meta.length);data.set(last,meta.length+first.length);const hash=await crypto.subtle.digest("SHA-256",data);return Array.from(new Uint8Array(hash)).map(x=>x.toString(16).padStart(2,"0")).join("")}
 function Logo(){return <div className="brand" aria-label="Alpha.ai"><img className="alphaLogo" src="/alpha-logo.svg" alt="Alpha.ai"/></div>}
 function CompactSidebar({view,groups,navigateView,mobileNavOpen,setMobileNavOpen,workspace,theme,setTheme}){
-  const renderItem=([id,label,I])=><button className={view===id?"active":""} key={id} onClick={()=>{navigateView(id);setMobileNavOpen(false)}}><I size={17}/><span>{label}</span></button>;
+  const renderItem=([id,label,I])=><button className={view===id?"active":""} key={id} title={label} onClick={()=>{navigateView(id);setMobileNavOpen(false)}}><I size={17}/><span>{label}</span></button>;
+  const hasView=(items=[])=>items.some(([id])=>view===id);
   return <aside className={"side "+(mobileNavOpen?"mobileOpen":"")}>
     <div className="sideTop"><Logo/><button className="mobileNavClose" aria-label="Close navigation" onClick={()=>setMobileNavOpen(false)}>×</button></div>
     <div className="nav">
       {groups.map(group=>{
-        const count=group.id==="create"?4:group.id==="publish"?3:group.id==="workspace-admin"?3:group.items.length;
-        const primary=group.items.slice(0,count);
-        const more=group.items.slice(count);
-        const moreOpen=more.some(([id])=>view===id);
+        const primaryOpen=hasView(group.items);
         return <section className="navGroup" key={group.id}>
           <div className="navGroupLabel">{group.label}</div>
-          {primary.map(renderItem)}
-          {more.length>0&&<details className="navFeatureGroup" open={moreOpen}>
-            <summary><span>More features</span><ChevronDown size={13}/></summary>
-            <div className="navFeatureChildren">{more.map(renderItem)}</div>
-          </details>}
+          {group.items.map(renderItem)}
+          {(group.subgroups||[]).map((sub,i)=>{
+            const open=hasView(sub.items);
+            return <details className="navFeatureGroup" key={sub.label} open={open}>
+              <summary><span>{sub.label}</span><ChevronRight size={13}/></summary>
+              <div className="navFeatureChildren">{sub.items.map(renderItem)}</div>
+            </details>
+          })}
         </section>
       })}
     </div>
-    <div className="workspaceMini">{workspace?.name||"Workspace"}</div>
+    <div className="workspaceMini"><span className="workspaceMiniDot"/><span>{workspace?.name||"Workspace"}</span></div>
     <div className="themeSwitcher" aria-label="Theme"><button className={theme==="light"?"active":""} onClick={()=>setTheme("light")} title="Light"><Sun size={14}/></button><button className={theme==="dusk"?"active":""} onClick={()=>setTheme("dusk")} title="Dusk"><Sparkles size={14}/></button><button className={theme==="dark"?"active":""} onClick={()=>setTheme("dark")} title="Dark"><Moon size={14}/></button></div>
     <button className="signout" onClick={()=>{setMobileNavOpen(false);supabase?.auth.signOut()}}><LogOut size={17}/><span>Sign out</span></button>
   </aside>
 }
-
 class ViewErrorBoundary extends React.Component{
   constructor(props){super(props);this.state={error:null}}
   static getDerivedStateFromError(error){return{error}}
