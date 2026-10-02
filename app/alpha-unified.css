@@ -2930,3 +2930,11 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
 .card,.featureTile,.workflowCard3d,.showCard,.projectCard{border-radius:20px!important}
 @media (max-width:1050px){.alphaStudioWorkspaceFrame>.side{width:min(280px,82vw)!important}}
 @media (max-width:600px){.alphaStudioWorkspaceFrame>.side{width:min(286px,82vw)!important}}
+
+/* === EDITOR MOBILE FINAL QA FIX === */
+@media (max-width:700px){
+  .editorFullscreenPrompt{padding:10px!important;overflow-x:hidden!important}
+  .editorFullscreenCard{width:calc(100vw - 20px)!important;max-width:calc(100vw - 20px)!important;box-sizing:border-box!important;margin:0!important}
+  .alphaStudioWorkspaceFrame .mobileTabBar{display:none!important}
+  .alphaStudioWorkspaceFrame>.main{padding-bottom:28px!important}
+}
