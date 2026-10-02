@@ -2902,31 +2902,3 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .alphaStudioWorkspaceFrame .mobileTabBar{display:none!important}
   .alphaStudioWorkspaceFrame>.main{padding-bottom:32px!important}
 }
-
-/* === PREMIUM COMPACT SIDEBAR === */
-@media (min-width:1051px){
-  .alphaStudioWorkspaceFrame>.side{width:clamp(190px,16vw,224px)!important;padding:14px 10px!important;box-sizing:border-box;overflow-x:hidden}
-  .alphaStudioWorkspaceFrame>.main{margin-left:clamp(190px,16vw,224px)!important;width:calc(100% - clamp(190px,16vw,224px))!important}
-}
-.alphaStudioWorkspaceFrame>.side .nav{margin-top:10px!important;padding:4px 2px 12px!important;gap:2px!important}
-.alphaStudioWorkspaceFrame>.side .navGroup{padding-bottom:6px!important;margin-bottom:5px!important}
-.alphaStudioWorkspaceFrame>.side .navGroupLabel{padding:5px 8px 3px!important;font-size:9px!important;letter-spacing:.13em!important}
-.alphaStudioWorkspaceFrame>.side .nav button{min-height:34px;padding:7px 8px!important;gap:8px!important;border-radius:10px!important;font-size:12px!important;line-height:1.2}
-.alphaStudioWorkspaceFrame>.side .nav button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.navFeatureGroup{margin:2px 0 4px;border:0}
-.navFeatureGroup summary{list-style:none;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;color:#667085;font-size:11px;font-weight:700;cursor:pointer;user-select:none}
-.navFeatureGroup summary::-webkit-details-marker{display:none}
-.navFeatureGroup summary svg{margin-left:auto;transition:transform .18s ease;opacity:.6}
-.navFeatureGroup[open] summary{background:linear-gradient(100deg,rgba(124,58,237,.08),rgba(6,182,212,.06));color:#5135b8}
-.navFeatureGroup[open] summary svg{transform:rotate(180deg);opacity:1}
-.navFeatureChildren{margin:2px 0 3px 14px;padding-left:8px;border-left:1px solid rgba(124,58,237,.16);display:grid;gap:2px}
-.navFeatureChildren button{min-height:29px!important;padding:5px 7px!important;font-size:11px!important;border-radius:8px!important}
-.navFeatureChildren button.active{background:linear-gradient(100deg,rgba(124,58,237,.13),rgba(6,182,212,.10))!important;color:#5135b8!important;box-shadow:inset 2px 0 0 #7c3aed}
-.tileIcon,.workflowIcon3d,.uploadIcon,.emptyOrb,.linkIcon,.successCheck{box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 8px 22px rgba(74,52,155,.13),0 2px 5px rgba(40,50,90,.08)!important;border:1px solid rgba(124,58,237,.14)!important}
-.tileIcon svg,.workflowIcon3d svg,.uploadIcon svg,.emptyOrb svg,.linkIcon svg,.successCheck svg{filter:drop-shadow(0 2px 2px rgba(45,35,90,.18));color:#6d3df5}
-.tileIcon{background:linear-gradient(145deg,#fff,#f0eaff 55%,#dff8ff)!important}
-.featureTile:nth-child(2n) .tileIcon{background:linear-gradient(145deg,#fff,#e7faff 55%,#e7e1ff)!important}
-.featureTile:nth-child(3n) .tileIcon{background:linear-gradient(145deg,#fff,#fff0f7 55%,#e7efff)!important}
-.card,.featureTile,.workflowCard3d,.showCard,.projectCard{border-radius:20px!important}
-@media (max-width:1050px){.alphaStudioWorkspaceFrame>.side{width:min(280px,82vw)!important}}
-@media (max-width:600px){.alphaStudioWorkspaceFrame>.side{width:min(286px,82vw)!important}}
