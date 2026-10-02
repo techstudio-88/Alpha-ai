@@ -2990,7 +2990,7 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
 @media (min-width:1051px){
   .alphaStudioProjectRail{position:fixed!important;left:0!important;top:52px!important;width:74px!important;height:calc(100vh - 52px)!important;z-index:80!important;box-sizing:border-box!important}
   .alphaStudioWorkspaceFrame>.side{position:fixed!important;left:74px!important;top:52px!important;width:clamp(190px,16vw,224px)!important;height:calc(100vh - 52px)!important;box-sizing:border-box!important}
-  .alphaStudioWorkspaceFrame>.main{margin-left:calc(74px + clamp(190px,16vw,224px))!important;width:calc(100% - (74px + clamp(190px,16vw,224px)))!important;min-width:0!important;box-sizing:border-box!important;padding-left:clamp(18px,2vw,30px)!important;padding-right:clamp(18px,2vw,30px)!important}
+  .alphaStudioWorkspaceFrame>.main{margin-left:calc(74px + clamp(190px,16vw,224px))!important;width:calc(100% - (74px + clamp(190px,16vw,224px)))!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important;padding-left:clamp(18px,2vw,30px)!important;padding-right:clamp(18px,2vw,30px)!important}
   .alphaStudioWorkspaceFrame .appUtilityBar{max-width:100%!important;box-sizing:border-box!important}
 }
 /* Device-selected editor: one entry, two deliberately different workspaces. */
@@ -3049,3 +3049,18 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
 @media (min-width:1051px){.alphaStudioWorkspaceFrame>.main>#alpha-main,.alphaStudioWorkspaceFrame>.main>main{min-width:0!important;max-width:100%!important;box-sizing:border-box!important}}
 @media (max-width:900px){.dashboardV2>.top{padding-left:0!important}.dashboardV2 .dashboardGrid{grid-template-columns:minmax(0,1fr)!important}.dashboardV2 .dashboardStats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media (max-width:600px){.dashboardV2 .dashboardStats{grid-template-columns:1fr 1fr!important;gap:10px!important}.dashboardMetric{padding:15px!important}.dashboardMetric strong{font-size:32px!important}}
+
+/* === ZOOM-SAFE DASHBOARD + CURRENT WORKSPACE DENSITY === */
+@media (min-width:1051px){.alphaStudioWorkspaceFrame>.main{max-width:none!important}}
+.dashboardPipeline{min-width:0!important}
+.workspacePulseGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #edf0f5}
+.workspacePulseCard{min-width:0;display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #edf0f5;border-radius:12px;background:linear-gradient(145deg,#fff,#f8f7ff);box-shadow:0 5px 16px rgba(50,40,100,.06)}
+.workspacePulseCard .pipelineIcon{width:30px;height:30px;flex:0 0 30px;border-radius:9px}
+.workspacePulseCard>div{min-width:0;display:grid;gap:2px}
+.workspacePulseCard b{font-size:16px;line-height:1;color:#273043}
+.workspacePulseCard small{font-size:9px;color:#8791a3;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspacePulseCard.pulseReady .pipelineIcon{color:#15966a;background:linear-gradient(145deg,#fff,#e5fbf0)}
+.workspacePulseCard.pulseActive .pipelineIcon{color:#0b8eaa;background:linear-gradient(145deg,#fff,#e2faff)}
+.workspacePulseCard.pulseAttention .pipelineIcon{color:#d97706;background:linear-gradient(145deg,#fff,#fff3dc)}
+@media (max-width:600px){.workspacePulseGrid{grid-template-columns:1fr}}
+@media (min-width:1051px) and (max-width:1200px){.dashboardGrid{grid-template-columns:1fr!important}}
