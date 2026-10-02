@@ -22,21 +22,21 @@ const AUTH_CALLBACK_URL=`${SITE_URL}/auth/callback`;
 const NAV_GROUPS=[
   {id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban],["library","Media Library",Images]]},
   {id:"create",label:"Create",items:[
-    ["clips","Clips",Clapperboard,[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity]]],
-    ["editor","Edit & Polish",Scissors,[["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play]]],
+    ["clipsGroup","Clips",Clapperboard,[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["transcript","Transcript",FileVideo],["processing","Processing",Activity]]],
+    ["editorGroup","Edit & Polish",Scissors,[["editor","Editor",Scissors],["captions","Captions",Layers3],["review","Clip Review",Play]]],
     ["approvals","Approvals",CheckCircle]
   ]},
   {id:"publish",label:"Publish",items:[
-    ["calendar","Publishing",CalendarDays,[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate]]],
-    ["brandkit","Brand & Creative",Palette,[["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search]]],
-    ["automation","Automation & Export",Zap,[["automation","Automation",Zap],["share","Share / Export",ArrowRight]]
+    ["publishingGroup","Publishing",CalendarDays,[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate]]],
+    ["brandGroup","Brand & Creative",Palette,[["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search]]],
+    ["automationGroup","Automation & Export",Zap,[["automation","Automation",Zap],["share","Share / Export",ArrowRight]]
   ]},
   {id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles],["utilities","Utilities",Settings]]},
   {id:"workspace-admin",label:"Workspace & Support",items:[
     ["team","Team & Roles",Users],
     ["billing","Plans & Billing",CreditCard],
-    ["api","Developer",Code2,[["api","API & Webhooks",Code2],["help","Help Center",HelpCircle]]],
-    ["settings","Settings",Settings,[["settings","Settings",Settings],["changelog","Changelog",History],["referral","Referral Program",Gift]]
+    ["developerGroup","Developer",Code2,[["api","API & Webhooks",Code2],["help","Help Center",HelpCircle]]],
+    ["settingsGroup","Settings",Settings,[["settings","Settings",Settings],["changelog","Changelog",History],["referral","Referral Program",Gift]]
   ]}
 ];
 const NAV=NAV_GROUPS.flatMap(g=>g.items);
