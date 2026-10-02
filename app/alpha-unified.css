@@ -3028,3 +3028,15 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .editorRootMobile .editorInspectorHead{grid-column:1/-1}
   .editorRootMobile .inspectorSection{margin:0!important}
 }
+
+/* === FINAL RESPONSIVE EDITOR QA === */
+@media (min-width:1051px){
+  .alphaStudioProjectRail,.alphaStudioWorkspaceFrame>.side{top:58px!important;height:calc(100vh - 58px)!important}
+}
+@media (max-width:760px){
+  .editorRootMobile .editorCanvasToolbar{overflow:visible!important}
+  .editorRootMobile .editorToolGroup{min-width:0!important;width:100%!important;overflow:visible!important}
+  .editorRootMobile .editorTool{flex:0 0 auto!important;white-space:nowrap!important}
+  .editorRootMobile .editorCanvasPanel{overflow:visible!important}
+  .editorRootMobile .editorStage{max-width:100%!important}
+}
