@@ -20,11 +20,11 @@ const SITE_URL="https://alpha-ai-techstudio7808-4455.vercel.app";
 const AUTH_CONFIRM_URL=`${SITE_URL}/auth/confirm`;
 const AUTH_CALLBACK_URL=`${SITE_URL}/auth/callback`;
 const NAV_GROUPS=[
-{id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban]],subgroups:[{label:"Library",items:[["library","Media Library",Images]]}]},
-{id:"create",label:"Create",items:[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles]],subgroups:[{label:"Production",items:[["transcript","Transcript",FileVideo],["processing","Processing",Activity],["editor","Editor",Scissors]]},{label:"Polish",items:[["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle]}]},
-{id:"publish",label:"Publish",items:[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles]],subgroups:[{label:"Content & Brand",items:[["templates","Templates",LayoutTemplate],["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images]]},{label:"Distribution",items:[["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["share","Share / Export",ArrowRight]]]},
-{id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles]],subgroups:[{label:"Tools",items:[["utilities","Utilities",Settings]]}]},
-{id:"workspace-admin",label:"Workspace",items:[["team","Team & Roles",Users],["settings","Settings",Settings]],subgroups:[{label:"Account",items:[["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["help","Help Center",HelpCircle]]},{label:"More",items:[["changelog","Changelog",History],["referral","Referral Program",Gift]]}]}
+{id:"workspace",label:"Workspace",items:[["dashboard","Overview",BarChart3],["projects","Projects",FolderKanban],["library","Media Library",Images]]},
+{id:"create",label:"Create",items:[["clips","Clip Library",Clapperboard],["intelligence","Intelligence Lab",WandSparkles],["editor","Editor",Scissors]],moreLabel:"AI & Editing",more:[["transcript","Transcript",FileVideo],["processing","Processing",Activity],["captions","Captions",Layers3],["review","Clip Review",Play],["approvals","Approvals",CheckCircle]]},
+{id:"publish",label:"Publish",items:[["calendar","Calendar",CalendarDays],["repurpose","Repurposing",Sparkles],["templates","Templates",LayoutTemplate]],moreLabel:"Brand & Distribution",more:[["brandkit","Brand Kit",Palette],["thumbnail","Thumbnail Studio",Images],["voice","Voice & Dubbing",Mic2],["broll","B-roll Finder",Search],["automation","Automation",Zap],["share","Share / Export",ArrowRight]]},
+{id:"insights",label:"Insights",items:[["analytics","Analytics",TrendingUp],["assistant","AI Assistant",Sparkles]],moreLabel:"Tools",more:[["utilities","Utilities",Settings]]},
+{id:"workspace-admin",label:"Workspace",items:[["team","Team & Roles",Users],["settings","Settings",Settings]],moreLabel:"Account & Support",more:[["billing","Plans & Billing",CreditCard],["api","API & Webhooks",Code2],["help","Help Center",HelpCircle],["changelog","Changelog",History],["referral","Referral Program",Gift]]}
 ];
 const NAV=NAV_GROUPS.flatMap(g=>g.items);
 
@@ -34,24 +34,18 @@ async function fingerprintFile(file){const sampleSize=Math.min(2*1024*1024,Math.
 function Logo(){return <div className="brand" aria-label="Alpha.ai"><img className="alphaLogo" src="/alpha-logo.svg" alt="Alpha.ai"/></div>}
 function CompactSidebar({view,groups,navigateView,mobileNavOpen,setMobileNavOpen,workspace,theme,setTheme}){
   const renderItem=([id,label,I])=><button className={view===id?"active":""} key={id} title={label} onClick={()=>{navigateView(id);setMobileNavOpen(false)}}><I size={17}/><span>{label}</span></button>;
-  const hasView=(items=[])=>items.some(([id])=>view===id);
+  const contains=(items=[])=>items.some(([id])=>id===view);
   return <aside className={"side "+(mobileNavOpen?"mobileOpen":"")}>
     <div className="sideTop"><Logo/><button className="mobileNavClose" aria-label="Close navigation" onClick={()=>setMobileNavOpen(false)}>×</button></div>
     <div className="nav">
-      {groups.map(group=>{
-        const primaryOpen=hasView(group.items);
-        return <section className="navGroup" key={group.id}>
-          <div className="navGroupLabel">{group.label}</div>
-          {group.items.map(renderItem)}
-          {(group.subgroups||[]).map((sub,i)=>{
-            const open=hasView(sub.items);
-            return <details className="navFeatureGroup" key={sub.label} open={open}>
-              <summary><span>{sub.label}</span><ChevronRight size={13}/></summary>
-              <div className="navFeatureChildren">{sub.items.map(renderItem)}</div>
-            </details>
-          })}
-        </section>
-      })}
+      {groups.map(group=><section className="navGroup" key={group.id}>
+        <div className="navGroupLabel">{group.label}</div>
+        {group.items.map(renderItem)}
+        {group.more?.length>0&&<details className="navFeatureGroup" open={contains(group.more)}>
+          <summary><span>{group.moreLabel||"More features"}</span><ChevronRight size={13}/></summary>
+          <div className="navFeatureChildren">{group.more.map(renderItem)}</div>
+        </details>}
+      </section>)}
     </div>
     <div className="workspaceMini"><span className="workspaceMiniDot"/><span>{workspace?.name||"Workspace"}</span></div>
     <div className="themeSwitcher" aria-label="Theme"><button className={theme==="light"?"active":""} onClick={()=>setTheme("light")} title="Light"><Sun size={14}/></button><button className={theme==="dusk"?"active":""} onClick={()=>setTheme("dusk")} title="Dusk"><Sparkles size={14}/></button><button className={theme==="dark"?"active":""} onClick={()=>setTheme("dark")} title="Dark"><Moon size={14}/></button></div>
