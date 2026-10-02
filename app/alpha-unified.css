@@ -3040,3 +3040,12 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .editorRootMobile .editorCanvasPanel{overflow:visible!important}
   .editorRootMobile .editorStage{max-width:100%!important}
 }
+
+/* === DASHBOARD SHELL POLISH: never let content slide under the reserved rails === */
+.dashboardV2{width:100%!important;max-width:none!important;min-width:0!important;box-sizing:border-box!important;overflow:visible!important}
+.dashboardV2>.top{width:100%!important;min-width:0!important;box-sizing:border-box!important;padding-left:2px!important}
+.dashboardV2 .dashboardStats,.dashboardV2 .dashboardGrid,.dashboardV2 .dashboardShortcut{width:100%!important;min-width:0!important;box-sizing:border-box!important}
+.dashboardV2 .dashboardMetric,.dashboardV2 .dashboardActivity,.dashboardV2 .dashboardPipeline,.dashboardV2 .dashboardShortcut{min-width:0!important;box-sizing:border-box!important}
+@media (min-width:1051px){.alphaStudioWorkspaceFrame>.main>#alpha-main,.alphaStudioWorkspaceFrame>.main>main{min-width:0!important;max-width:100%!important;box-sizing:border-box!important}}
+@media (max-width:900px){.dashboardV2>.top{padding-left:0!important}.dashboardV2 .dashboardGrid{grid-template-columns:minmax(0,1fr)!important}.dashboardV2 .dashboardStats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media (max-width:600px){.dashboardV2 .dashboardStats{grid-template-columns:1fr 1fr!important;gap:10px!important}.dashboardMetric{padding:15px!important}.dashboardMetric strong{font-size:32px!important}}
