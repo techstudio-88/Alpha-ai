@@ -33,7 +33,7 @@ export async function POST(request){
     if(valid.workspace_id!==workspaceId||valid.project_id!==projectId||String(valid.job_id)!==String(jobId)||String(valid.source_id||"")!==String(sourceId||"")||String(valid.media_asset_id||"")!==String(mediaAssetId||""))return Response.json({error:"Processing ticket context mismatch."},{status:401});
     const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
     const{response,result}=await callWorker(worker,ticket,{url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:valid.user_id});
-    if(!response.ok)return Response.json({error:result.error||"Media worker rejected the job."},{status:response.status===401||response.status===403?response.status:502});
+    if(!response.ok){const status=response.status===401||response.status===403?response.status:502;const fallback=response.status===429?"The media worker is restarting or temporarily throttled. Please retry in a moment.":result.error||"Media worker rejected the job.";return Response.json({error:fallback},{status});}
     return Response.json({ok:true,jobId,worker:result});
   }catch(error){
     console.error("import-source",error);
