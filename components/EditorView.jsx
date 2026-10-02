@@ -22,6 +22,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const [muted,setMuted]=useState(false);
   const [zoom,setZoom]=useState(1);
   const [saved,setSaved]=useState(false);
+  const [isMobileEditor,setIsMobileEditor]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
   const [segments,setSegments]=useState([]),[words,setWords]=useState([]);
   const [transcriptQuery,setTranscriptQuery]=useState("");
@@ -45,6 +46,11 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null); const historyRef=useRef(null);
   const editorRef=useRef(null);
+  useEffect(()=>{
+    const update=()=>setIsMobileEditor(window.matchMedia("(max-width: 760px)").matches);
+    update(); window.addEventListener("resize",update,{passive:true});
+    return()=>window.removeEventListener("resize",update);
+  },[]);
 
   const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
 
@@ -239,6 +245,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
 
   return <div ref={editorRef} className="alphaEditor">
     {shortcutsOpen&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">KEYBOARD</div><h3>Editor shortcuts</h3><div className="shortcutList"><span><kbd>Space</kbd> Play / pause</span><span><kbd>J</kbd> Back 5s</span><span><kbd>K</kbd> Play / pause</span><span><kbd>L</kbd> Forward 5s</span><span><kbd>I</kbd> Set in</span><span><kbd>O</kbd> Set out</span><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⌘/Ctrl Y</kbd> Redo</span></div><button className="btn primary" onClick={()=>setShortcutsOpen(false)}>Close</button></div></div>}{fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
+    <div className="editorDeviceModeBar"><span><Scissors size={14}/>{isMobileEditor?"Mobile editor":"Desktop editor"}</span><small>Device-optimized workspace · mode follows your screen</small></div>
     <div className="editorTopBar">
       <div className="editorTitleBlock">
         <div className="eyebrow">ALPHA.AI EDITOR</div>
