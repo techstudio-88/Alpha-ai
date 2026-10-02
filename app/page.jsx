@@ -472,7 +472,12 @@ if(existingSource.error){setUploadMsg(existingSource.error.message);setBusy(fals
 const retryable=["failed","ingest_failed","upload_failed","cancelled"];
 let pr,src;
 if(existingSource.data?.project_id){
-  if(!retryable.includes(String(existingSource.data.status||"").toLowerCase())){setUploadMsg("This source URL is already in your workspace. Duplicate ingestion was prevented.");setBusy(false);return}
+  const existingProject=await supabase.from("projects").select("id,status").eq("id",existingSource.data.project_id).maybeSingle();
+  if(existingProject.error){setUploadMsg(existingProject.error.message);setBusy(false);return}
+  const sourceStatus=String(existingSource.data.status||"").toLowerCase();
+  const projectStatus=String(existingProject.data?.status||"").toLowerCase();
+  const retryableProject=projectStatus==="ingest_failed"||projectStatus==="upload_failed"||projectStatus==="failed";
+  if(!retryable.includes(sourceStatus)&&!(sourceStatus==="queued"&&retryableProject)){setUploadMsg("This source URL is already in your workspace. Duplicate ingestion was prevented.");setBusy(false);return}
   pr={data:{id:existingSource.data.project_id},error:null};
   src=await supabase.from("project_sources").update({status:"queued",error:null,metadata:{url:normalizedUrl,retryAt:new Date().toISOString()}}).eq("id",existingSource.data.id).select().single();
 }else{
