@@ -243,7 +243,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
     }catch(e){setRenderMessage(e.message||"Render failed.")}finally{setRendering(false)}
   };
 
-  return <div ref={editorRef} className="alphaEditor">
+  return <div ref={editorRef} className={"alphaEditor "+(isMobileEditor?"editorRootMobile":"editorRootDesktop")} data-editor-device={isMobileEditor?"mobile":"desktop"}>
     {shortcutsOpen&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">KEYBOARD</div><h3>Editor shortcuts</h3><div className="shortcutList"><span><kbd>Space</kbd> Play / pause</span><span><kbd>J</kbd> Back 5s</span><span><kbd>K</kbd> Play / pause</span><span><kbd>L</kbd> Forward 5s</span><span><kbd>I</kbd> Set in</span><span><kbd>O</kbd> Set out</span><span><kbd>⌘/Ctrl Z</kbd> Undo</span><span><kbd>⌘/Ctrl Y</kbd> Redo</span></div><button className="btn primary" onClick={()=>setShortcutsOpen(false)}>Close</button></div></div>}{fullscreenAsk&&<div className="editorFullscreenPrompt"><div className="editorFullscreenCard"><div className="eyebrow">EDITOR MODE</div><h3>Open the editor full screen?</h3><p>Alpha.ai can use the whole window for a Premiere-style editing workspace. You can still leave it full screen any time.</p><div><button className="btn" onClick={dismissFullscreenAsk}>Not now</button><button className="btn primary" onClick={enterEditorFullscreen}>Yes, full screen</button></div></div></div>}
     <div className="editorDeviceModeBar"><span><Scissors size={14}/>{isMobileEditor?"Mobile editor":"Desktop editor"}</span><small>Device-optimized workspace · mode follows your screen</small></div>
     <div className="editorTopBar">
