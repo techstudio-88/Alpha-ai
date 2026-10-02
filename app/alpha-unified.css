@@ -2938,3 +2938,15 @@ html,body{background:var(--alpha-bg);color:var(--alpha-text)}
   .alphaStudioWorkspaceFrame .mobileTabBar{display:none!important}
   .alphaStudioWorkspaceFrame>.main{padding-bottom:28px!important}
 }
+
+/* === DESKTOP SIDEBAR MATH + DASHBOARD ICON DEPTH === */
+@media (min-width:1051px){
+  .alphaStudioWorkspaceFrame>.main{margin-left:calc(74px + clamp(190px,16vw,224px))!important;width:calc(100% - (74px + clamp(190px,16vw,224px)))!important}
+}
+.dashboardMetric .metricTop>svg,.pipelineIcon,.activityIcon{
+  padding:7px;box-sizing:content-box;border-radius:11px;background:linear-gradient(145deg,#fff,#eee8ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.95),0 7px 16px rgba(54,42,120,.13);filter:drop-shadow(0 2px 2px rgba(35,30,70,.12))
+}
+.dashboardMetric.metricColor1 .metricTop>svg{color:#7c3aed;background:linear-gradient(145deg,#fff,#e9ddff)}
+.dashboardMetric.metricColor2 .metricTop>svg{color:#0891b2;background:linear-gradient(145deg,#fff,#dff8ff)}
+.dashboardMetric.metricColor3 .metricTop>svg{color:#db2777;background:linear-gradient(145deg,#fff,#ffe4f1)}
+.dashboardMetric.metricColor4 .metricTop>svg{color:#059669;background:linear-gradient(145deg,#fff,#e2faef)}
