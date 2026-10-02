@@ -479,7 +479,7 @@ if(existingSource.data?.project_id){
   const retryableProject=projectStatus==="ingest_failed"||projectStatus==="upload_failed"||projectStatus==="failed";
   if(!retryable.includes(sourceStatus)&&!(sourceStatus==="queued"&&retryableProject)){setUploadMsg("This source URL is already in your workspace. Duplicate ingestion was prevented.");setBusy(false);return}
   pr={data:{id:existingSource.data.project_id},error:null};
-  src=await supabase.from("project_sources").update({status:"queued",error:null,metadata:{url:normalizedUrl,retryAt:new Date().toISOString()}}).eq("id",existingSource.data.id).select().single();
+  src=await supabase.from("project_sources").update({status:"queued",metadata:{url:normalizedUrl,retryAt:new Date().toISOString()}}).eq("id",existingSource.data.id).select().single();
 }else{
   const name=(source_type==="youtube"?"YouTube":source_type==="google_drive"?"Google Drive":source_type==="dropbox"?"Dropbox":source_type==="onedrive"?"OneDrive":"Linked")+" source";
   pr=await supabase.from("projects").insert({workspace_id:workspace.id,owner_id:user.id,name,status:"uploading"}).select().single();
