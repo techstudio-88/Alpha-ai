@@ -241,3 +241,26 @@
     filter:none;
   }
 }
+
+/* Correct supplied Alpha.ai wordmark inside the workspace sidebar. */
+.side .sideTop{
+  min-height:88px;
+  display:flex;
+  align-items:center;
+}
+.side .alphaLogo{
+  width:132px;
+  height:76px;
+  max-height:76px;
+  object-fit:contain;
+  object-position:center;
+  background:#fff;
+  border-radius:14px;
+  padding:5px 8px;
+  box-sizing:border-box;
+  box-shadow:0 8px 24px rgba(30,40,80,.08);
+}
+@media(max-width:600px){
+  .side .sideTop{min-height:82px}
+  .side .alphaLogo{width:126px;height:70px}
+}
