@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.env*
+!.env.example
+!worker/.env.example
+# This checkout lives in a home directory. Keep local machine state private.
+/.bash*
+/.profile
+/.bun/
+/.cache/
+/.config/
+/.gitconfig
+/.lesshst
+/.local/
+/.motd_shown
+/.npm/
+/.nvm/
+/.omnirush/
+/.ssh/

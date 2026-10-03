@@ -5,13 +5,18 @@ import path from"node:path";
 import os from"node:os";
 import {spawn} from"node:child_process";
 import {randomUUID} from"node:crypto";
+import {pathToFileURL} from "node:url";
+import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
+import {runChatPlan,generateChatPlan} from "./chat.js";
+import {publicDownload} from "./download.js";
+import {allPages,captionEvents} from "../lib/video-workflow.mjs";
 const app=express();app.use(express.json({limit:"2mb"}));
-const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-3.8-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
+const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
-function cmd(command,args){return new Promise((resolve,reject)=>{let settled=false;const finish=(fn,value)=>{if(settled)return;settled=true;fn(value)};const p=spawn(command,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err+=d);p.on("error",e=>finish(reject,new Error(command+" is unavailable: "+(e?.message||e))));p.on("close",code=>code?finish(reject,new Error(err.slice(-7000)||command+" failed with exit code "+code)):finish(resolve,out))})}
+function cmd(command,args){return new Promise((resolve,reject)=>{let settled=false;const finish=(fn,value)=>{if(settled)return;settled=true;fn(value)};const executable=command==="ffmpeg"?process.env.FFMPEG_PATH||command:command==="ffprobe"?process.env.FFPROBE_PATH||command:command;const p=spawn(executable,args,{stdio:["ignore","pipe","pipe"]});let out="",err="";p.stdout.on("data",d=>out+=d);p.stderr.on("data",d=>err=(err+d).slice(-16000));p.on("error",e=>finish(reject,new Error(command+" is unavailable: "+(e?.message||e))));p.on("close",code=>code?finish(reject,new Error(err.slice(-7000)||command+" failed with exit code "+code)):finish(resolve,out))})}
 async function createProxy(input,out){await cmd("ffmpeg",["-y","-i",input,"-vf","scale=854:480:force_original_aspect_ratio=decrease,pad=854:480:(ow-iw)/2:(oh-ih)/2","-c:v","libx264","-preset","ultrafast","-crf","30","-c:a","aac","-b:a","96k","-movflags","+faststart",out]);return out}
 async function normalizeIfVfr(input,probe,dir){
   const stream=probe?.streams?.find(x=>x.codec_type==="video"); if(!stream)return input;
@@ -31,21 +36,21 @@ async function renderClip(input,out,start,end){
   const actual=Number(probe.format?.duration||0);
   if(!actual||actual>requested+0.5)throw new Error("Rendered clip duration exceeded requested range.");
 }
-async function renderEditedClip(input,out,start,end,opts={}){
+export async function renderEditedClip(input,out,start,end,opts={}){
   const requested=Math.max(0.25,Number(end)-Number(start));
   const speed=Math.max(.5,Math.min(2,Number(opts.speed)||1));
   const zoom=Math.max(.8,Math.min(1.4,Number(opts.zoom)||1));
   const aspect=["9:16","16:9","1:1"].includes(opts.aspect)?opts.aspect:"9:16";
   const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
-  const sw=Math.round(size[0]*zoom),sh=Math.round(size[1]*zoom);
-  const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles=${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}:force_style='FontName=Arial,FontSize=20,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00FFFF00,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=70'`:"";
-  const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=.18":opts.transition==="dip"?",fade=t=in:st=0:d=.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"x")+")*(iw-"+sw+")":"(iw-"+sw+")*.5"; const cropY=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"y")+")*(ih-"+sh+")":"(ih-"+sh+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${sw}:${sh}:x=${cropX}:y=${cropY},scale=${size[0]}:${size[1]},setpts=PTS/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const sw=Math.round(size[0]*Math.max(1,zoom)/2)*2,sh=Math.round(size[1]*Math.max(1,zoom)/2)*2;
+  const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles='${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}'`:"";
+  const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=0.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=0.18":opts.transition==="dip"?",fade=t=in:st=0:d=0.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=0.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"x")+")*(iw-"+size[0]+")":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"y")+")*(ih-"+size[1]+")":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
-  await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-i",input,"-t",String(requested),"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
+  await cmd("ffmpeg",["-y","-ss",String(Math.max(0,Number(start))),"-t",String(requested),"-i",input,"-map","0:v:0?","-map","0:a:0?","-vf",vf,"-c:v","libx264","-preset","ultrafast","-crf","28",...af,"-movflags","+faststart",out]);
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",out]));
   const actual=Number(probe.format?.duration||0);
-  if(!actual||actual>requested/Math.max(.5,speed)+.75)throw new Error("Rendered edit duration exceeded requested range.");
+  if(!actual||Math.abs(actual-requested/speed)>.75)throw new Error("Rendered edit duration does not match the requested range and speed.");
 }
 async function analyzeVideoWithGemini(filePath,sourceDuration){
   if(!GEMINI_API_KEY)return null;
@@ -83,7 +88,7 @@ async function analyzeReframeWithGemini(filePath,sourceDuration){
   const prompt="Analyze the video for automatic vertical/social reframing. Sample the main visible speaker or dominant person at useful moments across the source. Return up to 30 keyframes. x_center and y_center are normalized 0..1 coordinates of the desired crop center in the original frame. Follow the main speaker when possible; if no person is visible, keep the visual subject centered. time_seconds must be between 0 and "+sourceDuration.toFixed(2)+" seconds. Avoid abrupt jumps. Return JSON only.";
   const out=await ai.models.generateContent({model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(active.uri,active.mimeType),prompt]),config:{responseMimeType:"application/json",responseSchema:schema}});
   const parsed=JSON.parse(out.text||"{}");
-  const rows=(Array.isArray(parsed.keyframes)?parsed.keyframes:[]).map(x=>({time_seconds:Math.max(0,Math.min(sourceDuration,Number(x.time_seconds)||0)),x_center:Math.max(0,Math.min(1,Number(x.x_center)??.5)),y_center:Math.max(0,Math.min(1,Number(x.y_center)??.5)),confidence:Math.max(0,Math.min(1,Number(x.confidence)||0))})).sort((a,b)=>a.time_seconds-b.time_seconds);
+  const rows=(Array.isArray(parsed.keyframes)?parsed.keyframes:[]).map(x=>({time_seconds:Math.max(0,Math.min(sourceDuration,Number(x.time_seconds)||0)),x_center:Math.max(0,Math.min(1,Number(x.x_center??.5))),y_center:Math.max(0,Math.min(1,Number(x.y_center??.5))),confidence:Math.max(0,Math.min(1,Number(x.confidence)||0))})).filter(x=>Number.isFinite(x.x_center)&&Number.isFinite(x.y_center)).sort((a,b)=>a.time_seconds-b.time_seconds);
   const dedup=[];for(const row of rows){if(!dedup.length||Math.abs(row.time_seconds-dedup[dedup.length-1].time_seconds)>=.25)dedup.push(row)}
   return dedup.length?dedup.slice(0,30):null;
 }
@@ -235,7 +240,7 @@ async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedSt
 async function patchJob(id,body){return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id},body})}
 async function setStage(job,stageKey,status,progress,error=null){try{await db("processing_stages",{method:"POST",body:{job_id:job.jobId,workspace_id:job.workspaceId,stage_key:stageKey,status,progress:Math.max(0,Math.min(100,Number(progress)||0)),attempt_count:Number(job.retryCount||0)+1,started_at:status==="running"?new Date().toISOString():null,completed_at:status==="completed"?new Date().toISOString():null,heartbeat_at:new Date().toISOString(),error,metadata:{}}}).catch(async()=>{await db("processing_stages",{method:"PATCH",params:{job_id:"eq."+job.jobId,stage_key:"eq."+stageKey},body:{status,progress:Math.max(0,Math.min(100,Number(progress)||0)),heartbeat_at:new Date().toISOString(),completed_at:status==="completed"?new Date().toISOString():null,error}})});await patchJob(job.jobId,{current_stage:stageKey})}catch(e){console.warn("stage checkpoint failed",stageKey,e.message)}}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
-async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download uploaded source: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)})}
+async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download uploaded source: "+await r.text());await pipeline(r.body,fs.createWriteStream(out))}
 async function downloadRemote(url,out,type="direct_url",opts={}){if(type==="google_photos"&&opts.googlePhotosBaseUrl&&opts.googlePhotosAccessToken){const u=String(opts.googlePhotosBaseUrl)+"dv";const r=await fetch(u,{headers:{Authorization:"Bearer "+opts.googlePhotosAccessToken}});if(!r.ok)throw new Error("Google Photos video download failed: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)});return}if(type==="google_drive"&&opts.driveFileId&&opts.driveAccessToken){const r=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(opts.driveFileId)+"?alt=media",{headers:{Authorization:"Bearer "+opts.driveAccessToken}});if(!r.ok)throw new Error("Google Drive download failed: "+await r.text());const w=fs.createWriteStream(out);for await(const chunk of r.body)w.write(chunk);await new Promise((res,rej)=>{w.end(res);w.on("error",rej)});return}if(type==="google_drive"){const m=url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?[^#]*id=)([a-zA-Z0-9_-]+)/i);const id=m?.[1];if(!id)throw new Error("Google Drive link must point to a shared file.");await cmd("gdown",["--id",id,"-O",out,"--fuzzy"]);return}if(type==="dropbox"){const u=new URL(url);u.searchParams.set("dl","1");await cmd("curl",["-L","--fail","--retry","3","-o",out,u.toString()]);return}if(type==="onedrive"){const shareToken=Buffer.from(url).toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");const contentUrl="https://api.onedrive.com/v1.0/shares/u!"+shareToken+"/root/content";await cmd("curl",["-L","--fail","--retry","3","-o",out,contentUrl]);return}if(type==="direct_url"||type==="s3"){await cmd("curl",["-L","--fail","--retry","3","-o",out,url]);return}{
   const common=["--no-playlist","--no-warnings","-f","bv*+ba/b","--merge-output-format","mp4","-o",out,url];
   let lastError=null;
@@ -271,15 +276,29 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
     }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
   }catch(e){console.warn("speaker detection fallback:",e.message)}
 }
-async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),input=path.join(dir,"source.mp4"),audio=path.join(dir,"audio.wav");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(e=>console.warn("job heartbeat failed:",e.message)),30000);try{
-  await patchJob(p.jobId,{status:"processing",progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
+async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(e=>console.warn("job heartbeat failed:",e.message)),30000);try{
+  await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
+  const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
+  if(!project)throw new Error("Processing project does not belong to this workspace.");
+  if(!p.requestedBy)p.requestedBy=project.owner_id;
+  if(p.mediaAssetId&&!(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing video context mismatch.");
+  if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
+  if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
+  if(p.sessionId&&!(await db("ai_chat_sessions",{params:{id:"eq."+p.sessionId,workspace_id:"eq."+p.workspaceId,user_id:"eq."+p.requestedBy,select:"id"}})).length)throw new Error("Processing chat context mismatch.");
+  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); return; }
+  if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
+    await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+    await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
+  }
+  await patchJob(p.jobId,{progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
   let asset=null,assetRows=[];
   if(p.sourceType==="google_drive"&&p.driveFileId&&p.driveAccessToken){
     await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloading"}});
     await downloadRemote(null,input,"google_drive",{driveFileId:p.driveFileId,driveAccessToken:p.driveAccessToken});
   }else if(p.url){
     await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloading"}});
-    await downloadRemote(p.url,input,p.sourceType,{googlePhotosBaseUrl:p.googlePhotosBaseUrl,googlePhotosAccessToken:p.googlePhotosAccessToken,driveFileId:p.driveFileId,driveAccessToken:p.driveAccessToken});
+    if(p.sourceType==="direct_url"||p.sourceType==="s3")await publicDownload(p.url,input);
+    else await downloadRemote(p.url,input,p.sourceType,{googlePhotosBaseUrl:p.googlePhotosBaseUrl,googlePhotosAccessToken:p.googlePhotosAccessToken,driveFileId:p.driveFileId,driveAccessToken:p.driveAccessToken});
   }else{
     assetRows=await db("media_assets",{params:{id:"eq."+p.mediaAssetId,select:"*"}});
     asset=assetRows[0];
@@ -302,11 +321,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
   const originalProbe=probe; const sourceBeforeNormalize=input; input=await normalizeIfVfr(input,originalProbe,dir); const normalizedProbe=input!==sourceBeforeNormalize?JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input])):originalProbe;
   const stream=normalizedProbe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(normalizedProbe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
+  if(!stream||!Number.isFinite(duration)||duration<=0)throw new Error("The source is not a readable video with a finite duration.");
   if(!asset){
     const fileName=(probe.format?.tags?.title||"Imported video").replace(/[^a-zA-Z0-9._ -]/g,"-")+".mp4";
     const size=fs.statSync(input).size;
     const remoteSource=Boolean(p.url||p.sourceType==="google_drive"||p.sourceType==="google_photos");
-    const persistSource=!remoteSource||size<=45*1024*1024;
+    const persistSource=p.operation==="chat_ingest"||!remoteSource||size<=45*1024*1024;
     let storagePath=null;
     if(persistSource){
       storagePath=p.workspaceId+"/"+p.projectId+"/source-"+randomUUID()+".mp4";
@@ -349,18 +369,24 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});
     await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{});
   }
-  if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});if(asset?.id&&input){try{const proxyPath=path.join(dir,"proxy.mp4");await createProxy(input,proxyPath);const proxyStorage=p.workspaceId+"/"+p.projectId+"/proxy/"+asset.id+".mp4";await upload(proxyPath,proxyStorage,"video/mp4");await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{metadata:{...(asset.metadata||{}),proxy_storage_path:proxyStorage,proxy_width:854,proxy_height:480,normalized_vfr:input!==sourceBeforeNormalize}}})}catch(proxyError){console.warn("proxy generation skipped:",proxyError.message)}}
+  p={...p,mediaAssetId:asset.id};
+  if(p.operation==="chat_ingest") {
+    p.url=null;
+    await db("ai_chat_sessions",{method:"PATCH",params:{id:"eq."+p.sessionId},body:{media_asset_id:asset.id,updated_at:new Date().toISOString()}});
+    await patchJob(p.jobId,{payload:p});
+  }
+  if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"downloaded",file_name:asset.name}}).catch(()=>{});
+  if(p.operation!=="render_edit"&&!asset.metadata?.proxy_storage_path){try{const proxyPath=path.join(dir,"proxy.mp4");await createProxy(input,proxyPath);const proxyStorage=p.workspaceId+"/"+p.projectId+"/proxy/"+asset.id+".mp4";await upload(proxyPath,proxyStorage);await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{metadata:{...(asset.metadata||{}),proxy_storage_path:proxyStorage,normalized_vfr:input!==sourceBeforeNormalize}}})}catch(error){console.warn("proxy generation unavailable:",error.message)}}
 
   if(p.operation==="render_edit"){
     let start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
     let end=Math.max(start,Math.min(duration,Number(p.endSeconds)||duration));
     let aiEdit=null;
-    if(p.aiPrompt?.trim()&&GEMINI_API_KEY){
+    if(p.aiPrompt?.trim()&&p.aiEditStatus!=="applied"){
       await patchJob(p.jobId,{progress:25,payload:{...p,aiEditStatus:"analyzing"}});
-      try{
-        aiEdit=await applyEditInstructionWithGemini(input,duration,start,end,p.aiPrompt);
-        if(aiEdit){start=aiEdit.start_seconds;end=aiEdit.end_seconds;await patchJob(p.jobId,{payload:{...p,aiEditStatus:"applied",aiEditAction:aiEdit.action,aiEditReason:aiEdit.reason}});console.log("Gemini editor instruction applied",p.jobId,aiEdit.action)}
-      }catch(e){aiEdit={action:"fallback_original_selection",reason:e.message};await patchJob(p.jobId,{payload:{...p,aiEditStatus:"fallback",aiEditError:e.message}});console.warn("Gemini editor instruction failed; keeping selection:",e.message)}
+      const plan=await generateChatPlan({...p,prompt:p.aiPrompt,selection:{start_seconds:start,end_seconds:end,...p}},{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+      aiEdit=plan.clips[0];p={...p,...aiEdit,aiEditStatus:"applied",aiEditReason:aiEdit.reason};
+      start=aiEdit.startSeconds;end=aiEdit.endSeconds;
     }
     if(end-start<0.25)throw new Error("Selected edit range is too short.");
     let clip=null;
@@ -376,7 +402,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       clip=clips?.[0]||null;
     }
     if(!clip)throw new Error("Could not create or recover edited clip.");
-    await patchJob(p.jobId,{payload:{...p,clipId:clip.id}});
+    p={...p,clipId:clip.id};
+    await patchJob(p.jobId,{progress:72,current_stage:"clip_render",payload:p});
     const dir2=path.join(dir,"edited");fs.mkdirSync(dir2,{recursive:true});const rendered=path.join(dir2,clip.id+".mp4");
     let srtPath=null,assPath=null;
     if(p.captions!==false){
@@ -385,40 +412,48 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         const rows=await db("transcript_segments",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,text",order:"start_ms.asc"}}).catch(()=>[]);
         const usable=(rows||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms));
         const stamp=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(z).padStart(3,"0")};
-        if(usable.length){srtPath=path.join(dir2,"captions.srt");fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\n"+stamp(Number(x.start_ms)/1000-start)+" --> "+stamp(Number(x.end_ms)/1000-start)+"\n"+String(x.text||"").replace(/\r?\n/g," ")+"\n").join("\n"),"utf8")}
-        const words=await db("transcript_words",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,word",order:"start_ms.asc"}}).catch(()=>[]);
+        if(usable.length){srtPath=path.join(dir2,"captions.srt");fs.writeFileSync(srtPath,usable.map((x,i)=>(i+1)+"\n"+stamp(Math.max(0,Number(x.start_ms)/1000-start)/(Number(p.speed)||1))+" --> "+stamp((Math.min(end,Number(x.end_ms)/1000)-start)/(Number(p.speed)||1))+"\n"+String(x.text||"").replace(/\r?\n/g," ")+"\n").join("\n"),"utf8")}
+        const words=await allPages((offset,limit)=>db("transcript_words",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,word",order:"start_ms.asc,id.asc",offset,limit}}));
         const usableWords=(words||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms)&&String(x.word||"").trim());
         if(usableWords.length){
           const assTime=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),cs=Math.floor((ms%1000)/10);return String(h)+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+"."+String(cs).padStart(2,"0")};
           const esc=w=>String(w).replace(/[{}]/g,"").replace(/\\/g,"\\\\");
           const lines=[];let line=[],lineStart=0,lineEnd=0;
-          for(const w of usableWords){const ws=Math.max(0,Number(w.start_ms)/1000-start),we=Math.max(ws,Number(w.end_ms)/1000-start);if(!line.length)lineStart=ws;line.push({word:esc(w.word),duration:Math.max(1,Math.round((we-ws)*100))});lineEnd=we;if(line.length>=7||we-lineStart>=3.2){lines.push({start:lineStart,end:lineEnd,words:line});line=[]}}
+          for(const w of captionEvents(usableWords,start,end,Number(p.speed)||1)){const ws=w.start,we=w.end;if(!line.length)lineStart=ws;line.push({word:esc(w.word),duration:Math.max(1,Math.round((we-ws)*100))});lineEnd=we;if(line.length>=(p.captionStyle==="pop"?1:7)||we-lineStart>=3.2){lines.push({start:lineStart,end:lineEnd,words:line});line=[]}}
           if(line.length)lines.push({start:lineStart,end:lineEnd,words:line});
           assPath=path.join(dir2,"captions.ass");
-          const header="[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Arial,20,&H00FFFFFF,&H00FFFF00,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,2,0,2,60,60,80,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n";
+          const color=/^#[\da-f]{6}$/i.test(p.captionColor||"")?p.captionColor.slice(1):"ffffff";
+          const assColor="&H00"+color.slice(4,6)+color.slice(2,4)+color.slice(0,2);
+          const dimensions=p.aspect==="16:9"?[1920,1080]:p.aspect==="1:1"?[1080,1080]:[1080,1920];
+          const header=`[Script Info]\nScriptType: v4.00+\nPlayResX: ${dimensions[0]}\nPlayResY: ${dimensions[1]}\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Arial,${p.captionStyle==="minimal"?38:64},${assColor},${assColor},&H00000000,&H80000000,${p.captionStyle==="minimal"?0:1},0,0,0,100,100,0,0,1,3,0,2,60,60,100,1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n`;
           fs.writeFileSync(assPath,header+lines.map(x=>"Dialogue: 0,"+assTime(x.start)+","+assTime(x.end)+",Default,,0,0,0,, "+x.words.map(w=>"{\\k"+w.duration+"}"+w.word).join(" ")).join("\n"),"utf8");
         }
       }
     }
     let reframeKeyframes=null;
     if(p.reframe!==false&&p.aspect!=="16:9"&&GEMINI_API_KEY){
-      try{await patchJob(p.jobId,{progress:18,payload:{...p,aiEditStatus:p.aiPrompt?.trim()?"analyzing_reframe":"analyzing_reframe"}});reframeKeyframes=await analyzeReframeWithGemini(input,duration);if(reframeKeyframes?.length)await patchJob(p.jobId,{payload:{...p,reframeStatus:"ready",reframeKeyframes}})}catch(error){await patchJob(p.jobId,{payload:{...p,reframeStatus:"fallback",reframeError:error.message}});console.warn("AI reframe unavailable; using centered crop:",error.message)}
+      try{await patchJob(p.jobId,{progress:76,current_stage:"reframing",payload:{...p,aiEditStatus:"analyzing_reframe"}});const reframeInput=path.join(dir2,"reframe-input.mp4");await renderClip(input,reframeInput,start,end);reframeKeyframes=await analyzeReframeWithGemini(reframeInput,end-start);p={...p,reframeStatus:"ready",reframeKeyframes};await patchJob(p.jobId,{payload:p})}catch(error){p={...p,reframeStatus:"fallback",reframeError:error.message};await patchJob(p.jobId,{payload:p});console.warn("AI reframe unavailable; using centered crop:",error.message)}
     }
-    const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,ai_prompt:p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||""};
+    if(p.captions!==false&&!srtPath&&!assPath)throw new Error("Captions were requested, but no timed transcript is available.");
+    const editData={source_start:start,source_end:end,duration_seconds:(end-start)/Math.max(.5,Math.min(2,Number(p.speed)||1)),editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,captionStyle:p.captionStyle,captionColor:p.captionColor,ai_prompt:p.instruction||p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||p.reason||""};
     const latestVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,select:"id,version,render_status,storage_path,edit_data",order:"version.desc",limit:"1"}}))[0]||null;
-    if(latestVersion?.render_status==="ready"&&latestVersion?.edit_data?.render_job_id===p.jobId&&latestVersion.storage_path){
-      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
-      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:latestVersion.version}});
-      console.log("editor render reused existing job version",p.jobId,clip.id,latestVersion.version);
+    const renderedVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,"edit_data->>render_job_id":"eq."+p.jobId,render_status:"eq.ready",select:"version,storage_path",limit:1}}))[0];
+    if(renderedVersion?.storage_path){
+      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:renderedVersion.storage_path,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180)}});
+      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:renderedVersion.version}});
+      console.log("editor render reused existing job version",p.jobId,clip.id,renderedVersion.version);
       return;
     }
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
+    await setStage(p,"clip_render","running",0);await patchJob(p.jobId,{progress:80});
     await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes});
+    await setStage(p,"clip_render","completed",100);await setStage(p,"export","running",0);await patchJob(p.jobId,{progress:92});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
     await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:nextVersion,render_status:"ready",storage_path:storagePath,edit_data:editData}});
-    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score:0,start_seconds:start,end_seconds:end,title:String(p.title||"Edited clip").slice(0,180)}});
+    await setStage(p,"export","completed",100);
+    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:storagePath,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180),ai_spec:{...(clip.ai_spec||{}),...editData},caption_config:{style:p.captionStyle||"pop",color:p.captionColor||"#ffffff"},reframe_config:{aspect:p.aspect||"9:16"}}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
     console.log("editor render completed",p.jobId,clip.id);
     return;
@@ -433,6 +468,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }
   if(!transcript){
     transcript=(await db("transcripts",{method:"POST",body:{media_asset_id:asset.id,language:"auto",text:"",provider:"transformers-whisper",status:"processing"}}))[0];
+    p={...p,transcriptId:transcript.id};
     await patchJob(p.jobId,{payload:{...p,transcriptId:transcript.id,transcribeChunk:0}});
   }
   const chunkSeconds=60;
@@ -464,7 +500,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     console.log("browser transcription queued",p.jobId,"chunks",chunkCount,"next",nextChunk);
     return;
   }
-  const allRows=await db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc"}});
+  const allRows=await allPages((offset,limit)=>db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc,id.asc",offset,limit}}));
   await setStage(p,"transcription","completed",100);
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
@@ -528,8 +564,11 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   console.error("job",p.jobId,e);
   // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
   const retryCount=Number(p.retryCount||0)+1;
-  const terminal=retryCount>=5;
-  await patchJob(p.jobId,{status:terminal?"failed":"queued",progress:terminal?0:Math.max(1,Number(p.progress||1)),error:e.message,payload:{...p,retryCount}}).catch(()=>{});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});fs.rmSync(dir,{recursive:true,force:true})}}
+  const terminal=Boolean(p.sessionId)||p.operation==="render_edit"||retryCount>=5;
+  const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
+  await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
+  if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
+  if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"1.0"});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
@@ -560,28 +599,30 @@ app.post("/process",async(req,res)=>{
     let job;
     if(identity.mode==="processing-ticket"||identity.mode==="worker-secret"){
       const jobId=identity.jobId||req.body?.jobId,workspaceId=identity.workspaceId||req.body?.workspaceId,projectId=identity.projectId||req.body?.projectId;
-      job=jobId&&workspaceId&&projectId?await db("processing_jobs",{params:{id:"eq."+jobId,select:"id,workspace_id,project_id,status,lease_until,attempt_count"}}):[];
+      job=jobId&&workspaceId&&projectId?await db("processing_jobs",{params:{id:"eq."+jobId,select:"*"}}):[];
       if(job?.[0]?.status==="completed")return res.status(200).json({accepted:true,completed:true,jobId});
       if(job?.[0]?.status==="processing"&&job?.[0]?.lease_until&&new Date(job[0].lease_until)>new Date())return res.status(202).json({accepted:true,queued:true,jobId});
     }else{
       const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
-      job=await authStore.run(bearer,()=>db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"id,workspace_id,project_id"}}));
+      job=await authStore.run(bearer,()=>db("processing_jobs",{params:{id:"eq."+req.body?.jobId,select:"*"}}));
     }
     if(!job?.[0]?.id)return res.status(404).json({error:"Processing job not found."});
+    if(job[0].workspace_id!==req.body.workspaceId||job[0].project_id!==req.body.projectId)return res.status(403).json({error:"Processing job context mismatch."});
     if(identity.mode==="supabase-jwt"){
       const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
       const member=await authStore.run(bearer,()=>db("workspace_members",{params:{workspace_id:"eq."+job[0].workspace_id,user_id:"eq."+identity.id,select:"workspace_id,user_id",limit:"1"}}));
       if(!member?.[0])return res.status(403).json({error:"Workspace access denied."});
     }
-    res.status(202).json({accepted:true,queued:activeJobs.size>=1,jobId:req.body?.jobId});
-    if(activeJobs.size>=1)return;
-    activeJobs.add(String(req.body?.jobId));
-    const bearer=(req.get("authorization")||"").replace(/^Bearer\s+/i,"");
-    // Processing-ticket and worker-secret requests are already authorized upstream.
-    // Keep privileged worker credentials for their DB/storage work; only direct JWT
-    // requests should override them with the user's bearer token.
-    const dbAuth=identity.mode==="supabase-jwt"&&bearer?bearer:null;
-    authStore.run(dbAuth,()=>processJob({...req.body,requestedBy:identity.id||req.body?.requestedBy,retryCount:Number(req.body?.retryCount||0)})).catch(e=>console.error(e)).finally(()=>activeJobs.delete(String(req.body?.jobId)));
+    // Canonical jobs come from Supabase, never from an arbitrary /process body.
+    const row=job[0],stored=row.payload||{};
+    if(!stored.workspaceId){
+      const sourceId=stored.sourceId||stored.source_id;
+      const source=sourceId?(await db("project_sources",{params:{id:"eq."+sourceId,project_id:"eq."+row.project_id,select:"*"}}))[0]:null;
+      await patchJob(row.id,{payload:{...stored,workspaceId:row.workspace_id,projectId:row.project_id,requestedBy:identity.id,
+        mediaAssetId:stored.mediaAssetId||stored.media_asset_id,sourceId:source?.id,sourceType:source?.source_type||"upload",url:source?.source_url||null}});
+    }
+    res.status(202).json({accepted:true,queued:true,jobId:row.id});
+    setImmediate(()=>resumeQueuedJobs());
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
 });
 app.post("/assistant/plan",async(req,res)=>{
@@ -655,9 +696,11 @@ async function processPublishJobs(){
       }catch(e){const n=Number(job.attempt_count||0)+1;await db("publish_jobs",{method:"PATCH",params:{id:"eq."+job.id},body:{status:n>=3?"failed":"queued",error:String(e.message||e)}}).catch(()=>{});console.warn("publish job failed",job.id,e.message)}}
   }catch(e){console.warn("publish queue scan failed",e.message)}
 }
-console.log("Supabase server-side key configured:",!!KEY);
-setInterval(processPublishJobs,30000);
-setTimeout(processPublishJobs,10000);
-setTimeout(resumeQueuedJobs,5000);
-setInterval(resumeQueuedJobs,15000);
-app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+  console.log("Supabase server-side key configured:",!!KEY);
+  setInterval(processPublishJobs,30000);
+  setTimeout(processPublishJobs,10000);
+  setTimeout(resumeQueuedJobs,5000);
+  setInterval(resumeQueuedJobs,15000);
+  app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+}

@@ -1,0 +1,17 @@
+**/node_modules
+.git
+.next
+.env*
+worker/.env*
+.bash*
+.profile
+.bun
+.cache
+.config
+.gitconfig
+.local
+.npm
+.nvm
+.omnirush
+.ssh
+tests

@@ -2,10 +2,19 @@
 
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Activity,ChevronRight,Clock,Film,Fullscreen,Keyboard,Maximize2,Pause,Play,Redo2,RotateCcw,Save,Scissors,Scan,Search,SplitSquareHorizontal,Undo2,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
+import {allPages} from "../lib/video-workflow.mjs";
 
 function LiveWaveform({videoRef}){const canvasRef=useRef(null);useEffect(()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;let ctx,analyser,source,raf;try{const AudioContext=window.AudioContext||window.webkitAudioContext;const ac=new AudioContext();analyser=ac.createAnalyser();analyser.fftSize=128;source=ac.createMediaElementSource(v);source.connect(analyser);analyser.connect(ac.destination);const draw=()=>{const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.beginPath();for(let i=0;i<data.length;i++){const x=i/(data.length-1)*c.width,y=c.height/2+(data[i]-128)/128*c.height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle="#7c5cff";ctx.lineWidth=2;ctx.stroke();raf=requestAnimationFrame(draw)};ctx=c.getContext("2d");draw();return()=>{cancelAnimationFrame(raf);source?.disconnect();analyser?.disconnect();ac.close().catch(()=>{})}}catch{}},[videoRef]);return <canvas className="editorWaveform" ref={canvasRef} width="900" height="72" aria-label="Live audio waveform"/>}
 
-export default function EditorView({projects,supabase,onUpload,initialClip}){
+export default function EditorView({projects,supabase,onUpload,initialClip:incomingClip}){
+  const [initialClip,setInitialClip]=useState(incomingClip);
+  useEffect(()=>{
+    let alive=true;
+    if(incomingClip){setInitialClip(incomingClip);const url=new URL(window.location.href);url.searchParams.set("clip",incomingClip.id);window.history.replaceState({},"",url);return}
+    const id=new URLSearchParams(window.location.search).get("clip");
+    if(id)supabase.from("clips").select("*").eq("id",id).single().then(({data,error})=>{if(alive){if(error)setError(error.message);else setInitialClip(data)}});
+    return()=>{alive=false};
+  },[incomingClip?.id,supabase]);
   const [selectedId,setSelectedId]=useState(initialClip?.project_id||projects[0]?.id||"");
   const [asset,setAsset]=useState(null);
   const [sourceUrl,setSourceUrl]=useState("");
@@ -43,6 +52,8 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   const [fullscreenAsk,setFullscreenAsk]=useState(false),[shortcutsOpen,setShortcutsOpen]=useState(false),[splitView,setSplitView]=useState(false),[history,setHistory]=useState([]),[future,setFuture]=useState([]);
   const [rendering,setRendering]=useState(false);
   const [versions,setVersions]=useState([]);
+  const [loadedProject,setLoadedProject]=useState(null),[renderedUrl,setRenderedUrl]=useState("");
+  const [captionStyle,setCaptionStyle]=useState("pop"),[captionColor,setCaptionColor]=useState("#ffffff");
   const [renderMessage,setRenderMessage]=useState("");
   const videoRef=useRef(null); const historyRef=useRef(null);
   const editorRef=useRef(null);
@@ -52,7 +63,13 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
     return()=>window.removeEventListener("resize",update);
   },[]);
 
-  const project=useMemo(()=>projects.find(p=>p.id===selectedId)||projects[0]||null,[projects,selectedId]);
+  const project=useMemo(()=>projects.find(p=>p.id===selectedId)||(loadedProject?.id===selectedId?loadedProject:null),[projects,selectedId,loadedProject]);
+  const activeClip=initialClip?.project_id===selectedId?initialClip:null;
+  useEffect(()=>{
+    let alive=true;
+    if(initialClip?.project_id){setSelectedId(initialClip.project_id);supabase.from("projects").select("*").eq("id",initialClip.project_id).single().then(({data,error})=>{if(alive){if(error)setError(error.message);else setLoadedProject(data)}})}
+    return()=>{alive=false};
+  },[initialClip?.id,supabase]);
 
   const filteredSegments=useMemo(()=>{
     const q=transcriptQuery.trim().toLowerCase();
@@ -91,27 +108,33 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
     async function load(){
       if(!project?.id||!supabase)return;
       setLoading(true);setError("");setSourceUrl("");setAsset(null);setSegments([]);setWords([]);setCurrent(0);setInPoint(0);setOutPoint(0);
-      const {data,error:assetError}=await supabase.from("media_assets").select("id,name,storage_path,mime_type,duration_seconds,status").eq("project_id",project.id).not("storage_path","is",null).order("created_at",{ascending:false}).limit(1).maybeSingle();
+      let assetQuery=supabase.from("media_assets").select("id,name,storage_path,mime_type,duration_seconds,status").eq("project_id",project.id).not("storage_path","is",null);
+      if(activeClip?.media_asset_id)assetQuery=assetQuery.eq("id",activeClip.media_asset_id);
+      const {data,error:assetError}=await assetQuery.order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(cancelled)return;
       if(assetError){setError(assetError.message);setLoading(false);return}
       if(!data?.storage_path){setError("This project has no uploaded media ready for editing.");setLoading(false);return}
       setAsset(data);
-      if(initialClip?.id){
-        const {data:versionRows}=await supabase.from("clip_versions").select("id,version,edit_data,render_status,created_at").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(12);
+      setRenderedUrl("");
+      if(activeClip?.id){
+        const {data:versionRows,error:versionError}=await supabase.from("clip_versions").select("id,version,edit_data,render_status,storage_path,created_at").eq("clip_id",activeClip.id).order("version",{ascending:false}).limit(12);
+        if(versionError)throw versionError;
         if(!cancelled)setVersions(versionRows||[]);
+        const ready=versionRows?.find(v=>v.render_status==="ready"&&v.storage_path);
+        if(ready){const signed=await supabase.storage.from("media").createSignedUrl(ready.storage_path,3600);if(signed.error)throw signed.error;if(!cancelled)setRenderedUrl(signed.data.signedUrl)}
       }else setVersions([]);
-      if(initialClip?.project_id===project.id){const clipStart=Math.max(0,Number(initialClip.start_seconds)||0);const clipEnd=Math.max(clipStart,Number(initialClip.end_seconds)||0);setInPoint(Math.min(clipStart,Number(data.duration_seconds)||clipStart));if(clipEnd>clipStart)setOutPoint(Math.min(clipEnd,Number(data.duration_seconds)||clipEnd));}
+      if(activeClip){const clipStart=Math.max(0,Number(activeClip.start_seconds)||0);const clipEnd=Math.max(clipStart,Number(activeClip.end_seconds)||0);setInPoint(Math.min(clipStart,Number(data.duration_seconds)||clipStart));setCurrent(clipStart);if(clipEnd>clipStart)setOutPoint(Math.min(clipEnd,Number(data.duration_seconds)||clipEnd));const spec=activeClip.ai_spec||{};setAspect(activeClip.reframe_config?.aspect||spec.aspect||"9:16");setSpeed(spec.speed||1);setZoom(spec.zoom||1);setCaptions(spec.captions!==false);setCaptionStyle(activeClip.caption_config?.style||spec.captionStyle||"pop");setCaptionColor(activeClip.caption_config?.color||spec.captionColor||"#ffffff");setEffect(spec.effect||"none");setTransition(spec.transition||"cut");setAiPrompt("");setAutoReframe(false)}
       const {data:transcript}=await supabase.from("transcripts").select("id,language,status,created_at").eq("media_asset_id",data.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
       if(transcript?.id){
-        const {data:rows}=await supabase.from("transcript_segments").select("id,start_ms,end_ms,text,speaker").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
-        const {data:wordRows}=await supabase.from("transcript_words").select("id,start_ms,end_ms,word").eq("transcript_id",transcript.id).order("start_ms",{ascending:true});
+        const paged=(table,fields)=>allPages(async(offset,size)=>{const r=await supabase.from(table).select(fields).eq("transcript_id",transcript.id).order("start_ms").order("id").range(offset,offset+size-1);if(r.error)throw r.error;return r.data});
+        const [rows,wordRows]=await Promise.all([paged("transcript_segments","id,start_ms,end_ms,text,speaker"),paged("transcript_words","id,start_ms,end_ms,word")]);
         if(!cancelled){setSegments(rows||[]);setWords(wordRows||[])}
       }
       const signed=await supabase.storage.from("media").createSignedUrl(data.storage_path,3600);
       if(cancelled)return;
       if(signed.error||!signed.data?.signedUrl){setError(signed.error?.message||"Could not create a secure video preview.");setLoading(false);return}
       setSourceUrl(signed.data.signedUrl);
-      const savedDraft=typeof window!=="undefined"?window.localStorage.getItem("alpha.editor."+project.id):null;
+      const savedDraft=typeof window!=="undefined"?window.localStorage.getItem("alpha.editor."+(activeClip?.id||project.id)):null;
       if(savedDraft){
         try{
           const draft=JSON.parse(savedDraft);
@@ -121,6 +144,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
           setSpeed(Number(draft.speed)||1);
           setZoom(Number(draft.zoom)||1);
           setCaptions(draft.captions!==false);
+          setCaptionStyle(draft.captionStyle||"pop");setCaptionColor(draft.captionColor||"#ffffff");
           setAutoReframe(draft.autoReframe!==false);
           setEffect(draft.effect||"none");
           setTransition(draft.transition||"cut");
@@ -135,7 +159,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
       }
       setLoading(false);
     }
-    load();
+    load().catch(e=>{if(!cancelled){setError(e.message);setLoading(false)}});
     return()=>{cancelled=true};
   },[project?.id,supabase,initialClip?.id]);
 
@@ -200,12 +224,13 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
   };
   const saveDraft=async()=>{
     if(!project?.id)return;
-    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,autoReframe,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
-    window.localStorage.setItem("alpha.editor."+project.id,JSON.stringify(data));
-    if(initialClip?.id){
-      const {data:latest}=await supabase.from("clip_versions").select("version").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(1).maybeSingle();
+    if(rendering){setError("Wait for this render before saving another version.");return}
+    const data={inPoint,outPoint:outPoint||duration,aspect,speed,zoom,captions,captionStyle,captionColor,autoReframe,effect,transition,timelineHeight,videoBlockHeight,captionBlockHeight,videoBlockWidth,captionBlockWidth,layoutTemplate,aiPrompt,updatedAt:new Date().toISOString()};
+    window.localStorage.setItem("alpha.editor."+(activeClip?.id||project.id),JSON.stringify(data));
+    if(activeClip?.id){
+      const {data:latest}=await supabase.from("clip_versions").select("version").eq("clip_id",activeClip.id).order("version",{ascending:false}).limit(1).maybeSingle();
       const nextVersion=Number(latest?.version||0)+1;
-      const {error:versionError}=await supabase.from("clip_versions").insert({clip_id:initialClip.id,version:nextVersion,edit_data:data,render_status:"draft"});
+      const {error:versionError}=await supabase.from("clip_versions").insert({clip_id:activeClip.id,version:nextVersion,edit_data:data,render_status:"draft"});
       if(versionError){setSaved(false);setError("Draft saved locally, but version history could not be recorded.");return}
       const {data:versionRows}=await supabase.from("clip_versions").select("id,version,edit_data,render_status,created_at").eq("clip_id",initialClip.id).order("version",{ascending:false}).limit(12);
       setVersions(versionRows||[]);
@@ -223,7 +248,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
     try{
       const {data:{session}}=await supabase.auth.getSession();
       if(!session?.access_token)throw new Error("Authentication expired. Refresh the app and try again.");
-      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,clipId:initialClip?.id||null,startSeconds:inPoint,endSeconds:outPoint||duration,title:(asset.name||"Edited clip").replace(/\\.[^.]+$/,"")+" — Edit",aspect,speed,zoom,captions,autoReframe,effect,transition,aiPrompt})});
+      const response=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json","authorization":"Bearer "+session.access_token},body:JSON.stringify({workspaceId:project.workspace_id,projectId:project.id,mediaAssetId:asset.id,clipId:activeClip?.id||null,startSeconds:inPoint,endSeconds:outPoint||duration,title:activeClip?.title||(asset.name||"Edited clip")+" — Edit",aspect,speed,zoom,captions,captionStyle,captionColor,autoReframe,effect,transition,aiPrompt})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||"Could not start render.");
       const jobId=result.jobId;
@@ -233,9 +258,9 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
         const {data:job,error}=await supabase.from("processing_jobs").select("status,progress,error,payload").eq("id",jobId).maybeSingle();
         if(error)throw new Error(error.message);
         if(job?.payload?.aiEditStatus==="analyzing")setAiStatus("Gemini is analyzing your edit instruction…");
-        if(job?.payload?.aiEditStatus==="fallback")setAiStatus("Gemini could not apply the instruction; the original selection was rendered.");
+        if(job?.payload?.reframeStatus==="fallback")setAiStatus("Automatic reframing was unavailable: "+job.payload.reframeError);
         if(job?.payload?.aiEditStatus==="applied")setAiStatus("Gemini applied the edit instruction.");
-        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");break}
+        if(job?.status==="completed"){finished=true;setRenderMessage("Rendered clip is ready in Clip Library.");const {data:rows}=await supabase.from("clip_versions").select("*").eq("clip_id",job.payload.clipId).order("version",{ascending:false}).limit(12);setVersions(rows||[]);const ready=rows?.find(v=>v.render_status==="ready"&&v.storage_path);if(ready){const signed=await supabase.storage.from("media").createSignedUrl(ready.storage_path,3600);if(signed.error)throw signed.error;setRenderedUrl(signed.data.signedUrl)}break}
         if(job?.status==="failed"){throw new Error(job.error||"Render failed.")}
         setRenderMessage("Rendering… "+Math.max(0,Number(job?.progress)||0)+"%");
       }
@@ -258,7 +283,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
       </div>
     </div>
 
-    {renderMessage&&<div className="editorRenderStatus">{renderMessage}</div>}<div className="editorWorkspace">
+    {error&&<div className="editorRenderStatus" role="alert">{error}</div>}{renderMessage&&<div className="editorRenderStatus">{renderMessage}</div>}{renderedUrl&&<details className="editorRenderStatus"><summary>Preview latest rendered clip{activeClip?.title?" — "+activeClip.title:""}</summary><video src={renderedUrl} controls playsInline style={{maxWidth:"100%",maxHeight:400}}/></details>}<div className="editorWorkspace">
       <aside className="editorProjectRail">
         <div className="editorRailHead"><b>Projects</b><span>{projects.length}</span></div>
         <div className="editorProjectList">
@@ -287,7 +312,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
 
           <div className={"editorStage aspect-"+aspect.replace(":","x")+" "+(splitView?"splitView":"")}>
             {loading?<div className="editorEmpty"><Activity className="spin" size={24}/><b>Loading source media…</b></div>
-            :sourceUrl?<video ref={videoRef} className="editorVideo" src={sourceUrl} style={{transform:"scale("+zoom+")"}} playsInline onLoadedMetadata={e=>{const d=e.currentTarget.duration||Number(asset?.duration_seconds)||0;setDuration(d);setOutPoint(prev=>prev>0?Math.min(prev,d):d)}} onTimeUpdate={e=>{const t=e.currentTarget.currentTime;setCurrent(t);if(outPoint>0&&t>=outPoint){e.currentTarget.pause();e.currentTarget.currentTime=inPoint;setPlaying(false)}}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onError={()=>setError("The source video could not be decoded by the browser.")}/>
+            :sourceUrl?<video ref={videoRef} className="editorVideo" src={sourceUrl} style={{transform:"scale("+zoom+")"}} playsInline onLoadedMetadata={e=>{const d=e.currentTarget.duration||Number(asset?.duration_seconds)||0;setDuration(d);setOutPoint(prev=>prev>0?Math.min(prev,d):d);e.currentTarget.currentTime=Math.min(inPoint,d)}} onTimeUpdate={e=>{const t=e.currentTarget.currentTime;setCurrent(t);if(outPoint>0&&t>=outPoint){e.currentTarget.pause();e.currentTarget.currentTime=inPoint;setPlaying(false)}}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onError={()=>setError("The source video could not be decoded by the browser.")}/>
             :<div className="editorEmpty"><Film size={28}/><b>{error||"Select a project with ready media"}</b><span>Upload or import a video first.</span>{!projects.length&&<button className="btn primary" onClick={onUpload}>Add source video</button>}</div>}
             {sourceUrl&&<div className="editorStageBadge">{aspect} · {fmt(current)} / {fmt(duration)}</div>}
           </div>
@@ -333,8 +358,10 @@ export default function EditorView({projects,supabase,onUpload,initialClip}){
         <div className="editorInspectorHead"><b>Inspector</b><span>{project?.status||"draft"}</span></div>
         <div className="inspectorSection"><label>Trim</label><div className="inspectorInputs"><div><small>IN</small><input type="number" min="0" max={duration} step=".1" value={inPoint.toFixed(1)} onChange={e=>setInPoint(clamp(Number(e.target.value)||0,0,outPoint||duration))}/></div><div><small>OUT</small><input type="number" min={inPoint} max={duration} step=".1" value={(outPoint||duration).toFixed(1)} onChange={e=>setOutPoint(clamp(Number(e.target.value)||duration,inPoint,duration))}/></div></div></div>
         <div className="inspectorSection"><label>Layout templates</label><div className="editorTemplateGrid">{Object.entries(templates).map(([k,t])=><button key={k} className={layoutTemplate===k?"selected":""} onClick={()=>applyTemplate(k)}>{t.label}<small>{t.aspect}</small></button>)}</div></div><div className="inspectorSection"><label>Effects</label><select className="editorSelect wide" value={effect} onChange={e=>{remember();setEffect(e.target.value)}}><option value="none">None</option><option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="cool">Cool</option><option value="mono">Monochrome</option><option value="vibrant">Vibrant</option></select></div><div className="inspectorSection"><label>Transitions</label><select className="editorSelect wide" value={transition} onChange={e=>{remember();setTransition(e.target.value)}}><option value="cut">Hard cut</option><option value="fade">Fade</option><option value="dip">Dip to black</option><option value="zoom">Zoom</option></select></div><div className="inspectorSection"><label>Canvas</label><div className="inspectorChoiceGrid">{["9:16","16:9","1:1"].map(x=><button key={x} className={aspect===x?"selected":""} onClick={()=>setAspect(x)}>{x}</button>)}</div></div>
-        <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this source…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={()=>{setAiStatus("Instruction ready for Gemini on the next render.");setSaved(false)}}><WandSparkles size={14}/> Apply instruction</button></div>
-        <div className="inspectorSection"><label>AI status</label><div className="aiEditStatus">{aiStatus||"Ready"}</div></div>{initialClip?.id&&<div className="inspectorSection"><label>Version history</label><div className="editorVersionList">{versions.length?versions.map(v=><button key={v.id} className="editorVersionRow" onClick={()=>{const d=v.edit_data||{};setInPoint(Number(d.inPoint)||0);setOutPoint(Number(d.outPoint)||duration);setAspect(d.aspect||"9:16");setSpeed(Number(d.speed)||1);setZoom(Number(d.zoom)||1);setCaptions(d.captions!==false);setEffect(d.effect||"none");setTransition(d.transition||"cut");setAiPrompt(d.aiPrompt||"");setSaved(false)}}><span>v{v.version}</span><small>{v.render_status||"draft"} · {new Date(v.created_at).toLocaleString()}</small></button>):<span className="muted">No saved versions yet.</span>}</div></div>}\n        <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
+        <div className="inspectorSection"><label>Export captions</label><button className={"editorToggle "+(captions?"on":"")} onClick={()=>setCaptions(v=>!v)}>{captions?"Captions ON":"Captions OFF"}</button><select aria-label="Caption style" className="editorSelect wide" value={captionStyle} onChange={e=>setCaptionStyle(e.target.value)}>{["pop","bold","minimal"].map(s=><option key={s}>{s}</option>)}</select><input aria-label="Caption color" type="color" value={captionColor} onChange={e=>setCaptionColor(e.target.value)}/></div><div className="inspectorSection"><label>AI edit prompt</label><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Describe an edit for this clip…"/><button className="btn small primary" disabled={!aiPrompt.trim()||rendering} onClick={renderSelection}><WandSparkles size={14}/> Apply and render</button></div>
+        <div className="inspectorSection"><label>AI status</label><div className="aiEditStatus">{aiStatus||"Ready"}</div></div>
+        {activeClip?.id&&<div className="inspectorSection"><label>Version history</label><div className="editorVersionList">{versions.length?versions.map(v=><button key={v.id} className="editorVersionRow" onClick={()=>{const d=v.edit_data||{};setInPoint(Number(d.inPoint??d.source_start)||0);setOutPoint(Number(d.outPoint??d.source_end)||duration);setAspect(d.aspect||"9:16");setSpeed(Number(d.speed)||1);setZoom(Number(d.zoom)||1);setCaptions(d.captions!==false);setCaptionStyle(d.captionStyle||"pop");setCaptionColor(d.captionColor||"#ffffff");setEffect(d.effect||"none");setTransition(d.transition||"cut");setAiPrompt("");setSaved(false);setRenderMessage("Version settings restored. Render to create an output from these settings.")}}><span>v{v.version}</span><small>{v.render_status||"draft"} · {new Date(v.created_at).toLocaleString()}</small></button>):<span className="muted">No saved versions yet.</span>}</div></div>}
+        <div className="inspectorSection"><label>Selection</label><div className="inspectorStats"><span><Clock size={14}/> Start <b>{fmt(inPoint)}</b></span><span><Clock size={14}/> End <b>{fmt(outPoint||duration)}</b></span><span><Maximize2 size={14}/> Canvas <b>{aspect}</b></span></div></div>
       </aside>
     </div>
   </div>;

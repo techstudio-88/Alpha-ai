@@ -1,109 +1,174 @@
 "use client";
-import React,{useEffect,useMemo,useState}from"react";
-import{ArrowUp,CalendarClock,ChevronRight,FileVideo,LoaderCircle,MessageSquare,Paperclip,RotateCcw,Scissors,Sparkles,Undo2}from"lucide-react";
+import {useCallback,useEffect,useRef,useState} from "react";
+import {ArrowUp,CalendarClock,ChevronRight,FileVideo,History,Link,LoaderCircle,MessageSquare,Paperclip,Plus,RefreshCw,Scissors,Sparkles,X} from "lucide-react";
+import {Upload} from "tus-js-client";
+import {allPages} from "../lib/video-workflow.mjs";
+
+const activeStatuses=["queued","processing","awaiting_transcription","transcribing"];
+const time=value=>{const n=Math.max(0,Number(value)||0);return `${Math.floor(n/60)}:${String(Math.floor(n%60)).padStart(2,"0")}`};
+function check(result){if(result.error)throw new Error(result.error.message);return result.data}
+
+function JobStatus({job,onRetry}){
+  const active=activeStatuses.includes(job.status);
+  return <div className={"chatJob "+(job.status==="failed"?"chatJobFailed":"")} aria-live="polite">
+    <div>{active&&<LoaderCircle size={14} className="chatSpin"/>}<b>{job.status==="completed"?(job.payload?.operation==="render_edit"?"Render complete":"Plan saved"):
+      job.status==="awaiting_transcription"?"Waiting for browser Whisper":job.status==="transcribing"?"Transcribing audio":job.status==="failed"?"Processing failed":String(job.current_stage||job.status).replaceAll("_"," ")}</b><span>{Number(job.progress)||0}%</span></div>
+    <progress max="100" value={Number(job.progress)||0}/>
+    {job.payload?.analysisWindows>0&&<small>Transcript window {job.payload.analysisWindow} of {job.payload.analysisWindows}</small>}
+    {["awaiting_transcription","transcribing"].includes(job.status)&&<small>Keep Alpha.ai open. Whisper runs on this device and saves each audio chunk to Supabase.</small>}
+    {job.error&&<p>{job.error}</p>}
+    {job.status==="failed"&&<button className="btn small" onClick={()=>onRetry(job)}><RefreshCw size={13}/> Retry job</button>}
+    {job.status==="queued"&&<button className="btn small" onClick={()=>onRetry(job)}><RefreshCw size={13}/> Wake worker</button>}
+  </div>
+}
+function ClipResult({clip,job,supabase,onEdit,onRetry}){
+  const [src,setSrc]=useState(""),[error,setError]=useState("");
+  const version=(clip.clip_versions||[]).filter(v=>v.render_status==="ready"&&v.storage_path).sort((a,b)=>b.version-a.version)[0];
+  const path=version?.storage_path;
+  useEffect(()=>{
+    let alive=true;
+    async function sign(){setError("");if(!path){setSrc("");return}try{const data=check(await supabase.storage.from("media").createSignedUrl(path,3600));if(alive)setSrc(data.signedUrl)}catch(e){if(alive)setError(e.message)}}
+    sign();const timer=setInterval(sign,3000000);return()=>{alive=false;clearInterval(timer)};
+  },[path,supabase]);
+  const open=()=>window.dispatchEvent(new CustomEvent("alpha:open-editor",{detail:clip}));
+  return <article className="chatClipResult">
+    {src?<video src={src} controls playsInline preload="metadata" onError={()=>setError("The rendered media could not be loaded. Refresh to renew its signed URL.")}/>:<button className="chatClipPending" onClick={open}><FileVideo size={30}/><span>{job?.status==="failed"?"Render needs attention":"Clip output pending"}</span></button>}
+    <div className="chatClipBody"><button className="chatClipTitle" onClick={open}>{clip.title}<ChevronRight size={16}/></button>
+      <small>Source {time(clip.start_seconds)} – {time(clip.end_seconds)} · {Number((clip.end_seconds-clip.start_seconds)/(clip.ai_spec?.speed||1)).toFixed(1)}s{version?` · Render v${version.version}`:""}</small>
+      {clip.ai_spec?.reason&&<p>{clip.ai_spec.reason}</p>}
+      {error&&<p role="alert">{error}</p>}
+      {job&&<JobStatus job={job} onRetry={onRetry}/>}
+      {src&&job&&job.status!=="completed"&&<small>Preview shows the last successful render.</small>}
+      <div className="chatClipActions"><button className="btn small primary" onClick={open}><Scissors size={13}/> Open editor</button><button className="btn small" onClick={()=>onEdit(clip)} disabled={job&&activeStatuses.includes(job.status)}><Sparkles size={13}/> Edit with AI</button>{src&&<button className="btn small" title="Schedule clip" onClick={()=>window.dispatchEvent(new CustomEvent("alpha:schedule",{detail:clip}))}><CalendarClock size={13}/></button>}</div>
+    </div>
+  </article>
+}
 
 export default function AIChatView({workspace,supabase,onNavigate}){
- const[clips,setClips]=useState([]),[assets,setAssets]=useState([]),[selectedAsset,setSelectedAsset]=useState(""),[selected,setSelected]=useState(""),[input,setInput]=useState(""),[messages,setMessages]=useState([]),[sessions,setSessions]=useState([]),[sessionId,setSessionId]=useState(""),[busy,setBusy]=useState(false),[status,setStatus]=useState(""),[platform,setPlatform]=useState("YouTube"),[scheduledFor,setScheduledFor]=useState("");
- const clip=useMemo(()=>clips.find(x=>x.id===selected),[clips,selected]);
- const asset=useMemo(()=>assets.find(x=>x.id===selectedAsset),[assets,selectedAsset]);
- async function auth(){const{data:{session}}=await supabase.auth.getSession();if(!session?.access_token)throw new Error("Your session expired. Please sign in again.");return session.access_token}
- async function load(){
-  if(!workspace?.id)return;
-  const{data:projects}=await supabase.from("projects").select("id,name").eq("workspace_id",workspace.id);
-  const ids=(projects||[]).map(x=>x.id);if(!ids.length)return;
-  const[{data:a},{data:c},{data:s}]=await Promise.all([
-   supabase.from("media_assets").select("id,name,project_id,duration_seconds,status,storage_path").in("project_id",ids).order("created_at",{ascending:false}).limit(100),
-   supabase.from("clips").select("id,title,start_seconds,end_seconds,score,status,project_id,media_asset_id,ai_spec,reframe_config,caption_config,broll_config").in("project_id",ids).order("created_at",{ascending:false}).limit(100),
-   supabase.from("ai_chat_sessions").select("id,title,project_id,media_asset_id,updated_at").eq("workspace_id",workspace.id).order("updated_at",{ascending:false}).limit(30)
-  ]);
-  setAssets(a||[]);setClips(c||[]);setSessions(s||[]);
-  if(!selectedAsset&&a?.[0])setSelectedAsset(a[0].id);
- }
- useEffect(()=>{load()},[workspace?.id]);
- async function openSession(id){
-  setSessionId(id);const{data}=await supabase.from("ai_chat_messages").select("id,role,content,created_at").eq("session_id",id).order("created_at",{ascending:true});setMessages((data||[]).map(x=>({role:x.role,text:x.content,id:x.id})));
-  const s=sessions.find(x=>x.id===id);if(s?.media_asset_id)setSelectedAsset(s.media_asset_id)
- }
- async function plan(regenerate=false){
-  const text=input.trim()||"Create the best short-form clips from this video";
-  if(!selectedAsset)return setMessages(v=>[...v,{role:"assistant",text:"Select a real uploaded video first."}]);
-  setBusy(true);setStatus(regenerate?"Regenerating the clip plan…":"Reading transcript and asking Gemini for the edit plan…");
-  try{
-   const token=await auth(),sid=sessionId||crypto.randomUUID();
-   const res=await fetch("/api/ai/chat/plan",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({workspaceId:workspace.id,projectId:asset.project_id,mediaAssetId:selectedAsset,prompt:text,sessionId:sid})});
-   const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body.error||"AI planning failed.");
-   setSessionId(body.sessionId);setInput("");setClips(v=>[...(body.clips||[]),...v.filter(x=>!(body.clips||[]).some(n=>n.id===x.id))]);setSelected(body.clips?.[0]?.id||"");
-   setMessages(v=>[...v,{role:"user",text},{role:"assistant",text:body.summary||"I created the clip plan.",clips:body.clips||[]}]);
-   await load();
-  }catch(e){setMessages(v=>[...v,{role:"assistant",text:"Something went wrong: "+e.message}])}finally{setBusy(false);setStatus("")}
- }
- async function render(){
-  if(!clip||!asset)return;
-  setBusy(true);setStatus("Sending the edit to the FFmpeg worker…");
-  try{
-   const token=await auth();
-   const{data:ver}=await supabase.from("clip_versions").select("version,edit_data,render_status,storage_path").eq("clip_id",clip.id).order("version",{ascending:false}).limit(1).maybeSingle();
-   const next=Number(ver?.version||0)+1;
-   await supabase.from("clip_versions").insert({clip_id:clip.id,version:next,edit_data:clip.ai_spec||{},render_status:"queued",storage_path:null});
-   const spec=clip.ai_spec||{},aspect=clip.reframe_config?.aspect||"9:16";
-   const res=await fetch("/api/editor/render",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({workspaceId:workspace.id,projectId:clip.project_id,mediaAssetId:clip.media_asset_id,clipId:clip.id,startSeconds:clip.start_seconds,endSeconds:clip.end_seconds,title:clip.title,aspect,aiPrompt:JSON.stringify(spec),captions:true,transition:spec.transitions||"cut",autoReframe:true})});
-   const b=await res.json().catch(()=>({}));if(!res.ok)throw new Error(b.error||"Render could not start.");
-   setMessages(v=>[...v,{role:"assistant",text:"Render queued. Track it in Processing; the rendered version will remain attached to this clip."}]);
-  }catch(e){setMessages(v=>[...v,{role:"assistant",text:"Render failed: "+e.message}])}finally{setBusy(false);setStatus("")}
- }
- async function saveSchedule(){
-  if(!clip||!scheduledFor)return;
-  const when=new Date(scheduledFor).toISOString();
-  const{error}=await supabase.from("scheduled_posts").insert({workspace_id:workspace.id,clip_id:clip.id,platform,scheduled_for:when,status:"scheduled",payload:{source:"ai_chat",title:clip.title}});
-  if(error)return setMessages(v=>[...v,{role:"assistant",text:"Scheduling failed: "+error.message}]);
-  if(platform==="YouTube"){
-    const{data:{session}}=await supabase.auth.getSession();
-    const{error:pe}=await supabase.from("publish_jobs").insert({workspace_id:workspace.id,user_id:session?.user?.id,clip_id:clip.id,platform:"youtube",status:"queued",scheduled_for:when,metadata:{title:clip.title,source:"ai_chat"}});
-    if(pe)return setMessages(v=>[...v,{role:"assistant",text:"Saved to calendar, but publishing job could not be queued: "+pe.message}]);
+  const [sessions,setSessions]=useState([]),[sessionId,setSessionId]=useState(""),[messages,setMessages]=useState([]),[assets,setAssets]=useState([]),[assetId,setAssetId]=useState(""),[source,setSource]=useState(null),[clips,setClips]=useState([]),[jobs,setJobs]=useState([]);
+  const [input,setInput]=useState(""),[url,setUrl]=useState(""),[showLink,setShowLink]=useState(false),[showHistory,setShowHistory]=useState(false),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[uploadProgress,setUploadProgress]=useState(null),[paused,setPaused]=useState(false);
+  const [dragging,setDragging]=useState(false);
+  const textarea=useRef(null),bottom=useRef(null),uploader=useRef(null),requestId=useRef(null),refreshRef=useRef(null),stopUpload=useRef(null);
+  const asset=assets.find(a=>a.id===assetId);
+  const pending=jobs.some(j=>activeStatuses.includes(j.status));
+  const locked=busy||pending;
+  const token=useCallback(async()=>{
+    let {data}=await supabase.auth.getSession();
+    if(data.session?.expires_at*1000<Date.now()+60000)data=(await supabase.auth.refreshSession()).data;
+    if(!data.session?.access_token)throw new Error("Your session expired. Sign in again.");return data.session.access_token;
+  },[supabase]);
+  async function api(path,body){const response=await fetch(path,{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+await token()},body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||`Request failed (${response.status})`);return data}
+  function chooseSession(id){setSessionId(id);setMessages([]);setJobs([]);setClips([]);setAssetId("");setSource(null);setEditing(null);setError("");setNotice("");requestId.current=null;setShowHistory(false);localStorage.setItem("alpha.chat."+workspace.id,id)}
+  useEffect(()=>{const saved=localStorage.getItem("alpha.chat."+workspace.id)||"";setSessionId(saved)},[workspace.id]);
+  useEffect(()=>{
+    let alive=true,running=false;
+    async function refresh(){
+      if(running)return;running=true;
+      try{
+        const session=check(await supabase.auth.getSession())?.session;
+        const [history,media]=await Promise.all([
+          supabase.from("ai_chat_sessions").select("*").eq("workspace_id",workspace.id).eq("user_id",session?.user.id).order("updated_at",{ascending:false}).limit(100),
+          supabase.from("media_assets").select("id,name,status,project_id,duration_seconds,storage_path,projects!inner(workspace_id)").eq("projects.workspace_id",workspace.id).order("created_at",{ascending:false}).limit(150)
+        ]);
+        const h=check(history),a=check(media);
+        let m=[],j=[],c=[];
+        if(sessionId){
+          m=await allPages(async(offset,size)=>check(await supabase.from("ai_chat_messages").select("*").eq("session_id",sessionId).eq("workspace_id",workspace.id).order("created_at").order("id").range(offset,offset+size-1)));
+          j=await allPages(async(offset,size)=>check(await supabase.from("processing_jobs").select("id,status,progress,current_stage,error,payload,created_at,updated_at").eq("workspace_id",workspace.id).eq("payload->>sessionId",sessionId).order("created_at").order("id").range(offset,offset+size-1)));
+          const ids=[...new Set(m.flatMap(x=>x.metadata?.clipIds||[]))];
+          for(let i=0;i<ids.length;i+=50)c.push(...check(await supabase.from("clips").select("*,clip_versions(id,version,render_status,storage_path,edit_data)").in("id",ids.slice(i,i+50))));
+        }
+        if(!alive)return;
+        setSessions(h);setAssets(a);setMessages(m);setJobs(j);setClips(c);
+        const current=h.find(s=>s.id===sessionId);
+        if(current?.media_asset_id)setAssetId(v=>v||current.media_asset_id);
+        const attached=m.filter(x=>x.metadata?.sourceId).at(-1);
+        if(attached)setSource(v=>v||{id:attached.metadata.sourceId,project_id:attached.metadata.projectId});
+      }catch(e){if(alive)setError(e.message)}finally{running=false;if(alive)setLoading(false)}
+    }
+    refreshRef.current=refresh;refresh();const timer=setInterval(refresh,3000);
+    return()=>{alive=false;clearInterval(timer)};
+  },[workspace.id,sessionId,supabase]);
+  useEffect(()=>{bottom.current?.scrollIntoView({block:"end",behavior:"smooth"})},[messages.length]);
+  useEffect(()=>()=>{uploader.current?.abort();stopUpload.current?.()},[]);
+
+  async function attach(file){
+    if(locked)return;
+    setBusy(true);setError("");setNotice("");
+    const sid=sessionId||crypto.randomUUID();
+    try{
+      const data=await api("/api/ai/chat/source",{workspaceId:workspace.id,sessionId:sid,...(file?{name:file.name,size:file.size,mimeType:file.type}:{url,name:"Linked video"})});
+      if(!sessionId)chooseSession(sid);
+      setSource(data.source);setEditing(null);setAssetId(data.asset?.id||"");
+      if(file){
+        setAssets(v=>[data.asset,...v]);setUploadProgress(0);
+        const accessToken=await token();
+        await new Promise((resolve,reject)=>{
+          stopUpload.current=()=>reject(new Error("Upload stopped before completion. Reattach the file to upload it."));
+          const upload=new Upload(file,{
+            endpoint:process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/,"")+"/storage/v1/upload/resumable",
+            headers:{authorization:"Bearer "+accessToken,apikey:process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY},
+            onBeforeRequest:async request=>request.setHeader("authorization","Bearer "+await token()),
+            chunkSize:6*1024*1024,retryDelays:[0,3000,5000,10000,20000],uploadDataDuringCreation:true,removeFingerprintOnSuccess:true,
+            metadata:{bucketName:"media",objectName:data.asset.storage_path,contentType:data.asset.mime_type,cacheControl:"3600"},
+            onProgress:(bytes,total)=>setUploadProgress(Math.round(bytes/total*100)),onError:reject,onSuccess:resolve
+          });uploader.current=upload;
+          upload.findPreviousUploads().then(previous=>{if(previous.length)upload.resumeFromPreviousUpload(previous[0]);upload.start()}).catch(reject);
+        });
+        check(await supabase.from("media_assets").update({status:"uploaded"}).eq("id",data.asset.id));
+        check(await supabase.from("project_sources").update({status:"queued"}).eq("id",data.source.id));
+        check(await supabase.from("ai_chat_messages").insert({session_id:sid,workspace_id:workspace.id,user_id:(await supabase.auth.getUser()).data.user.id,
+          role:"system",content:`${file.name} uploaded. Send your instructions to transcribe and create clips.`,metadata:{mediaAssetId:data.asset.id}}));
+        setAssets(v=>v.map(a=>a.id===data.asset.id?{...a,status:"uploaded"}:a));
+      }
+      setNotice(file?"Upload complete. Describe the clips you want below.":"URL attached. Describe what to make; the worker will download and analyze the video.");setShowLink(false);setUrl("");
+      await refreshRef.current?.();
+    }catch(e){setError(e.message)}finally{setBusy(false);setUploadProgress(null);setPaused(false);uploader.current=null;stopUpload.current=null}
   }
-  setMessages(v=>[...v,{role:"assistant",text:"Scheduled "+clip.title+" for "+platform+"."}]);
- }
- async function updateSpec(patch){
-  if(!clip)return;
-  const next={...(clip.ai_spec||{}),...patch};
-  const{error}=await supabase.from("clips").update({ai_spec:next,reframe_config:patch.aspect?{...(clip.reframe_config||{}),aspect:patch.aspect}:clip.reframe_config,caption_config:patch.captionStyle?{...(clip.caption_config||{}),style:patch.captionStyle,color:patch.captionColor||clip.caption_config?.color}:clip.caption_config}).eq("id",clip.id);
-  if(error)setMessages(v=>[...v,{role:"assistant",text:"Could not save the edit spec: "+error.message}]);else{setClips(v=>v.map(x=>x.id===clip.id?{...x,ai_spec:next}:x));setMessages(v=>[...v,{role:"assistant",text:"Edit settings saved to the real clip. Render when ready."}])}
- }
- async function showVersions(){
-  if(!clip)return;
-  const{data,error}=await supabase.from("clip_versions").select("version,edit_data,render_status,storage_path,created_at").eq("clip_id",clip.id).order("version",{ascending:false}).limit(10);
-  if(error)return setMessages(v=>[...v,{role:"assistant",text:"Could not load versions: "+error.message}]);
-  setMessages(v=>[...v,{role:"assistant",text:(data||[]).length?"Choose a saved version to restore.":"No saved versions yet.",versions:data||[]}]);
- }
- async function restoreVersion(v){
-  if(!clip)return;
-  const spec=v.edit_data||{};
-  const{error}=await supabase.from("clips").update({ai_spec:spec}).eq("id",clip.id);
-  if(error)return setMessages(x=>[...x,{role:"assistant",text:"Version restore failed: "+error.message}]);
-  setClips(x=>x.map(k=>k.id===clip.id?{...k,ai_spec:spec}:k));
-  setMessages(x=>[...x,{role:"assistant",text:"Restored version "+v.version+". Render it to create the new output."}]);
- }
- const quick=["Create 5 viral shorts","Make the hooks stronger","Make these tighter and faster","Find the funniest moments"];
- return <div className="workspaceFeaturePage" style={{minHeight:"calc(100vh - 40px)"}}>
-  <div className="top"><div><div className="eyebrow">ALPHA.AI CHAT-FIRST CREATION</div><h1>Tell Alpha what to make.</h1><div className="muted">Real workspace media, transcript analysis, Gemini planning and FFmpeg rendering.</div></div><button className="btn" onClick={()=>onNavigate?.("clips")}><Scissors size={15}/> Clips Studio</button></div>
-  <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16}}>
-   <section className="card" style={{minHeight:600,display:"flex",flexDirection:"column"}}>
-    <div style={{padding:14,borderBottom:"1px solid var(--line,#e7eaf0)",display:"flex",gap:10,alignItems:"center"}}><MessageSquare size={18}/><b>AI Chat</b>{asset&&<span className="muted" style={{fontSize:12}}>· {asset.name}</span>}</div>
-    <div style={{flex:1,padding:18,overflow:"auto",display:"flex",flexDirection:"column",gap:12}}>
-     {!messages.length&&<div style={{margin:"auto",textAlign:"center",maxWidth:560}}><Sparkles size={32} style={{color:"#7c3aed"}}/><h2>What should we make?</h2><p className="muted">Select a real uploaded video and describe the result. Alpha saves the chat and generated clip specs to your workspace.</p><div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>{quick.map(q=><button className="btn small" key={q} onClick={()=>setInput(q)}>{q}</button>)}</div></div>}
-     {messages.map((m,i)=><div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"11px 14px",borderRadius:16,background:m.role==="user"?"linear-gradient(135deg,#7c3aed,#2563eb)":"var(--card,#fff)",color:m.role==="user"?"#fff":"inherit",border:m.role==="user"?"0":"1px solid var(--line,#e7eaf0)"}}><div style={{whiteSpace:"pre-wrap"}}>{m.text}</div>{m.versions?.length&&<div style={{marginTop:8,display:"grid",gap:5}}>{m.versions.map(v=><button className="btn small" key={v.version} onClick={()=>restoreVersion(v)}>Restore version {v.version} · {v.render_status}</button>)}</div>}{m.clips?.length&&<div style={{marginTop:10,display:"grid",gap:5}}>{m.clips.map(c=><button className="btn small" key={c.id} onClick={()=>setSelected(c.id)} style={{justifyContent:"space-between"}}><span>{c.title||"AI clip"} · {Math.round((c.end_seconds||0)-(c.start_seconds||0))}s</span><ChevronRight size={13}/></button>)}</div>}</div>)}
-    </div>
-    <div style={{padding:12,borderTop:"1px solid var(--line,#e7eaf0)"}}>
-     <div style={{display:"flex",gap:8,marginBottom:8}}><select className="input" value={selectedAsset} onChange={e=>setSelectedAsset(e.target.value)} style={{flex:1}}><option value="">Choose uploaded video…</option>{assets.map(a=><option key={a.id} value={a.id}>{a.name} · {Math.round(Number(a.duration_seconds||0))}s</option>)}</select><label className="btn" title="Attach/import video"><Paperclip size={15}/><input hidden type="file" accept="video/*" onChange={()=>onNavigate?.("import")}/></label></div>
-     <div style={{display:"flex",gap:8}}><textarea className="input" rows={2} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();plan()}}} placeholder="Example: find 5 strong hooks, 30-45 seconds each, with bold captions." style={{resize:"vertical",flex:1}}/><button className="btn primary" disabled={busy} onClick={()=>plan()}>{busy?<LoaderCircle size={16}/>:<ArrowUp size={16}/>}</button></div>
-     {status&&<div className="muted" style={{fontSize:12,marginTop:7}}>{status}</div>}
-    </div>
-   </section>
-   <aside style={{display:"grid",gap:12,alignContent:"start"}}>
-    <div className="card" style={{padding:14}}><div className="eyebrow">CHAT HISTORY</div>{sessions.map(s=><button key={s.id} className="btn small" style={{width:"100%",justifyContent:"space-between",marginTop:6,textAlign:"left"}} onClick={()=>openSession(s.id)}><span>{s.title}</span><ChevronRight size={13}/></button>)}</div>
-    <div className="card" style={{padding:14}}><div className="eyebrow">CLIP EDITOR</div>{clip?<><b>{clip.title}</b><div className="muted" style={{fontSize:12,margin:"6px 0"}}>{Number(clip.start_seconds).toFixed(1)}s → {Number(clip.end_seconds).toFixed(1)}s · score {clip.score}</div><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{["9:16","1:1","16:9"].map(a=><button className="btn small" key={a} onClick={()=>updateSpec({aspect:a})}>{a}</button>)}</div><div style={{display:"flex",gap:6,marginTop:8}}>{["pop","bold","minimal"].map(a=><button className="btn small" key={a} onClick={()=>updateSpec({captionStyle:a})}>{a}</button>)}</div><button className="btn primary" style={{width:"100%",marginTop:10}} onClick={render} disabled={busy}><Scissors size={14}/> Render with FFmpeg</button><button className="btn" style={{width:"100%",marginTop:6}} onClick={()=>plan(true)} disabled={busy}><RotateCcw size={14}/> Regenerate plan</button><button className="btn" style={{width:"100%",marginTop:6}} onClick={showVersions}><Undo2 size={14}/> Version history</button></>:<div className="muted" style={{fontSize:13}}>Select an AI clip above.</div>}</div>
-    <div className="card" style={{padding:14}}><div className="eyebrow">SCHEDULE</div><div style={{display:"flex",gap:6,marginTop:8}}><select className="input" value={platform} onChange={e=>setPlatform(e.target.value)}><option>YouTube</option><option>Instagram</option><option>TikTok</option><option>LinkedIn</option></select></div><input className="input" type="datetime-local" value={scheduledFor} onChange={e=>setScheduledFor(e.target.value)} style={{marginTop:6}}/><button className="btn" style={{width:"100%",marginTop:6}} onClick={saveSchedule} disabled={!clip||!scheduledFor}><CalendarClock size={14}/> Save to Publishing</button></div>
-   </aside>
+  async function send(){
+    if(locked||!input.trim())return;
+    if(!asset&&!source)return setError("Upload a video, attach a URL, or select an existing source first.");
+    setBusy(true);setError("");setNotice("");
+    const sid=sessionId||crypto.randomUUID();
+    requestId.current=requestId.current||crypto.randomUUID();
+    try{
+      const result=await api("/api/ai/chat/plan",{workspaceId:workspace.id,projectId:asset?.project_id||source.project_id,
+        mediaAssetId:assetId||null,sourceId:asset?null:source?.id||null,sessionId:sid,requestId:requestId.current,prompt:input.trim(),clipId:editing?.id||null});
+      if(!sessionId){setSessionId(sid);localStorage.setItem("alpha.chat."+workspace.id,sid)}
+      setInput("");requestId.current=null;setEditing(null);setNotice(result.warning||"Instruction saved. The processing queue will update here.");
+      setJobs(v=>[...v,{id:result.jobId,status:"queued",progress:0,payload:{}}]);await refreshRef.current?.();
+    }catch(e){setError(e.message)}finally{setBusy(false)}
+  }
+  async function retry(job){try{const result=await api(job.status==="queued"?"/api/processing-status":"/api/ai/chat/retry",{workspaceId:workspace.id,jobId:job.id});setNotice(result.warning||"Worker notified; the job remains in the processing queue.");await refreshRef.current?.()}catch(e){setError(e.message)}}
+  const newChat=()=>{if(!busy){chooseSession("");setInput("")}};
+  const edit=clip=>{setEditing(clip);setAssetId(clip.media_asset_id);textarea.current?.focus()};
+  return <div className={"alphaChatWorkspace "+(dragging?"chatDragTarget":"")} onDragEnter={e=>{e.stopPropagation();if(e.dataTransfer.types.includes("Files")&&!locked)setDragging(true)}} onDragOver={e=>{e.preventDefault();e.stopPropagation()}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragging(false)}} onDrop={e=>{e.preventDefault();e.stopPropagation();setDragging(false);const file=e.dataTransfer.files?.[0];if(file&&!locked)attach(file)}}>
+    <aside className={"chatHistory "+(showHistory?"chatHistoryOpen":"")} aria-label="AI chat history">
+      <div className="chatHistoryHeading"><MessageSquare size={17}/><b>Your conversations</b></div>
+      <button className="btn primary" onClick={newChat} disabled={busy}><Plus size={16}/> New chat</button>
+      <div className="chatHistoryList">{sessions.map(s=><button className={s.id===sessionId?"active":""} key={s.id} onClick={()=>chooseSession(s.id)} disabled={busy}><MessageSquare size={14}/><span>{s.title}<small>{new Date(s.updated_at).toLocaleDateString()}</small></span></button>)}{!sessions.length&&!loading&&<p className="muted">Your saved video conversations will appear here.</p>}</div>
+      <small>Conversations, instructions and results are saved to your Alpha.ai workspace.</small>
+    </aside>
+    <section className="chatMain">
+      <header className="chatHeader"><div><span className="eyebrow">ALPHA.AI · VIDEO WORKSPACE</span><h1>{editing?"Refine your clip":"Create through conversation"}</h1></div><div><button className="btn small chatHistoryToggle" onClick={()=>setShowHistory(v=>!v)} aria-label="Toggle chat history"><History size={16}/></button><button className="btn small" onClick={()=>onNavigate?.("clips")}><Scissors size={15}/> Clips</button></div></header>
+      <div className="chatMessages" aria-label="Conversation">
+        {!messages.length&&<div className="chatWelcome"><div className="chatOrb"><Sparkles size={32}/></div><h2>One video. What should we make?</h2><p>Bring a long-form video. Alpha reads its real transcript, plans with Gemini, and renders your clips with FFmpeg.</p><div className="chatStarters">{["Find 3 insightful clips, 30–45 seconds each","Create a short with the strongest opening hook","Find a complete, useful answer and add bold captions"].map(text=><button key={text} onClick={()=>{setInput(text);textarea.current?.focus()}}>{text}<ChevronRight size={14}/></button>)}</div></div>}
+        {messages.map(m=><div className={"chatMessage chatMessage-"+m.role} key={m.id}><div className="chatMessageAuthor">{m.role==="user"?"You":m.role==="system"?"Source":"Alpha"}</div><div className="chatMessageText">{m.content}</div>
+          {m.metadata?.jobId&&jobs.filter(j=>j.id===m.metadata.jobId).map(j=><JobStatus key={j.id} job={j} onRetry={retry}/>)}
+          {m.metadata?.clipIds?.length>0&&<div className="chatResults">{m.metadata.clipIds.map(id=>{const clip=clips.find(c=>c.id===id);const job=jobs.filter(j=>j.payload?.clipId===id&&j.payload.operation==="render_edit").at(-1);return clip?<ClipResult key={id} clip={clip} job={job} supabase={supabase} onEdit={edit} onRetry={retry}/>:<p key={id}>This clip is no longer available in the workspace.</p>})}</div>}
+        </div>)}<div ref={bottom}/>
+      </div>
+      <div className="chatComposerWrap">
+        {error&&<div className="chatError" role="alert">{error}<button onClick={()=>setError("")} aria-label="Dismiss error"><X size={14}/></button></div>}
+        {notice&&<p className="chatNotice" role="status">{notice}</p>}
+        {uploadProgress!==null&&<div className="chatJob"><div><b>{paused?"Upload paused":"Uploading video"}</b><span>{uploadProgress}%</span></div><progress max="100" value={uploadProgress}/><button className="btn small" onClick={()=>{if(paused)uploader.current?.start();else uploader.current?.abort();setPaused(!paused)}}>{paused?"Resume":"Pause"}</button></div>}
+        {editing&&<div className="chatEditing"><Scissors size={14}/><span>Editing: {editing.title} · {time(editing.start_seconds)}–{time(editing.end_seconds)}</span><button aria-label="Stop editing this clip" onClick={()=>setEditing(null)}><X size={14}/></button></div>}
+        <div className="chatSourceRow"><FileVideo size={16}/><select value={assetId} onChange={e=>{setAssetId(e.target.value);setSource(null);setEditing(null)}} disabled={locked} aria-label="Source video"><option value="">{source?"Attached URL — ready to import":"Choose an existing video or attach one…"}</option>{assets.map(a=><option key={a.id} value={a.id}>{a.name}{a.duration_seconds?` · ${time(a.duration_seconds)}`:""}{a.status==="uploading"?" · upload incomplete":""}</option>)}</select></div>
+        {showLink&&<form className="chatLinkInput" onSubmit={e=>{e.preventDefault();attach(null)}}><input type="url" required value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=… or a video/source URL" aria-label="Video URL"/><button className="btn small" disabled={locked||!url}>Attach URL</button></form>}
+        <div className="chatComposer"><textarea ref={textarea} value={input} onChange={e=>{setInput(e.target.value);requestId.current=null}} rows={3} maxLength={6000} placeholder={editing?"Try: trim the opening, speed up to 1.2x, use square format and yellow bold captions…":"Describe the moments, duration and style you want…"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send()}}}/>
+          <div className="chatComposerActions"><div><label className={"btn small "+(locked?"chatDisabled":"")} title="Upload video"><Paperclip size={16}/><span>Video</span><input hidden type="file" accept="video/*,.mkv,.avi" disabled={locked} onChange={e=>{const file=e.target.files?.[0];e.target.value="";if(file)attach(file)}}/></label><button className="btn small" onClick={()=>setShowLink(v=>!v)} disabled={locked}><Link size={15}/> URL</button></div><button className="btn primary" onClick={send} disabled={locked||!input.trim()} aria-label="Send instruction">{locked?<LoaderCircle size={18} className="chatSpin"/>:<ArrowUp size={18}/>}</button></div>
+        </div><small className="chatComposerHint">{pending?"Processing continues in this saved conversation. You can open another chat.":"YouTube · Drive shared files · Dropbox · OneDrive · direct video URLs. Source access and storage limits apply."}</small>
+      </div>
+    </section>
   </div>
- </div>
 }

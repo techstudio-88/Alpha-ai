@@ -1,5 +1,6 @@
 import "./alpha-unified.css";
 import "./alpha-onboarding.css";
+import "./alpha-chat.css";
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 import StudioEnhancements from "../components/StudioEnhancements";
@@ -22,9 +23,9 @@ export const metadata = {
     card: "summary_large_image", image: ["/og-image.svg"], title: "Alpha.ai — Turn Long Videos Into Content That Gets Watched.",
     description: "AI video clipping, captions, smart reframe, editing and publishing in one workspace.",
   },
-  themeColor: "#ffffff",
   robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1, "max-video-preview": -1 } },
 };
+export const viewport = {themeColor:"#ffffff"};
 
 const organizationSchema = {
   "@context": "https://schema.org", "@type": "Organization", name: "Alpha.ai",

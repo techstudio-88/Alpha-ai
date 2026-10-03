@@ -1,6 +1,18 @@
 import{createClient}from"@supabase/supabase-js";
+import {authorizeWorkflow,checked,problem,wakeWorker,workflowError} from "../../../lib/workflow-server";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
+export async function POST(request){
+  try{
+    const {workspaceId,jobId}=await request.json();
+    const {admin,token}=await authorizeWorkflow(request,workspaceId);
+    const job=checked(await admin.from("processing_jobs").select("id,project_id,status,payload").eq("id",jobId).eq("workspace_id",workspaceId).maybeSingle());
+    if(!job)throw problem("Processing job not found.",404);
+    if(!["queued","processing"].includes(job.status))return Response.json({jobId,status:job.status});
+    const warning=await wakeWorker({...job.payload,jobId,workspaceId,projectId:job.project_id},token);
+    return Response.json({jobId,status:job.status,warning},{status:202});
+  }catch(error){return workflowError(error)}
+}
 export async function GET(request){
   try{
     const auth=request.headers.get("authorization")||"";

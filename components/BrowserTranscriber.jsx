@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { allPages } from "../lib/video-workflow.mjs";
 
 const HEARTBEAT_MS = 20000;
 const JOB_LEASE_MS = 120000;
@@ -15,6 +16,8 @@ export default function BrowserTranscriber({ workspace }) {
     if (!workspace || !supabase) return;
 
     let alive = true;
+    let activeHeartbeat = null;
+    let cancelTranscription = null;
     const worker = new Worker(
       new URL("../workers/transcriber.worker.js", import.meta.url),
       { type: "module" }
@@ -38,7 +41,7 @@ export default function BrowserTranscriber({ workspace }) {
       if (running.current) return;
 
       running.current = true;
-      const payload = job.payload || {};
+      let payload = job.payload || {};
       const chunks = Array.isArray(payload.transcriptionChunks)
         ? payload.transcriptionChunks
         : [];
@@ -52,18 +55,21 @@ export default function BrowserTranscriber({ workspace }) {
           return;
         }
 
-        await touchJob(job.id, {
+        const claimed = await supabase.from("processing_jobs").update({
           status: "transcribing",
           progress: Math.max(43, Number(job.progress) || 43),
           current_stage: "transcription",
-          error: null
-        });
+          error: null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+JOB_LEASE_MS).toISOString()
+        }).eq("id",job.id).eq("status","awaiting_transcription").select("id");
+        if(claimed.error)throw claimed.error;
+        if(!claimed.data?.length)return;
 
         heartbeatTimer = setInterval(() => {
           touchJob(job.id).catch(error =>
             console.warn("browser transcription heartbeat failed:", error?.message)
           );
         }, HEARTBEAT_MS);
+        activeHeartbeat=heartbeatTimer;
 
         for (let i = next; i < chunks.length; i++) {
           if (!alive) break;
@@ -84,6 +90,8 @@ export default function BrowserTranscriber({ workspace }) {
           if (signed.error) throw signed.error;
 
           const result = await new Promise((resolve, reject) => {
+            cancelTranscription=()=>reject(new Error("Transcription browser was closed."));
+            worker.onerror=event=>reject(new Error(event.message||"Whisper worker could not start."));
             const handler = event => {
               const data = event.data || {};
 
@@ -134,11 +142,13 @@ export default function BrowserTranscriber({ workspace }) {
 
               if (data.type === "done") {
                 worker.removeEventListener("message", handler);
+                cancelTranscription=null;
                 resolve(data);
               }
 
               if (data.type === "error") {
                 worker.removeEventListener("message", handler);
+                cancelTranscription=null;
                 reject(new Error(data.error || "Browser transcription failed."));
               }
             };
@@ -209,16 +219,14 @@ export default function BrowserTranscriber({ workspace }) {
             }
           }
 
-          const textRows = await supabase
-            .from("transcript_segments")
-            .select("text,start_ms,end_ms")
-            .eq("transcript_id", payload.transcriptId)
-            .order("start_ms", { ascending: true });
-
-          if (textRows.error) throw textRows.error;
+          const textRows = await allPages(async(offset,size)=>{
+            const result=await supabase.from("transcript_segments").select("text,start_ms,end_ms")
+              .eq("transcript_id",payload.transcriptId).order("start_ms").order("id").range(offset,offset+size-1);
+            if(result.error)throw result.error;return result.data;
+          });
 
           const completed = i + 1 >= chunks.length;
-          const transcriptText = (textRows.data || [])
+          const transcriptText = textRows
             .map(row => String(row.text || "").trim())
             .filter(Boolean)
             .join(" ");
@@ -242,11 +250,6 @@ export default function BrowserTranscriber({ workspace }) {
             browserTranscriptionDevice:
               result.device || payload.browserTranscriptionDevice || "wasm"
           };
-
-          await supabase.storage
-            .from("media")
-            .remove([chunk.storagePath])
-            .catch(() => {});
 
           if (completed) {
             const stageUpdate = await supabase
@@ -275,6 +278,13 @@ export default function BrowserTranscriber({ workspace }) {
               ? null
               : new Date(Date.now() + JOB_LEASE_MS).toISOString()
           });
+          payload=nextPayload;
+          // Checkpoint first: a tab closing must not delete audio it still needs.
+          await supabase.storage.from("media").remove([chunk.storagePath]).catch(()=>{});
+          if(completed){
+            const {data:{session}}=await supabase.auth.getSession();
+            if(session?.access_token)await fetch("/api/processing-status",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+session.access_token},body:JSON.stringify({workspaceId:workspace.id,jobId:job.id})}).catch(error=>console.warn("Worker wake request failed; job remains queued:",error.message));
+          }
 
           setState({
             jobId: job.id,
@@ -285,8 +295,10 @@ export default function BrowserTranscriber({ workspace }) {
               ? "Transcription complete — continuing AI analysis"
               : "Transcribing in this browser"
           });
+          if(completed)setTimeout(()=>{if(alive)setState(null)},4000);
         }
       } catch (error) {
+        if(!alive)return;
         if (alive) {
           setState({
             jobId: job.id,
@@ -312,7 +324,7 @@ export default function BrowserTranscriber({ workspace }) {
         }).catch(() => {});
       } finally {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
-        running.current = false;
+        if(alive)running.current = false;
       }
     }
 
@@ -343,6 +355,9 @@ export default function BrowserTranscriber({ workspace }) {
     return () => {
       alive = false;
       clearInterval(timer);
+      clearInterval(activeHeartbeat);
+      cancelTranscription?.();
+      running.current=false;
       worker.terminate();
     };
   }, [workspace]);

@@ -17,3 +17,7 @@ services:
         sync: false
       - key: MEDIA_WORKER_SECRET
         generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
