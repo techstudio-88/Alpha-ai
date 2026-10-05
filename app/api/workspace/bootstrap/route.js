@@ -1,43 +1,22 @@
-import{createClient}from"@supabase/supabase-js";
-export const runtime="nodejs";
-const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anon=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const service=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
-export async function POST(request){
- try{
-  const token=(request.headers.get("authorization")||"").replace(/^Bearer\s+/i,"");
-  if(!token)return Response.json({error:"Authentication required."},{status:401});
-  if(!url||!anon||!service)throw new Error("Supabase server configuration is incomplete.");
-  const authClient=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:false}});
-  const {data:{user},error:authError}=await authClient.auth.getUser(token);
-  if(authError||!user)return Response.json({error:"Authentication expired."},{status:401});
-  const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}});
-  let{data:member}=await admin.from("workspace_members").select("workspace_id").eq("user_id",user.id).order("created_at",{ascending:true}).limit(1).maybeSingle();
-  let workspace=null;
-  if(member?.workspace_id){
-   const r=await admin.from("workspaces").select("*").eq("id",member.workspace_id).maybeSingle();
-   workspace=r.data||null;
+import {createClient} from '@supabase/supabase-js';
+import {bootstrapWorkspace} from '../../../../lib/workspace-bootstrap.mjs';
+
+export const runtime = 'nodejs';
+export async function POST(request) {
+  try {
+    const authorization = request.headers.get('authorization') || '';
+    if (!authorization.startsWith('Bearer ')) return Response.json({error:'Authentication required.'}, {status:401});
+    const token = authorization.slice(7);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anon = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const service = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+    if (!url || !anon || !service) return Response.json({error:'Workspace setup is not configured.'}, {status:503});
+    const options = {auth:{persistSession:false,autoRefreshToken:false}};
+    const {data:{user},error} = await createClient(url,anon,options).auth.getUser(token);
+    if (error || !user) return Response.json({error:'Authentication expired.'}, {status:401});
+    const workspace = await bootstrapWorkspace(createClient(url,service,options),user);
+    return Response.json({workspace});
+  } catch {
+    return Response.json({error:'Unable to prepare your workspace. Please retry.'}, {status:500});
   }
-  if(!workspace){
-   const r=await admin.from("workspaces").select("*").eq("owner_id",user.id).order("created_at",{ascending:true}).limit(1).maybeSingle();
-   workspace=r.data||null;
-  }
-  if(!workspace){
-   const meta=user.user_metadata||{};
-   const displayName=String(meta.full_name||meta.name||user.email?.split("@")[0]||"My Workspace").trim()||"My Workspace";
-   await admin.from("profiles").upsert({id:user.id,full_name:meta.full_name||meta.name||null,avatar_url:meta.avatar_url||null},{onConflict:"id"});
-   const created=await admin.from("workspaces").insert({name:displayName+"'s Workspace",owner_id:user.id}).select().single();
-   if(created.error)throw created.error;
-   workspace=created.data;
-  }
-  const membership=await admin.from("workspace_members").upsert({workspace_id:workspace.id,user_id:user.id,role:"owner"},{onConflict:"workspace_id,user_id"}).select().maybeSingle();
-  if(membership.error)throw membership.error;
-  const sub=await admin.from("subscriptions").upsert({workspace_id:workspace.id,plan:"free",status:"active"},{onConflict:"workspace_id"}).select().maybeSingle();
-  if(sub.error)throw sub.error;
-  const periodStart=new Date().toISOString().slice(0,7)+"-01";
-  const existingUsage=await admin.from("usage").select("workspace_id").eq("workspace_id",workspace.id).eq("period_start",periodStart).maybeSingle();
-  if(existingUsage.error)throw existingUsage.error;
-  if(!existingUsage.data){const usage=await admin.from("usage").insert({workspace_id:workspace.id,period_start:periodStart});if(usage.error)throw usage.error;}
-  return Response.json({workspace});
- }catch(e){return Response.json({error:e?.message||"Unable to prepare your workspace."},{status:500})}
 }

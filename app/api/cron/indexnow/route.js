@@ -1,2 +1,3 @@
 import { submitIndexNow } from "../../indexnow/route";
-export async function GET(req){if(req.headers.get("authorization")!==`Bearer ${process.env.CRON_SECRET}`)return new Response("Unauthorized",{status:401});return submitIndexNow(req)}
+import {cronAuthorized} from '../../../../lib/cron-auth.mjs';
+export async function GET(req){if(!cronAuthorized(req))return new Response("Unauthorized",{status:401});return submitIndexNow(req)}

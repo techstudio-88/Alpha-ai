@@ -1,4 +1,6 @@
 import {authorizeWorkflow,checked,mediaContext,problem,wakeWorker,workflowError} from "../../../../lib/workflow-server";
+import {retainedRanges} from '../../../../lib/video-workflow.mjs';
+import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
 export const runtime="nodejs";
 export const maxDuration=30;
 export async function POST(request){
@@ -16,6 +18,9 @@ export async function POST(request){
     }
     const duration=Number(asset.duration_seconds),start=Number(body.startSeconds),end=Number(body.endSeconds);
     if(!Number.isFinite(duration)||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end>duration+.01||end-start<.25)throw problem("Choose a valid range inside the source video.");
+    const cutRanges=body.cutRanges||[];
+    try { retainedRanges(start,end,cutRanges); } catch(error) { throw problem(error.message); }
+    if(cutRanges.length) await requireWorkerCapability('transcript-cuts');
     if(body.transition&&!['cut','fade','dip'].includes(body.transition))throw problem("This transition is not implemented. Choose cut, fade, or dip to black.");
     const clamp=(n,min,max,def)=>Number.isFinite(Number(n))?Math.max(min,Math.min(max,Number(n))):def;
     const payload={operation:"render_edit",workspaceId,projectId,mediaAssetId,clipId:clipId||null,requestedBy:user.id,
@@ -25,7 +30,7 @@ export async function POST(request){
       captionColor:/^#[\da-f]{6}$/i.test(body.captionColor||"")?body.captionColor:"#ffffff",
       effect:["cinematic","warm","cool","mono","vibrant"].includes(body.effect)?body.effect:"none",
       transition:["fade","dip"].includes(body.transition)?body.transition:"cut",reframe:body.autoReframe!==false,
-      aiPrompt:String(body.aiPrompt||"").slice(0,6000)};
+      cutRanges,aiPrompt:String(body.aiPrompt||"").slice(0,6000)};
     const job=checked(await admin.from("processing_jobs").insert({workspace_id:workspaceId,project_id:projectId,job_type:"render_edit",status:"queued",progress:0,payload}).select("id").single());
     const warning=await wakeWorker({...payload,jobId:job.id},token);
     return Response.json({jobId:job.id,warning},{status:202});

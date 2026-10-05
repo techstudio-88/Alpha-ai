@@ -1,4 +1,4 @@
-const SITE_URL = "https://alpha-ai-techstudio7808-4455.vercel.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL||"https://alpha-ai-smoky.vercel.app";
 
 const staticPages = [
   "",

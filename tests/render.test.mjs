@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {mkdtemp,rm,writeFile} from "node:fs/promises";
+import {mkdir,mkdtemp,rm,writeFile} from "node:fs/promises";
 import path from "node:path";
 import ffmpeg from "ffmpeg-static";
 import ffprobe from "ffprobe-static";
@@ -11,6 +11,7 @@ const exec=promisify(execFile);
 
 test("real FFmpeg renders trimmed media at both speeds with captions and the requested canvas",{timeout:120000},async()=>{
   process.env.FFMPEG_PATH=ffmpeg;process.env.FFPROBE_PATH=ffprobe.path;
+  await mkdir('/tmp/omnirush',{recursive:true});
   const dir=await mkdtemp(path.join("/tmp/omnirush","alpha-render-test-"));
   try{
     const source=path.join(dir,"source.mp4"),srt=path.join(dir,"captions.srt");
@@ -26,5 +27,12 @@ test("real FFmpeg renders trimmed media at both speeds with captions and the req
       assert.equal(video.width,1080);assert.equal(video.height,1080);
       assert.ok(probe.streams.some(s=>s.codec_type==="audio"));
     }
+    const cutOutput=path.join(dir,'cut-output.mp4');
+    await renderEditedClip(source,cutOutput,1,5,{aspect:'9:16',speed:1,cutRanges:[{start:2,end:3}]});
+    const {stdout:cutProbe}=await exec(ffprobe.path,['-v','quiet','-show_format','-show_streams','-of','json',cutOutput]);
+    const cut=JSON.parse(cutProbe);
+    assert.ok(Math.abs(Number(cut.format.duration)-3)<.3);
+    assert.equal(cut.streams.find(s=>s.codec_type==='video').height,1920);
+    assert.ok(cut.streams.some(s=>s.codec_type==='audio'));
   }finally{await rm(dir,{recursive:true,force:true})}
 });

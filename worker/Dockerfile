@@ -6,6 +6,7 @@ COPY worker/package*.json ./
 RUN npm ci --omit=dev
 COPY worker/ ./worker/
 COPY lib/video-workflow.mjs ./lib/video-workflow.mjs
+COPY lib/credential-cipher.mjs ./lib/credential-cipher.mjs
 ENV PORT=8080
 EXPOSE 8080
 CMD ["node","worker/server.js"]

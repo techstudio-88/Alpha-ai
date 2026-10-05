@@ -1,23 +1,52 @@
-# Alpha.ai Media Worker
+# Alpha.ai media worker
 
-This service downloads linked media, probes/extracts audio with FFmpeg, plans edits with Gemini and renders clips. The existing browser Whisper worker transcribes the stored audio chunks and resumes this durable Supabase queue when transcription completes.
+The worker downloads bounded sources, persists originals, creates proxies/thumbnails,
+extracts audio, transcribes, scores moments, renders with FFmpeg, and publishes to
+YouTube using one durable queue owner.
 
-Required server-only environment:
-- SUPABASE_URL
-- SUPABASE_SECRET_KEY (Supabase secret/service key)
-- SUPABASE_PUBLISHABLE_KEY (validates signed-in tokens)
-- MEDIA_WORKER_SECRET (shared with Vercel when configured)
-- GEMINI_API_KEY
-- GEMINI_MODEL (default: gemini-2.5-flash; must be available to the key)
+## Required environment
 
-Build and run:
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+- `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY`
+- `MEDIA_WORKER_SECRET` — same value as Vercel; encrypts queued source/provider
+  credentials and resumable publishing sessions
+- `GEMINI_API_KEY` — server transcription, analysis, and AI editing
+- `GEMINI_MODEL` — defaults to `gemini-2.5-flash`; the key must have access
+- YouTube publishing: `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`
+
+Optional controls:
+
+- `TRANSCRIPTION_PROVIDER=browser` explicitly uses browser Whisper instead of Gemini
+  server transcription. It requires an open studio tab, including after imports.
+- `MAX_DOWNLOAD_MB=512` — direct downloads enforce advertised and streamed sizes;
+  provider imports are also checked after download.
+- `MAX_JOB_DISK_MB=2048` — process watchdog caps temporary job disk.
+
+Sources are limited to 60 minutes. Commands have a 30-minute deadline. The worker
+uses lease-based processing-job claims; transcription and render output checkpoint
+in Supabase. Cancel requests are checked at job writes and while child processes run.
+Source downloads and provider calls may finish before their next cancellation check.
+
+## Build
+
 ```bash
 docker build -t alpha-ai-media-worker -f worker/Dockerfile .
 docker run --rm -p 8080:8080 --env-file worker/.env alpha-ai-media-worker
 ```
 
-Expose the worker at a stable HTTPS URL and set MEDIA_WORKER_URL plus MEDIA_WORKER_SECRET in Vercel. Never expose the Supabase secret key in the browser or repository.
+The root Dockerfile is the Render Blueprint target and exposes port 10000. The worker
+Dockerfile uses port 8080. Both copy the shared workflow and credential-cipher modules.
+Neither references an absent `transcribe.mjs` or loads faster-whisper.
 
-The worker accepts YouTube, Google Drive and other supported public URLs through yt-dlp. Private Drive links require an authenticated Drive export path; the app never pretends a URL was downloaded when the worker could not access it.
+Every import persists its source before analysis; the private `media` bucket must
+permit its size. Temporary Gemini uploads are cleaned up at job exit. Authenticated
+Drive/Photos picker tokens are encrypted in the canonical job and cleared after the
+source is persisted. Public links must be HTTPS, and public-download DNS answers are
+pinned to the TLS request on every redirect.
 
-Deploy the chat workflow migration documented in the root README before sending chat jobs. `/process` wakes the existing lease-based queue and only uses persisted job context. `ai_chat_plan` analyzes completed transcripts; `chat_ingest` first prepares audio for browser Whisper. Both save their plans atomically with `render_edit` child jobs and chat result references. The render pipeline saves a ready version only after FFmpeg and Storage succeed. Failed chat/edit jobs retain their checkpoint and expose a manual retry.
+Only the worker publishes. YouTube files are streamed, claims are atomic, and upload
+sessions are saved encrypted for restart/retry recovery. A refresh failure marks the
+channel expired. Never deploy the encrypted-credential frontend against an old worker.
+Live Google OAuth, Gemini transcription accuracy, Storage limits, and actual YouTube
+uploads require separate account-level acceptance testing.

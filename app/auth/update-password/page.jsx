@@ -1,5 +1,54 @@
 "use client";
-import{useEffect,useState}from"react";
-import{ArrowRight,CheckCircle2,LockKeyhole,ShieldCheck}from"lucide-react";
-import{supabase}from"../../../lib/supabase";
-export default function UpdatePassword(){const[pw,setPw]=useState("");const[confirm,setConfirm]=useState("");const[busy,setBusy]=useState(false);const[msg,setMsg]=useState("");const[done,setDone]=useState(false);useEffect(()=>{if(!supabase)return;const h=window.location.hash;const params=new URLSearchParams(h.replace(/^#/,""));const access=params.get("access_token");const refresh=params.get("refresh_token");if(access&&refresh)supabase.auth.setSession({access_token:access,refresh_token:refresh}).catch(()=>{});},[]);async function save(){if(pw.length<8){setMsg("Use at least 8 characters.");return}if(pw!==confirm){setMsg("Passwords do not match.");return}setBusy(true);setMsg("");const{error}=await supabase.auth.updateUser({password:pw});if(error)setMsg(error.message);else{setDone(true);await supabase.auth.signOut()}setBusy(false)}return <main className="authWrap"><section className="authCardPro resetCard"><div className="brand"><i className="mark"/><span>Alpha.ai</span></div>{done?<div className="resetDone"><div className="verifyIcon success"><CheckCircle2 size={38}/></div><div className="authKicker"><ShieldCheck size={14}/> PASSWORD UPDATED</div><h1>You're back in.</h1><p>Your password has been changed successfully.</p><button className="btn primary" onClick={()=>location.assign("/")}>Return to sign in <ArrowRight size={16}/></button></div>:<><div className="authHeading"><div className="authKicker"><LockKeyhole size={14}/> SECURE PASSWORD RESET</div><h1>Choose a new password</h1><p>Use a password you don't use anywhere else.</p></div><div className="form"><input className="input" type="password" placeholder="New password" value={pw} onChange={e=>setPw(e.target.value)}/><input className="input" type="password" placeholder="Confirm new password" value={confirm} onChange={e=>setConfirm(e.target.value)}/><button className="btn primary authSubmit" disabled={busy||!pw||!confirm} onClick={save}>{busy?"Updating…":"Update password"}<ArrowRight size={17}/></button></div>{msg&&<div className="message">{msg}</div>}</>}</section></main>}
+
+import {useEffect,useState} from 'react';
+import {Check,LockKeyhole} from 'lucide-react';
+import {supabase} from '../../../lib/supabase';
+import Brand from '../../../components/studio/brand';
+import {Button,ButtonLink,ErrorState,Input,Skeleton} from '../../../components/studio/ui';
+
+export default function UpdatePassword() {
+  const [password,setPassword]=useState('');
+  const [confirm,setConfirm]=useState('');
+  const [ready,setReady]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [done,setDone]=useState(false);
+  useEffect(()=>{
+    let alive=true;
+    if(!supabase){setError('Password reset is not configured.');setReady(true);return}
+    supabase.auth.getSession().then(({data,error})=>{
+      if(!alive)return;
+      if(error||!data.session)setError('This reset link has expired. Request a new link to continue.');
+      setReady(true);
+      if(data.session)window.history.replaceState({},'',window.location.pathname);
+    }).catch(()=>{if(alive){setError('The reset link could not be verified. Please retry.');setReady(true)}});
+    return()=>{alive=false};
+  },[]);
+  async function save(event) {
+    event.preventDefault();setError('');
+    if(password!==confirm)return setError('Your passwords do not match.');
+    setBusy(true);
+    try {
+      const {error}=await supabase.auth.updateUser({password});
+      if(error)throw error;
+      await supabase.auth.signOut();setDone(true);
+    }catch{setError('Your password could not be updated. Please retry or request a new link.')}
+    finally{setBusy(false)}
+  }
+  return <main id="main-content" className="auth-form min-h-dvh">
+    <div className="auth-form-inner">
+      <Brand/>
+      {done?<><Check className="text-success mt-8" size={32}/><h1>You’re ready to return.</h1><p>Your password has been updated.</p><ButtonLink href="/studio">Return to sign in</ButtonLink></>:<>
+        <LockKeyhole size={24} className="text-muted mt-8"/>
+        <h1>Choose a new password.</h1><p>Use at least eight characters and keep it unique to this account.</p>
+        {!ready?<Skeleton className="h-48"/>:<form onSubmit={save}>
+          <Input label="New password" type="password" autoComplete="new-password" minLength={8} value={password} onChange={e=>setPassword(e.target.value)} required/>
+          <Input label="Confirm new password" type="password" autoComplete="new-password" minLength={8} value={confirm} onChange={e=>setConfirm(e.target.value)} required/>
+          <Button variant="primary" type="submit" busy={busy}>Update password</Button>
+        </form>}
+        {error&&<div className="mt-5"><ErrorState message={error} onRetry={()=>setError('')}/></div>}
+        <ButtonLink href="/studio?mode=reset" variant="ghost" className="mt-5">Request a new reset link</ButtonLink>
+      </>}
+    </div>
+  </main>;
+}

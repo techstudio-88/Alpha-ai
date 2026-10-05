@@ -1,14 +1,14 @@
-const CACHE="alpha-ai-v3";
-const APP_SHELL=["/","/manifest.webmanifest"];
+const CACHE="alpha-ai-v4";
+const APP_SHELL=["/manifest.webmanifest"];
 self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(APP_SHELL)).then(()=>self.skipWaiting())));
-self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith("alpha-ai-")&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener("fetch",event=>{
   const url=new URL(event.request.url);
   // Never serve cached Supabase rows, API status, or signed private media as live results.
   if(event.request.method!=="GET"||url.origin!==self.location.origin||
     !(APP_SHELL.includes(url.pathname)||url.pathname.startsWith("/_next/static/")))return;
   event.respondWith(fetch(event.request).then(response=>{
-    if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(cache=>cache.put(event.request,copy)))}
+    if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(async cache=>{await cache.put(event.request,copy);const keys=await cache.keys();await Promise.all(keys.slice(0,Math.max(0,keys.length-128)).map(key=>cache.delete(key)))}))}
     return response;
   }).catch(async()=>await caches.match(event.request)||Response.error()));
 });
