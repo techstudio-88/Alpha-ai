@@ -3,7 +3,8 @@
 import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User} from 'lucide-react';
+import dynamic from 'next/dynamic';
+import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
@@ -12,11 +13,14 @@ import ImportVideo from './import-video';
 import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
 import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
-import EditorScreen from './editor-screen';
+import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen} from './management-screens';
 import {PricingCards} from './marketing';
 
-export const NAV=[['home','Home',Home],['projects','Projects',Folder],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
+const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
+const AssistantScreen=dynamic(()=>import('./assistant-screen'),{loading:()=> <ScreenSkeleton/>});
+
+export const NAV=[['home','Home',Home],['projects','Projects',Folder],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
 const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand'};
 
 export default function StudioApp() {
@@ -32,6 +36,7 @@ export default function StudioApp() {
     (async()=>{
       try {
         const url=new URL(window.location.href),code=url.searchParams.get('code');
+        if(url.searchParams.get('error'))throw new Error('OAuth authorization did not finish.');
         // detectSessionInUrl owns the PKCE exchange; a second exchange reuses a one-time code.
         const response=await supabase.auth.getSession();
         if(response.error||(code&&!response.data?.session))throw new Error('Sign-in incomplete.');
@@ -67,6 +72,7 @@ export default function StudioApp() {
     workspace:bootstrap.data?.workspace,workspaces:bootstrap.data?.workspaces||[],revision,refresh,
     refreshWorkspace:bootstrap.retry,notify,navigate,view,projectId:params.get('project'),clipId:params.get('clip'),
     state:demo?params.get('state'):null,selectWorkspace:setSelectedWorkspace,
+    editorPrompt:params.get('instruction')||'',
     openImport:file=>{setImportFile(file||null);setImportOpen(true)},
   };
   if(!ready)return <main id="main-content" className="studio-content"><ScreenSkeleton/></main>;
@@ -108,6 +114,7 @@ function StudioWorkspace() {
   else if(view==='project')screen=projects.loading?<ScreenSkeleton/>:projects.error?<ErrorState message={projects.error} onRetry={projects.retry}/>:<ProjectScreen projects={projects.data||[]} projectId={projectId}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
+  else if(view==='assistant')screen=<AssistantScreen/>;
   else if(view==='publish')screen=<PublishScreen/>;
   else if(view==='insights')screen=<InsightsScreen/>;
   else if(view==='brand')screen=<BrandScreen/>;
@@ -133,12 +140,13 @@ function StudioWorkspace() {
         <div className="flex items-center gap-2 shrink-0">
           <button className="studio-search" onClick={()=>setCommand(true)} aria-label="Search workspace, Command K"><Search size={15}/><span>Search workspace</span><kbd>⌘ K</kbd></button>
           <ThemeToggle/>
+          <span className="hidden sm:inline-flex"><MotionToggle/></span>
           <Button variant="ghost" size="icon" aria-label="View notifications" onClick={()=>setNotifications(true)}><Bell size={17}/></Button>
           <Button variant="secondary" size="icon" aria-label="Open account menu" onClick={()=>setAccount(true)}><span className="text-xs">{(user.user_metadata?.full_name||user.email||'A').slice(0,1).toUpperCase()}</span></Button>
         </div>
       </header>
       {demo&&<div className="border-b px-6 py-2 text-xs text-muted flex justify-between flex-wrap gap-2"><span>Sample workspace · example content · changes stay in this session</span><a href="/studio?mode=signup" className="underline">Create your own workspace</a></div>}
-      <main id="main-content" className="studio-content">{screen}</main>
+      <main id="main-content" className="studio-content"><div key={`${view}:${projectId}:${clipId}:${workspace.id}`} className="studio-view">{screen}</div></main>
     </div>
     {!demo&&<BrowserTranscriber workspace={workspace}/>}
     <Modal open={mobile} onOpenChange={setMobile} title="Your studio">
@@ -156,6 +164,7 @@ function StudioWorkspace() {
       {activity.loading?<ScreenSkeleton/>:activity.error?<ErrorState message={activity.error} onRetry={activity.retry}/>:(activity.data||[]).length?activity.data.map(job=><button key={job.id} className="block w-full text-left border-b py-4" onClick={()=>{setNotifications(false);navigate('project',{project:job.project_id})}}><b className="text-sm">{projects.data?.find(p=>p.id===job.project_id)?.name||'Video project'}</b><p className="text-xs text-muted mt-1">{job.status} · {job.progress}%</p></button>):<EmptyState icon={Bell} title="You’re all caught up." description="Processing activity will appear here after your first import."/>}
     </Modal>
     <Modal open={account} onOpenChange={setAccount} title={user.user_metadata?.full_name||'Your account'} description={user.email}>
+      <div className="flex items-center gap-3 text-xs text-muted mb-3"><MotionToggle/>Animation preference</div>
       <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
       <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
     </Modal>

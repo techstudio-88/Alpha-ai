@@ -32,7 +32,7 @@ USER REQUEST: ${prompt}`;
     await onProgress(i,windows.length);
     const text=windows[i].map(w=>`${w.index} [${(w.start_ms/1000).toFixed(2)}-${(w.end_ms/1000).toFixed(2)}] ${w.word}`).join("\n");
     last=await generate(instructions + `\nWindow ${i+1}/${windows.length}. Suggest only strong candidates in this window.\nTRANSCRIPT:\n` + text,schema);
-    if(last.unsupportedReason) throw new Error(last.unsupportedReason);
+    if(last.unsupportedReason) throw Object.assign(new Error(last.unsupportedReason),{unsupported:true});
     for(const spec of last.clips || []) {
       const edit=validateEdit(spec,words,duration);
       if(spec.a<windows[i][0].index || spec.b>windows[i].at(-1).index) throw new Error("Gemini selected words outside the analyzed transcript window.");
@@ -42,7 +42,7 @@ USER REQUEST: ${prompt}`;
   if (!candidates.length) throw new Error("Gemini found no moments that satisfy this instruction in the actual transcript.");
   if (windows.length>1) {
     last=await generate(instructions + "\nSelect the final clips from these real candidates across the ENTIRE video. Reuse their a/b indexes exactly. Include no more than 8 clips.\n" + JSON.stringify(candidates),schema);
-    if(last.unsupportedReason) throw new Error(last.unsupportedReason);
+    if(last.unsupportedReason) throw Object.assign(new Error(last.unsupportedReason),{unsupported:true});
     for(const item of last.clips || []) if(!candidates.some(c=>c.a===item.a&&c.b===item.b)) throw new Error("Gemini returned a range outside its analyzed candidates.");
   }
   const clips=(last.clips || []).slice(0,clip ? 1 : 8).map(c=>validateEdit(c,words,duration));

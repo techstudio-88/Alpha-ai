@@ -18,12 +18,13 @@ export default function PipelineDemo(){
   const [reduced,setReduced]=useState(false);
   useEffect(()=>{
     const media=window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update=()=>{setReduced(media.matches);if(media.matches){setSeconds(60);setPlaying(false)}};
+    const update=()=>{const paused=media.matches||document.documentElement.dataset.motion==='paused';setReduced(paused);if(paused){setSeconds(60);setPlaying(false)}};
     update();media.addEventListener('change',update);
-    return()=>media.removeEventListener('change',update);
+    window.addEventListener('alpha:motion',update);
+    return()=>{media.removeEventListener('change',update);window.removeEventListener('alpha:motion',update)};
   },[]);
   useEffect(()=>{
-    const replay=()=>{setSeconds(0);setPlaying(true)};
+    const replay=()=>{if(window.matchMedia('(prefers-reduced-motion: reduce)').matches||document.documentElement.dataset.motion==='paused')return;setSeconds(0);setPlaying(true)};
     window.addEventListener('alpha:demo:restart',replay);
     return()=>window.removeEventListener('alpha:demo:restart',replay);
   },[]);

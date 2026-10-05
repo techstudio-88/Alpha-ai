@@ -51,5 +51,5 @@ test("planner analyzes the end of a long transcript before global selection",asy
 });
 test("unsupported instructions fail without a fabricated result",async()=>{
   await assert.rejects(planTranscript({words:[{word:"real",start_ms:0,end_ms:1000}],duration:1,prompt:"Add music",history:[],onProgress:()=>{},
-    generate:async()=>({unsupportedReason:"Adding music is not supported",clips:[]})}),/not supported/);
+    generate:async()=>({unsupportedReason:"Adding music is not supported",clips:[]})}),error=>error.unsupported===true&&/not supported/.test(error.message));
 });

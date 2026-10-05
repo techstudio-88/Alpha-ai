@@ -41,6 +41,8 @@ test('theme persists, command palette traps focus and mobile navigation works',a
   const light=await new AxeBuilder({page}).withTags(['wcag2aa']).analyze();
   expect(light.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
   await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','light');
+  // The theme is set before hydration; wait for the actual workspace before sending shortcuts.
+  await expect(page.getByRole('button',{name:'Search workspace, Command K'})).toBeVisible();
   await page.keyboard.press('Control+k');await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();
   if(info.project.name==='mobile'){
@@ -70,6 +72,8 @@ test('empty, error and loading states are designed and retry returns to real sam
   await expect(page.locator('.clip-card')).toHaveCount(4);
   await page.goto('/studio?demo=1&view=publish&state=loading');
   await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+  const loading=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
+  expect(loading.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);
 });
 
 test('landing respects reduced motion and meets the local cold-load LCP budget',async({page})=>{
@@ -93,6 +97,7 @@ for(const mode of ['signin','signup','reset']){
 }
 
 test('settings subsections and onboarding show real empty states, not fake connections',async({page})=>{
+  test.setTimeout(60000); // Five separate axe scans plus onboarding in a constrained WSL browser.
   await page.goto('/studio?demo=1&view=settings');
   for(const name of ['Members & roles','API keys','Integrations','Billing','Danger zone']){
     await page.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name,exact:true}).click();

@@ -8,7 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
@@ -464,12 +464,15 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(p.clipId){
       clip=(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"*"}}))[0]||null;
     }
-    if(!clip){
+    if(!clip&&p.newClipId){
+      clip=(await db("clips",{params:{id:"eq."+p.newClipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"*"}}))[0]||null;
+    }
+    if(!clip&&!p.newClipId){
       const existing=(await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,start_seconds:"eq."+start.toFixed(3),end_seconds:"eq."+end.toFixed(3),select:"*",order:"created_at.asc",limit:"1"}}))[0]||null;
       clip=existing||null;
     }
     if(!clip){
-      const clips=await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
+      const clips=await db("clips",{method:"POST",body:{...(p.newClipId?{id:p.newClipId}:{}),project_id:p.projectId,media_asset_id:asset.id,title:String(p.title||"Edited clip").slice(0,180),start_seconds:start,end_seconds:end,score:0,status:"processing"}});
       clip=clips?.[0]||null;
     }
     if(!clip)throw new Error("Could not create or recover edited clip.");
@@ -488,13 +491,13 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
           const events=captionEvents(usable.map(row=>({...row,word:row.text})),start,end,Number(p.speed)||1,p.cutRanges||[]);
           fs.writeFileSync(srtPath,events.map((event,i)=>(i+1)+"\n"+stamp(event.start)+" --> "+stamp(event.end)+"\n"+event.word+"\n").join("\n"),"utf8");
         }
-        const words=await allPages((offset,limit)=>db("transcript_words",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"start_ms,end_ms,word",order:"start_ms.asc,id.asc",offset,limit}}));
+        const words=await allPages((offset,limit)=>db("transcript_words",{params:{transcript_id:"eq."+tr.id,start_ms:"lt."+Math.round(end*1000),end_ms:"gt."+Math.round(start*1000),select:"id,start_ms,end_ms,word",order:"start_ms.asc,id.asc",offset,limit}}));
         const usableWords=(words||[]).filter(x=>Number(x.end_ms)>Number(x.start_ms)&&String(x.word||"").trim());
         if(usableWords.length){
           const assTime=n=>{const ms=Math.max(0,Math.round(n*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),cs=Math.floor((ms%1000)/10);return String(h)+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+"."+String(cs).padStart(2,"0")};
           const esc=w=>String(w).replace(/[{}]/g,"").replace(/\\/g,"\\\\");
           const lines=[];let line=[],lineStart=0,lineEnd=0;
-          for(const w of captionEvents(usableWords,start,end,Number(p.speed)||1,p.cutRanges||[])){const ws=w.start,we=w.end;if(!line.length)lineStart=ws;line.push({word:esc(w.word),duration:Math.max(1,Math.round((we-ws)*100))});lineEnd=we;if(line.length>=(p.captionStyle==="pop"?1:7)||we-lineStart>=3.2){lines.push({start:lineStart,end:lineEnd,words:line});line=[]}}
+          for(const w of captionEvents(usableWords,start,end,Number(p.speed)||1,p.cutRanges||[],p.captionOverrides||{})){const ws=w.start,we=w.end;if(!line.length)lineStart=ws;line.push({word:esc(w.word),duration:Math.max(1,Math.round((we-ws)*100))});lineEnd=we;if(line.length>=(p.captionStyle==="pop"?1:7)||we-lineStart>=3.2){lines.push({start:lineStart,end:lineEnd,words:line});line=[]}}
           if(line.length)lines.push({start:lineStart,end:lineEnd,words:line});
           assPath=path.join(dir2,"captions.ass");
           const color=/^#[\da-f]{6}$/i.test(p.captionColor||"")?p.captionColor.slice(1):"ffffff";
@@ -510,7 +513,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       try{await patchJob(p.jobId,{progress:76,current_stage:"reframing",payload:{...p,aiEditStatus:"analyzing_reframe"}});const reframeInput=path.join(dir2,"reframe-input.mp4");await renderClip(input,reframeInput,start,end);reframeKeyframes=await analyzeReframeWithGemini(reframeInput,end-start);p={...p,reframeStatus:"ready",reframeKeyframes};await patchJob(p.jobId,{payload:p})}catch(error){p={...p,reframeStatus:"fallback",reframeError:error.message};await patchJob(p.jobId,{payload:p});console.warn("AI reframe unavailable; using centered crop:",error.message)}
     }
     if(p.captions!==false&&!srtPath&&!assPath)throw new Error("Captions were requested, but no timed transcript is available.");
-    const editData={source_start:start,source_end:end,duration_seconds:retainedRanges(start,end,p.cutRanges||[]).reduce((sum,range)=>sum+range.end-range.start,0)/Math.max(.5,Math.min(2,Number(p.speed)||1)),cutRanges:p.cutRanges||[],editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,captionStyle:p.captionStyle,captionColor:p.captionColor,ai_prompt:p.instruction||p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||p.reason||""};
+    const editData={source_start:start,source_end:end,duration_seconds:retainedRanges(start,end,p.cutRanges||[]).reduce((sum,range)=>sum+range.end-range.start,0)/Math.max(.5,Math.min(2,Number(p.speed)||1)),cutRanges:p.cutRanges||[],captionOverrides:p.captionOverrides||{},autoReframe:p.reframe!==false,editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,captionStyle:p.captionStyle,captionColor:p.captionColor,ai_prompt:p.instruction||p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||p.reason||""};
     const latestVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,select:"id,version,render_status,storage_path,edit_data",order:"version.desc",limit:"1"}}))[0]||null;
     const renderedVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,"edit_data->>render_job_id":"eq."+p.jobId,render_status:"eq.ready",select:"version,storage_path",limit:1}}))[0];
     if(renderedVersion?.storage_path){
@@ -674,7 +677,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
   if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
    if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.0",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing"]});setImmediate(()=>resumeQueuedJobs());});
+app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
@@ -729,6 +732,22 @@ app.post("/process",async(req,res)=>{
     res.status(202).json({accepted:true,queued:true,jobId:row.id});
     setImmediate(()=>resumeQueuedJobs());
   }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+});
+app.post('/editor/plan',async(req,res)=>{
+  try{
+    if(!SECRET||req.get('x-worker-secret')!==SECRET)return res.status(401).json({error:'Unauthorized'});
+    if(!GEMINI_API_KEY)return res.status(503).json({error:'AI provider is not configured on the media worker.'});
+    const {words,draft,duration}=req.body||{};
+    const prompt=String(req.body?.prompt||'').trim();
+    if(!prompt||prompt.length>3000||!Array.isArray(words)||!words.length||words.length>1800||!draft)return res.status(400).json({error:'Choose a word-timed clip and a valid editing request.'});
+    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY,httpOptions:{timeout:20000}});
+    const plan=await planTranscript({words,duration:Number(duration),prompt,history:[],clip:{...draft,start_seconds:draft.start,end_seconds:draft.end},
+      onProgress:async()=>{},generate:async(contents,responseSchema)=>{
+        const result=await ai.models.generateContent({model:GEMINI_MODEL,contents,config:{responseMimeType:'application/json',responseJsonSchema:responseSchema}});
+        return JSON.parse(result.text);
+      }});
+    return res.json(plan);
+  }catch(error){return res.status(error.unsupported?400:502).json({error:error.unsupported?String(error.message).slice(0,1000):'The AI editor could not prepare a valid plan. Please retry.'})}
 });
 app.post("/assistant/plan",async(req,res)=>{
   try{

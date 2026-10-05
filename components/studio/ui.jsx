@@ -39,7 +39,7 @@ export function Toast({message,onClose}) {
   return message?<div className="toast" role="status"><Check size={16}/><span>{message}</span><Button variant="ghost" size="icon" aria-label="Dismiss notification" onClick={onClose}><X size={15}/></Button></div>:null;
 }
 export function Skeleton({className,...props}) {return <div className={cn('skeleton',className)} aria-hidden="true" {...props}/>}
-export function ScreenSkeleton() {return <div aria-label="Loading workspace" aria-busy="true" className="space-y-6"><Skeleton className="h-8 w-56"/><Skeleton className="h-36"/><div className="project-grid">{[0,1,2].map(i=><Skeleton key={i} className="h-64"/>)}</div></div>}
+export function ScreenSkeleton() {return <div role="status" aria-label="Loading workspace" aria-busy="true" className="space-y-6"><Skeleton className="h-8 w-56"/><Skeleton className="h-36"/><div className="project-grid">{[0,1,2].map(i=><Skeleton key={i} className="h-64"/>)}</div></div>}
 export function EmptyState({icon:Icon=Film,title,description,action}) {return <div className="empty-state"><span className="empty-icon"><Icon size={24}/></span><h2>{title}</h2><p>{description}</p>{action}</div>}
 export function ErrorState({message,onRetry}) {return <div className="error-state" role="alert"><AlertCircle size={20}/><div><h2>Something needs attention</h2><p>{message||'We could not load this screen. Please try again.'}</p></div><Button onClick={onRetry}><RefreshCw size={14}/>Retry</Button></div>}
 export function ScoreRing({score,size=44}) {

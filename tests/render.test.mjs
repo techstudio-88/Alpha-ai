@@ -7,6 +7,7 @@ import path from "node:path";
 import ffmpeg from "ffmpeg-static";
 import ffprobe from "ffprobe-static";
 import {renderEditedClip} from "../worker/server.js";
+import {normalizeEditorDraft,splitEditorDraft,editedDuration} from '../lib/editor-assistant.mjs';
 const exec=promisify(execFile);
 
 test("real FFmpeg renders trimmed media at both speeds with captions and the requested canvas",{timeout:120000},async()=>{
@@ -34,5 +35,14 @@ test("real FFmpeg renders trimmed media at both speeds with captions and the req
     assert.ok(Math.abs(Number(cut.format.duration)-3)<.3);
     assert.equal(cut.streams.find(s=>s.codec_type==='video').height,1920);
     assert.ok(cut.streams.some(s=>s.codec_type==='audio'));
+    const split=splitEditorDraft(normalizeEditorDraft({start:1,end:5,speed:2,cutRanges:[{start:2,end:3}]},6));
+    for(const [i,part] of split.entries()){
+      const output=path.join(dir,`split-${i}.mp4`);
+      await renderEditedClip(source,output,part.start,part.end,{aspect:'1:1',speed:part.speed,cutRanges:part.cutRanges});
+      const {stdout}=await exec(ffprobe.path,['-v','quiet','-show_format','-show_streams','-of','json',output]);
+      const probe=JSON.parse(stdout);
+      assert.ok(Math.abs(Number(probe.format.duration)-editedDuration(part))<.2);
+      assert.ok(probe.streams.some(s=>s.codec_type==='audio'));
+    }
   }finally{await rm(dir,{recursive:true,force:true})}
 });

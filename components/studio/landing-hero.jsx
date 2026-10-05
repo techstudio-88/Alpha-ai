@@ -4,6 +4,7 @@ import {DemoButton,LazyDemo} from './marketing';
 
 export default function LandingHero() {
   return <section className="landing-hero">
+    <div className="hero-atmosphere" aria-hidden="true"/>
     <div className="hero-copy">
       <span className="hero-kicker"><i/>THE FOCUSED VIDEO STUDIO</span>
       <h1>One long video.<br/>A week of clips.</h1>

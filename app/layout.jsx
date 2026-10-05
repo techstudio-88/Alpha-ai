@@ -2,6 +2,7 @@ import "./studio.css";
 import {GeistSans} from 'geist/font/sans';
 import {GeistMono} from 'geist/font/mono';
 import SiteBootstrap from '../components/studio/site-bootstrap';
+import MotionRoot from '../components/studio/motion';
 import ProductAnalytics from "./components/ProductAnalytics";
 import ClarityAnalytics from "./components/ClarityAnalytics";
 
@@ -35,8 +36,8 @@ const organizationSchema = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="dark" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
-      <head><script dangerouslySetInnerHTML={{__html:"try{document.documentElement.dataset.theme=localStorage.getItem('alpha.studio.theme')==='light'?'light':'dark'}catch(e){}"}}/></head>
-      <body><SiteBootstrap/><a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[150] focus:bg-panel focus:p-3">Skip to content</a><ProductAnalytics /><ClarityAnalytics />
+      <head><script dangerouslySetInnerHTML={{__html:"try{document.documentElement.dataset.theme=localStorage.getItem('alpha.studio.theme')==='light'?'light':'dark';document.documentElement.dataset.motion=localStorage.getItem('alpha.studio.motion')==='paused'?'paused':'full'}catch(e){}"}}/></head>
+      <body><SiteBootstrap/><MotionRoot/><a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[150] focus:bg-panel focus:p-3">Skip to content</a><ProductAnalytics /><ClarityAnalytics />
         {children}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }} />
       </body>
