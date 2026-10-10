@@ -2,6 +2,7 @@ import {authorizeWorkflow,checked,mediaContext,problem,workflowError} from '../.
 import {allPages} from '../../../../lib/video-workflow.mjs';
 import {normalizeEditorDraft,planEditorCommand} from '../../../../lib/editor-assistant.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
+import {aiFailure} from '../../../../lib/ai-failures.mjs';
 export const runtime='nodejs';
 export const maxDuration=30;
 export async function POST(request){
@@ -25,9 +26,15 @@ export async function POST(request){
     if(selected.length>1800)throw problem('Choose a shorter clip for interactive AI editing. Long-video analysis runs in the project pipeline.',409);
     await requireWorkerCapability('editor-assistant');
     const worker=(process.env.MEDIA_WORKER_URL||'https://alpha-ai-media-worker.onrender.com').replace(/\/$/,'');
-    const response=await fetch(worker+'/editor/plan',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,words:selected,draft,duration:Number(asset.duration_seconds)}),signal:AbortSignal.timeout(23000)});
+    let response;
+    try{response=await fetch(worker+'/editor/plan',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,words:selected,draft,duration:Number(asset.duration_seconds)}),signal:AbortSignal.timeout(23000)})}
+    catch(error){const failure=aiFailure(error);throw problem(failure.error,failure.status)}
     const result=await response.json().catch(()=>({}));
-    if(!response.ok)throw problem(response.status===400&&typeof result.error==='string'?result.error.slice(0,1000):'The AI editor could not prepare a plan. Your draft is preserved; try again.',response.status===400?400:503);
+    if(!response.ok){
+      const failure=aiFailure({status:response.status});
+      if(response.status===400)throw problem('That edit is not supported by the planner. Use trim, captions, aspect ratio, speed, or the manual editor.',400);
+      throw problem(failure.error,failure.status);
+    }
     if(!Array.isArray(result.clips)||result.clips.length!==1)throw problem('The AI editor returned an invalid selected-clip plan.',502);
     const edit=result.clips[0];
     const cutRanges=draft.cutRanges.map(c=>({start:Math.max(c.start,edit.startSeconds),end:Math.min(c.end,edit.endSeconds)})).filter(c=>c.end>c.start);

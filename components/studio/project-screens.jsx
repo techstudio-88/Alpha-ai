@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect,useState} from 'react';
-import {ArrowLeft,ArrowRight,Check,Clock,Film,Folder,Plus,RefreshCw,Upload,Youtube} from 'lucide-react';
+import {ArrowLeft,ArrowRight,Check,Clock,Film,Folder,PartyPopper,Plus,RefreshCw,Sparkles,Upload,Youtube} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import {SAMPLE,studioApi,unwrap,useClipSources,useResource,useRows,useStudio} from './data';
 import {Button,ClipCard,DropZone,EmptyState,ErrorState,Input,ScreenSkeleton,Select,Stepper} from './ui';
@@ -17,7 +17,7 @@ function ProjectCard({project}){
     if(!path)return null;
     const {data}=await supabase.storage.from('media').createSignedUrl(path,900);return data?.signedUrl;
   },[project.id,demo]);
-  return <button className="panel project-card" onClick={()=>navigate('project',{project:project.id})}><div className="project-thumbnail">{preview.data?<img src={preview.data} alt="" loading="lazy" width="480" height="270"/>:<Film size={28}/>}</div><div className="project-card-copy"><h3>{project.name}</h3><div className="project-meta"><Status value={project.status}/><span>{new Date(project.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span></div></div></button>;
+  return <button className="panel project-card" onClick={()=>navigate('chat',{project:project.id})}><div className="project-thumbnail">{preview.data?<img src={preview.data} alt="" loading="lazy" width="480" height="270"/>:<Film size={28}/>}</div><div className="project-card-copy"><h3>{project.name}</h3><div className="project-meta"><Status value={project.status}/><span>{new Date(project.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span></div></div></button>;
 }
 export function HomeScreen({projects}){
   const {openImport,navigate,user,state}=useStudio();const [onboarding,setOnboarding]=useState(true);
@@ -55,8 +55,14 @@ export function ProjectScreen({projectId,projects}){
   if(jobs.error||stages.error)return <ErrorState message={jobs.error||stages.error} onRetry={()=>{jobs.retry();stages.retry()}}/>;
   if(!projectId||!project)return <EmptyState icon={Folder} title="Choose a project first." description="Open a project to see its pipeline and the moments it produced." action={<Button onClick={()=>navigate('projects')}>Browse projects</Button>}/>;
   const chunks=job?.payload?.transcriptionTotalChunks||job?.payload?.transcriptionChunks?.length;
-  return <><Button variant="ghost" size="sm" className="mb-5" onClick={()=>navigate('projects')}><ArrowLeft size={14}/>Projects</Button><Heading title={project.name} description="Import → transcribe → find moments → render → review." action={<Status value={project.status}/>}/><Stepper stages={stages.data||[]} job={job}/><div className="screen-toolbar mt-4"><p className="text-xs text-muted" role="status">{job?.status==='completed'?'Your moments are ready for review.':job?.status==='awaiting_transcription'?'This workspace uses browser transcription. Keep the studio open to continue.':chunks?`Transcribing ${job.payload.transcribeChunk||0} of ${chunks} chunks`:(job?.current_stage||'Waiting for the worker').replaceAll('_',' ')}</p><div className="flex gap-2">{job?.status==='failed'&&<Button size="sm" onClick={()=>jobAction('retry')} busy={actionBusy}><RefreshCw size={13}/>Retry job</Button>}{['processing','queued','awaiting_transcription','transcribing'].includes(job?.status)&&<Button size="sm" onClick={()=>jobAction('cancel')} busy={actionBusy}>Cancel job</Button>}<Button size="sm" onClick={jobs.retry}><RefreshCw size={13}/>Refresh</Button></div></div>{job?.error&&<div className="mb-6"><ErrorState message={job.error} onRetry={()=>jobAction('retry')}/></div>}<ClipsScreen projectId={projectId} embedded/></>;
+  const completed=job?.status==='completed';
+  return <><Button variant="ghost" size="sm" className="mb-5" onClick={()=>navigate('projects')}><ArrowLeft size={14}/>Projects</Button><Heading title={project.name} description="Import → transcribe → find moments → render → review." action={<Status value={project.status}/>}/><Stepper stages={stages.data||[]} job={job}/><div className="screen-toolbar mt-4"><p className="text-xs text-muted" role="status">{completed?'Your moments are ready for review.':job?.status==='awaiting_transcription'?'This workspace uses browser transcription. Keep the studio open to continue.':chunks?`Transcribing ${job.payload.transcribeChunk||0} of ${chunks} chunks`:(job?.current_stage||'Waiting for the worker').replaceAll('_',' ')}</p><div className="flex gap-2">{job?.status==='failed'&&<Button size="sm" onClick={()=>jobAction('retry')} busy={actionBusy}><RefreshCw size={13}/>Retry job</Button>}{['processing','queued','awaiting_transcription','transcribing'].includes(job?.status)&&<Button size="sm" onClick={()=>jobAction('cancel')} busy={actionBusy}>Cancel job</Button>}<Button size="sm" onClick={jobs.retry}><RefreshCw size={13}/>Refresh</Button></div></div>{job?.error&&<div className="mb-6"><ErrorState message={job.error} onRetry={()=>jobAction('retry')}/></div>}{completed&&<CompletionBanner projectId={projectId} preferences={job?.payload?.preferences}/>} <ClipsScreen projectId={projectId} embedded/></>;
 }
+function CompletionBanner({projectId,preferences}){
+  const {navigate}=useStudio();
+  return <section className="panel render-complete" aria-labelledby="render-complete-title"><div className="complete-confetti" aria-hidden="true"><i/><i/><i/><i/></div><span className="complete-icon"><PartyPopper size={23}/></span><div><span className="eyebrow"><Sparkles size={11}/>PIPELINE COMPLETE</span><h2 id="render-complete-title">Your first batch is ready.</h2><p>Alpha found the strongest complete thoughts and shaped them for short-form{preferences?.captions===false?'':' with captions ready for review'}.</p></div><div className="complete-actions"><Button size="sm" variant="primary" onClick={()=>navigate('clips',{project:projectId})}>Review clips<ArrowRight size={14}/></Button><Button size="sm" onClick={()=>navigate('assistant',{project:projectId})}>Ask Alpha</Button></div></section>;
+}
+
 export function ClipsScreen({projectId,embedded=false}){
   const {demo,navigate,openImport,notify,state}=useStudio();
   const clips=useRows('clips','*,projects!inner(workspace_id),clip_versions(id,version,storage_path,render_status,edit_data),clip_scores(*)',{projectId,poll:!!projectId});

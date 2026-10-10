@@ -8,6 +8,19 @@ const clipSchema = {type:"object",properties:{
   effect:{type:"string",enum:["none","cinematic","warm","cool","mono","vibrant"]},transition:{type:"string",enum:["cut","fade","dip"]}
 },required:["a","b","title","reason","score","aspect","speed","zoom","captions","captionStyle","captionColor","effect","transition"]};
 const schema = {type:"object",properties:{summary:{type:"string"},unsupportedReason:{type:"string"},clips:{type:"array",items:clipSchema}},required:["summary","unsupportedReason","clips"]};
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+export async function generateGeminiWithRetry(ai,model,contents,config={},attempts=3){
+  let last;
+  for(let attempt=0;attempt<attempts;attempt++){
+    try{return await ai.models.generateContent({model,contents,config})}
+    catch(error){
+      last=error;const text=String(error?.message||'');
+      if(!/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar/i.test(text)||attempt===attempts-1)throw error;
+      await sleep(700*(attempt+1));
+    }
+  }
+  throw last;
+}
 
 export async function planTranscript({words,duration,prompt,history,clip,generate,onProgress}) {
   if (!words.length) throw new Error("The video has no word-timed speech transcript. It cannot be planned from speech content.");
@@ -64,7 +77,7 @@ export async function generateChatPlan(p,{db,patchJob,key,model}) {
   const ai=new GoogleGenAI({apiKey:key,httpOptions:{timeout:120000}});
   const plan=await planTranscript({words,duration:Number(asset.duration_seconds),prompt:p.prompt,history,clip,
     generate:async(contents,responseSchema)=>{
-      const result=await ai.models.generateContent({model,contents,config:{responseMimeType:"application/json",responseJsonSchema:responseSchema}});
+      const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema});
       try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
     },
     onProgress:async(index,total)=>patchJob(p.jobId,{progress:65+Math.round(index/total*25),current_stage:"gemini_planning",payload:{...p,transcriptId:transcript.id,analysisWindow:index+1,analysisWindows:total}})

@@ -1,0 +1,7 @@
+# Keep unrelated local work and private machine state out of Alpha deployments.
+fuelpulse-app/
+snap/
+__agent__/
+.supabase/
+.next/
+node_modules/

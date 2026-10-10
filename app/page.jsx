@@ -1,7 +1,7 @@
 import {ArrowRight,AudioLines,CalendarDays,Check,FileText,Film,Focus,Scissors,Share2,Upload,Users} from 'lucide-react';
 import {ButtonLink,ScoreRing} from '../components/studio/ui';
 import {BeforeAfter,DemoButton,FAQ,FormatsStrip,LazyDemo,MarketingFooter,MarketingNav,PricingCards,UseCases} from '../components/studio/marketing';
-import LandingHero,{FeatureVisual} from '../components/studio/landing-hero';
+import LandingHero,{FeatureVisual,ScrollAssembly,WorkflowQuality} from '../components/studio/landing-hero';
 import AssistantShowcase from '../components/studio/assistant-showcase';
 
 const site=process.env.NEXT_PUBLIC_SITE_URL||'https://alpha-ai-smoky.vercel.app';
@@ -25,6 +25,7 @@ export default function Home(){
       ['02','Review the best moments','Compare AI scores and the reason behind each pick. Keep complete thoughts, not random snippets.',<div className="how-visual" key="moment"><div className="flex items-center gap-4 px-5"><ScoreRing score={94} size={56}/><span className="text-sm">A question beats<br/>a perfect plan.</span></div></div>],
       ['03','Edit and publish','Adjust captions, framing, and pacing. Export an MP4 or queue a clip to your YouTube channel.',<div className="how-visual source" key="publish"><div className="flex gap-4 text-muted"><Scissors size={24}/><ArrowRight size={22}/><Share2 size={24}/></div><span className="status-chip ready"><Check size={12}/>Ready for review</span></div>],
     ].map(([number,title,copy,visual])=><article className="panel how-card" key={title}><div><span className="how-number">{number} /</span><h3>{title}</h3><p>{copy}</p></div>{visual}</article>)}</div></section>
+    <WorkflowQuality/><ScrollAssembly/>
     <section className="landing-section"><div className="section-heading"><span className="eyebrow">KEEP THE CONTEXT. CHANGE THE FORMAT.</span><h2>One conversation. A new entry point.</h2><p>From a wide recording to a focused vertical cut, with captions that give every word its place.</p></div><BeforeAfter/></section>
     <section className="landing-section" id="features"><div className="section-heading"><span className="eyebrow">A STUDIO, NOT A PILE OF TOOLS</span><h2>The details that make a clip feel finished.</h2></div><div className="bento-grid">{[[AudioLines,'Moments with a reason','Review hook strength, clarity, and the context behind each score. A useful starting point, not a promise of views.'],[Focus,'Speaker-aware framing','Follow the visible speaker with AI crop guidance, or take control with manual framing.'],[FileText,'Word-level captions','Seek through timed words and preview caption presets before rendering.'],[Scissors,'Transcript-first review','Read, seek, and remove words from the cut. Keep the original transcript and source intact.'],[CalendarDays,'A publishing calendar','See scheduled YouTube clips in one place. Review titles, descriptions, and privacy before queueing.'],[Users,'Workspaces that keep context','Organize shared projects and brand presets. The current API exposes project clips for your own tools.']].map(([Icon,title,copy])=><article className="panel bento-card" key={title}><Icon size={20}/><h3>{title}</h3><p>{copy}</p><FeatureVisual kind={title}/></article>)}</div></section>
     <AssistantShowcase/>

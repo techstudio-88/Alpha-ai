@@ -32,6 +32,7 @@
   ],
   "exclude": [
     "node_modules",
+    "fuelpulse-app/**",
     "supabase/functions/**/*.ts"
   ]
 }

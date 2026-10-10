@@ -17,10 +17,11 @@ import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen} from './management-screens';
 import {PricingCards} from './marketing';
 
+const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
 const AssistantScreen=dynamic(()=>import('./assistant-screen'),{loading:()=> <ScreenSkeleton/>});
 
-export const NAV=[['home','Home',Home],['projects','Projects',Folder],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
+export const NAV=[['home','Home',Home],['projects','Projects',Folder],['chat','Video chat',WandSparkles],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
 const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand'};
 
 export default function StudioApp() {
@@ -58,6 +59,12 @@ export default function StudioApp() {
     const workspaces=list.workspaces?.length?list.workspaces:[result.workspace];
     return {workspace:workspaces.find(w=>w.id===selectedWorkspace)||result.workspace||workspaces[0],workspaces};
   },[user?.id,demo,selectedWorkspace]);
+  useEffect(()=>{
+    if(demo||!user||!bootstrap.error)return;
+    if(/session|sign.?in|unauthorized|authentication|401/i.test(bootstrap.error)){
+      supabase.auth.signOut().catch(()=>{});setUser(null);setAuthError('Your session expired. Please sign in again.');
+    }
+  },[demo,user?.id,bootstrap.error]);
   const refresh=useCallback(()=>setRevision(v=>v+1),[]);
   const notify=useCallback(text=>setMessage(text),[]);
   const clearToast=useCallback(()=>setMessage(''),[]);
@@ -72,11 +79,11 @@ export default function StudioApp() {
     workspace:bootstrap.data?.workspace,workspaces:bootstrap.data?.workspaces||[],revision,refresh,
     refreshWorkspace:bootstrap.retry,notify,navigate,view,projectId:params.get('project'),clipId:params.get('clip'),
     state:demo?params.get('state'):null,selectWorkspace:setSelectedWorkspace,
-    editorPrompt:params.get('instruction')||'',
+    editorPrompt:params.get('instruction')||'',jobId:params.get('job')||'',afterUpload:params.get('afterUpload')==='1',
     openImport:file=>{setImportFile(file||null);setImportOpen(true)},
   };
   if(!ready)return <main id="main-content" className="studio-content"><ScreenSkeleton/></main>;
-  if(authError&&!demo)return <main id="main-content" className="landing-container py-16"><ErrorState message={authError} onRetry={()=>window.location.href='/studio'}/></main>;
+  if(authError&&!demo)return <main id="main-content" className="landing-container py-16"><ErrorState message={authError} onRetry={()=>{window.location.href='/studio'}}/></main>;
   if(!user&&!demo)return <AuthScreen mode={params.get('mode')||'signin'}/>;
   if(bootstrap.error)return <main id="main-content" className="studio-content"><ErrorState message={bootstrap.error} onRetry={bootstrap.retry}/><Button className="mt-4" onClick={()=>supabase?.auth.signOut()}>Sign out</Button></main>;
   if(bootstrap.loading||!context.workspace)return <main id="main-content" className="studio-content"><ScreenSkeleton/></main>;
@@ -112,6 +119,7 @@ function StudioWorkspace() {
   else if(view==='home')screen=<HomeScreen projects={projects}/>;
   else if(view==='projects')screen=<ProjectsScreen resource={projects}/>;
   else if(view==='project')screen=projects.loading?<ScreenSkeleton/>:projects.error?<ErrorState message={projects.error} onRetry={projects.retry}/>:<ProjectScreen projects={projects.data||[]} projectId={projectId}/>;
+  else if(view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
   else if(view==='assistant')screen=<AssistantScreen/>;

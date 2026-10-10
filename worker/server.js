@@ -8,11 +8,13 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan,planTranscript} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
 import {runPublishQueue} from './publish.js';
+import {aiFailure} from '../lib/ai-failures.mjs';
+import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
@@ -75,7 +77,7 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   const sw=Math.round(size[0]*Math.max(1,zoom)/2)*2,sh=Math.round(size[1]*Math.max(1,zoom)/2)*2;
   const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles='${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}'`:"";
   const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=0.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=0.18":opts.transition==="dip"?",fade=t=in:st=0:d=0.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=0.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"x")+")*(iw-"+size[0]+")":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"("+reframeExpr(opts.reframeKeyframes,"y")+")*(ih-"+size[1]+")":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   const args=["-y","-ss",String(Math.max(0,Number(start))),"-t",String(requested),"-i",input];
   if(opts.cutRanges?.length){
@@ -163,7 +165,7 @@ async function analyzeTranscriptWithGemini(segments,sourceDuration){
     if(!windowRows.length)continue;
     const transcript=windowRows.map(s=>`[${Number(s.start).toFixed(2)}-${Number(s.end).toFixed(2)}] ${String(s.text||"").trim()}`).filter(Boolean).join("\n").slice(0,24000);
     if(!transcript)continue;
-    const prompt="You are Alpha.ai's long-form clip-selection engine. Analyze ONLY this timestamped transcript window. Find up to 3 genuinely strong short-form moments: hooks, surprising statements, useful insights, emotional peaks, punchlines, stories, Q&A, controversial claims, or CTAs. Prefer complete thoughts and clean sentence boundaries. Do not invent words or timestamps. Timestamps MUST stay inside this window and the source duration. Do not create filler clips. A candidate should normally be 15-45 seconds, but may be shorter when the thought is complete. Return scores 0-100 and classify the moment. Window: "+windowStart.toFixed(2)+" to "+windowEnd.toFixed(2)+" seconds. Source duration: "+sourceDuration.toFixed(2)+" seconds.\nTRANSCRIPT:\n"+transcript;
+    const prompt="You are Alpha.ai's long-form clip-selection engine. Analyze ONLY this timestamped transcript window. Find up to 3 genuinely strong short-form moments: hooks, surprising statements, useful insights, emotional peaks, punchlines, stories, Q&A, controversial claims, or CTAs. The FIRST 3 SECONDS of every selected clip must start on the strongest hook, question, claim, or curiosity line available; never begin with filler, greetings, or a sentence fragment. Prefer complete thoughts and clean sentence boundaries. Do not invent words or timestamps. Timestamps MUST stay inside this window and the source duration. Do not create filler clips. A candidate should normally be 15-45 seconds, but may be shorter when the thought is complete. Return scores 0-100 and classify the moment. Window: "+windowStart.toFixed(2)+" to "+windowEnd.toFixed(2)+" seconds. Source duration: "+sourceDuration.toFixed(2)+" seconds.\nTRANSCRIPT:\n"+transcript;
     try{
       const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:prompt,config:{responseMimeType:"application/json",responseSchema:schema}});
       const parsed=JSON.parse(result.text||"{}");
@@ -191,12 +193,15 @@ function generateDeterministicClipCandidates(segments,sourceDuration){
     const end=Math.min(sourceDuration,start+duration);
     if(end-start<8)continue;
     const rows=segments.filter(s=>s.end>start&&s.start<end);
+    const hookRow=rows.find(s=>hookWords.test(String(s.text||""))||/[?]/.test(String(s.text||"")));
+    const clipStart=hookRow?Math.max(start,Number(hookRow.start)-.15):start;
+    const opening=rows.filter(s=>s.end>clipStart&&s.start<Math.min(end,clipStart+3.5)).map(s=>String(s.text||"").trim()).filter(Boolean).join(" ");
     const text=rows.map(s=>String(s.text||"").trim()).filter(Boolean).join(" ");
     if(!text)continue;
     const words=text.split(/\s+/).filter(Boolean);
     const sentenceCount=(text.match(/[.!?]+/g)||[]).length;
     const density=Math.min(100,Math.round((words.length/Math.max(1,end-start))*30));
-    const hook=Math.min(100,density*0.45+(hookWords.test(text)?38:0)+(text.length>90?10:0));
+    const hook=Math.min(100,density*0.45+(hookWords.test(opening)?52:hookWords.test(text)?28:0)+(opening.length>45?12:0)+(text.length>90?8:0));
     const info=Math.min(100,density*0.6+(usefulWords.test(text)?32:0)+(sentenceCount>=2?10:0));
     const story=Math.min(100,density*0.35+(storyWords.test(text)?45:0)+(sentenceCount>=3?15:0));
     const qa=Math.min(100,(questionWords.test(text)?65:0)+(text.includes("answer")?25:0));
@@ -206,8 +211,9 @@ function generateDeterministicClipCandidates(segments,sourceDuration){
     const shareability=Math.min(100,Math.round(hook*.35+info*.3+emotion*.2+completeness*.15));
     const score=Math.max(1,Math.min(99,Math.round(hook*.25+info*.2+story*.12+qa*.08+emotion*.12+shareability*.23)));
     candidates.push({
-      start_seconds:start,
+      start_seconds:clipStart,
       end_seconds:end,
+      hook:opening.slice(0,320),
       title:hook>=70?"Strong hook":usefulWords.test(text)?"Useful insight":story>=65?"Story moment":qa>=60?"Question & answer":"Potential highlight",
       reason:"Transcript signal: strong speech density with "+(hook>=60?"hook-like":"contextual")+" language and "+(completeness>=65?"complete":"developing")+" thought structure.",
       hook_score:Math.round(hook),
@@ -224,7 +230,7 @@ function generateDeterministicClipCandidates(segments,sourceDuration){
       story_score:Math.round(story),
       cta_score:Math.round(cta),
       quote_score:Math.round(hook*.5+completeness*.5),
-      recommended_duration_seconds:Math.min(45,Math.max(8,end-start)),
+      recommended_duration_seconds:Math.min(45,Math.max(8,end-clipStart)),
       _score:score
     });
   }
@@ -240,6 +246,26 @@ function generateDeterministicClipCandidates(segments,sourceDuration){
     if(selected.length>=8)break;
   }
   return selected.map(({_score,...candidate})=>candidate);
+}
+
+function candidateHook(candidate,segments){
+  const start=Number(candidate.start_seconds)||0,end=Number(candidate.end_seconds)||start;
+  const rows=(segments||[]).filter(row=>Number(row.end)>start&&Number(row.start)<end);
+  const hookRow=rows.find(row=>/\b(here's|here is|the truth|the biggest|most important|you need to|listen|watch this|nobody|everyone|actually|secret|mistake|why|how|what if|the reason|problem|solution)\b/i.test(String(row.text||''))||/[?]/.test(String(row.text||'')));
+  const hookStart=hookRow?Math.max(start,Number(hookRow.start)-.15):start;
+  const opening=rows.filter(row=>Number(row.end)>hookStart&&Number(row.start)<Math.min(end,hookStart+3.5)).map(row=>String(row.text||'').trim()).filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+  return {...candidate,start_seconds:Math.min(hookStart,end-.25),hook:opening.slice(0,320)};
+}
+
+function writeCaptionSrt(dir,segments,start,end){
+  const usable=(segments||[]).filter(row=>Number(row.end)>start&&Number(row.start)<end&&String(row.text||'').trim());
+  if(!usable.length)return null;
+  const stamp=value=>{const ms=Math.max(0,Math.round(value*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),z=ms%1000;return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+','+String(z).padStart(3,'0')};
+  const events=captionEvents(usable.map(row=>({word:String(row.text||'').replace(/[\r\n]+/g,' ').trim(),start_ms:Number(row.start)*1000,end_ms:Number(row.end)*1000})),start,end,1,[]);
+  if(!events.length)return null;
+  const file=path.join(dir,'auto-captions.srt');
+  fs.writeFileSync(file,events.map((event,index)=>(index+1)+'\n'+stamp(event.start)+' --> '+stamp(event.end)+'\n'+event.word+'\n').join('\n'),'utf8');
+  return file;
 }
 
 function dedupeClipCandidates(candidates){
@@ -628,13 +654,19 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
-    candidates=generateDeterministicClipCandidates(segments,safeDuration);
+    candidates=sentenceMoments(segments,safeDuration);
     console.log("Deterministic transcript clip candidates",p.jobId,candidates.length);
   }
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
+  const preferences=p.preferences||{};
+  candidates=distinctMoments(candidates,Math.min(8,Math.max(1,Number(preferences.clipCount)||8)));
+  if(!candidates.length)throw new Error('No complete spoken moments were found. Review the transcript before retrying.');
+  const captions=preferences.captions!==false;
+  const captionStyle=["pop","bold","minimal"].includes(preferences.captionStyle)?preferences.captionStyle:"pop";
+  const transition=["cut","fade","dip"].includes(preferences.transition)?preferences.transition:"cut";
   for(let i=0;i<candidates.length;i++){
-    const candidate=candidates[i];
+    const candidate=candidateHook(candidates[i],segments);
     const start=Math.max(0,Math.min(safeDuration,Number(candidate.start_seconds)||0));
     const end=Math.max(start,Math.min(safeDuration,start+45,Number(candidate.end_seconds)||start));
     if(end<=start)continue;
@@ -643,26 +675,44 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const aiScore=Math.round((Number(candidate.hook_score)||0)*0.3+(Number(candidate.information_density)||0)*0.25+(Number(candidate.story_completeness)||0)*0.2+(Number(candidate.shareability_score)||0)*0.25);
     const score=Math.max(1,Math.min(99,aiScore||55));
     const title=String(candidate.title||("AI moment "+Math.round(start)+"s")).slice(0,180);
+    const baseSpec={...candidate,start_seconds:start,end_seconds:end,hook:candidate.hook||"",captions,captionStyle,transition,effect:"none",broll:preferences.broll===true};
     if(!clip){
-      clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title,start_seconds:start,end_seconds:end,score,status:"processing"}}))[0];
+      clip=(await db("clips",{method:"POST",body:{project_id:p.projectId,media_asset_id:asset.id,title,start_seconds:start,end_seconds:end,score,status:"processing",ai_spec:baseSpec,caption_config:{style:captionStyle,color:"#ffffff",enabled:captions},broll_config:preferences.broll===true?[{status:"suggested"}]:[]}}))[0];
       existingByStart.set(key,clip);
     }else{
-      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"processing",score,start_seconds:start,end_seconds:end,title}});
+      await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"processing",score,start_seconds:start,end_seconds:end,title,ai_spec:{...(clip.ai_spec||{}),...baseSpec},caption_config:{style:captionStyle,color:"#ffffff",enabled:captions}}});
     }
     const versions=await db("clip_versions",{params:{clip_id:"eq."+clip.id,version:"eq.1",select:"id,storage_path,render_status",limit:"1"}});
     const existingVersion=versions?.[0];
     if(!existingVersion?.storage_path){
       const clipDir=path.join(dir,"clips");fs.mkdirSync(clipDir,{recursive:true});
       const rendered=path.join(clipDir,clip.id+".mp4");
-      await renderEditedClip(input,rendered,start,end,{aspect:"9:16"});
+      const captionFile=captions?writeCaptionSrt(clipDir,segments,start,end):null;
+      if(captions&&!captionFile)throw new Error("Captions were requested, but no timed transcript is available for this clip.");
+      let reframeKeyframes=null;
+      if(preferences.autoReframe!==false&&preferences.aspect!=="16:9"&&GEMINI_API_KEY){
+        const analysisPath=path.join(clipDir,clip.id+'-analysis.mp4');
+        await renderClip(input,analysisPath,start,end);
+        try{reframeKeyframes=await analyzeReframeWithGemini(analysisPath,end-start)}catch{console.warn('Speaker framing unavailable; preserving centered fallback for this clip.')}
+      }
+       const aspect=["9:16","1:1","16:9"].includes(preferences.aspect)?preferences.aspect:"9:16";
+       await renderEditedClip(input,rendered,start,end,{aspect,srtPath:captionFile,transition,reframeKeyframes});
       const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
       await upload(rendered,storagePath,"video/mp4");
-      if(existingVersion?.id)await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{storage_path:storagePath,render_status:"ready",edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
-      else await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:{source_start:start,source_end:end,duration_seconds:end-start}}});
+       const editData={source_start:start,source_end:end,duration_seconds:end-start,aspect,captions,captionStyle,captionColor:"#ffffff",transition,effect:"none",hook:candidate.hook||"",broll:preferences.broll===true};
+      if(existingVersion?.id)await db("clip_versions",{method:"PATCH",params:{id:"eq."+existingVersion.id},body:{storage_path:storagePath,render_status:"ready",edit_data:editData}});
+      else await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:1,render_status:"ready",storage_path:storagePath,edit_data:editData}});
     }
     const scores=await db("clip_scores",{params:{clip_id:"eq."+clip.id,select:"id",limit:"1"}});
     if(!scores?.[0])await db("clip_scores",{method:"POST",body:{clip_id:clip.id,score,hook_score:Number(candidate.hook_score)||score,emotion_score:Number(candidate.emotional_intensity)||Math.max(0,score-3),clarity_score:Number(candidate.story_completeness)||score,shareability_score:Number(candidate.shareability_score)||Math.max(0,score-1),information_density:Number(candidate.information_density)||score,story_completeness:Number(candidate.story_completeness)||score,audience_relevance:Number(candidate.audience_relevance)||score,retention_signal:Number(candidate.retention_signal)||score,qa_score:Number(candidate.qa_score)||0,controversy_score:Number(candidate.controversy_score)||0,funny_score:Number(candidate.funny_score)||0,educational_score:Number(candidate.educational_score)||0,story_score:Number(candidate.story_score)||0,cta_score:Number(candidate.cta_score)||0,quote_score:Number(candidate.quote_score)||0,recommended_duration_seconds:Number(candidate.recommended_duration_seconds)||Math.min(45,Math.max(2,end-start)),reason:String(candidate.reason||"AI-selected moment").slice(0,500)}});
-    const clipText=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();await generateRepurposeAssets(clip.id,p.workspaceId,clipText,title);await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",score,start_seconds:start,end_seconds:end,title}});
+    const clipText=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();
+     if(preferences.includeCopy!==false)await generateRepurposeAssets(clip.id,p.workspaceId,clipText,title);
+    await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{
+      status:"ready",score,start_seconds:start,end_seconds:end,title,
+      ai_spec:{...(clip.ai_spec||{}),...baseSpec},
+      caption_config:{style:captionStyle,color:"#ffffff",enabled:captions},
+      broll_config:preferences.broll===true?[{status:"suggested"}]:[]
+    }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
   await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
@@ -672,7 +722,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   console.error("job",p.jobId,e);
   // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
   const retryCount=Number(p.retryCount||0)+1;
-  const terminal=Boolean(p.sessionId)||p.operation==="render_edit"||retryCount>=5;
+  const terminal=Boolean(p.sessionId)&&p.operation!=='render_edit'||retryCount>=5;
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
   await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
   if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
@@ -743,11 +793,11 @@ app.post('/editor/plan',async(req,res)=>{
     const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY,httpOptions:{timeout:20000}});
     const plan=await planTranscript({words,duration:Number(duration),prompt,history:[],clip:{...draft,start_seconds:draft.start,end_seconds:draft.end},
       onProgress:async()=>{},generate:async(contents,responseSchema)=>{
-        const result=await ai.models.generateContent({model:GEMINI_MODEL,contents,config:{responseMimeType:'application/json',responseJsonSchema:responseSchema}});
+        const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,contents,{responseMimeType:'application/json',responseJsonSchema:responseSchema});
         return JSON.parse(result.text);
       }});
     return res.json(plan);
-  }catch(error){return res.status(error.unsupported?400:502).json({error:error.unsupported?String(error.message).slice(0,1000):'The AI editor could not prepare a valid plan. Please retry.'})}
+  }catch(error){if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.'});const failure=aiFailure(error);console.warn('editor plan failure',failure.code);return res.status(failure.status).json(failure)}
 });
 app.post("/assistant/plan",async(req,res)=>{
   try{
@@ -798,7 +848,7 @@ async function resumeQueuedJobs(){
     const payload=row.payload||{};
     const normalized={...payload,jobId:row.id,workspaceId:row.workspace_id,projectId:row.project_id,sourceId:payload.sourceId||payload.source_id,sourceType:payload.sourceType||payload.source_type,mediaAssetId:payload.mediaAssetId||payload.media_asset_id,driveFileId:payload.driveFileId||payload.drive_file_id,driveAccessToken:payload.driveAccessToken||payload.drive_access_token};
     const retryCount=Number(row.attempt_count||0);
-    if(retryCount>=5){await patchJob(row.id,{status:"failed",progress:0,error:"Job exceeded the maximum automatic retry limit (5).",lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
+    if(retryCount>5){const previous=(await db('processing_jobs',{params:{id:'eq.'+row.id,select:'error'}}))[0];await patchJob(row.id,{status:"failed",error:"Automatic recovery stopped after 5 attempts. Last failure: "+(previous?.error||payload.lastFailure||'worker interrupted before saving an error'),lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
     await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
     console.log("resuming queued/stale job",row.id,row.status,row.progress,"attempt",retryCount);

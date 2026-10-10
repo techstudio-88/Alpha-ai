@@ -7,7 +7,7 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import {cva} from 'class-variance-authority';
 import {clsx} from 'clsx';
 import {twMerge} from 'tailwind-merge';
-import {AlertCircle,ArrowRight,Check,ChevronDown,Download,Film,Loader2,Moon,Play,RefreshCw,Sun,Upload,X} from 'lucide-react';
+import {AlertCircle,ArrowRight,Captions,Check,ChevronDown,Download,Film,Loader2,Moon,Play,RefreshCw,Sun,Upload,X} from 'lucide-react';
 
 export const cn = (...values) => twMerge(clsx(values));
 const buttons = cva('inline-flex items-center justify-center gap-2 rounded-control border px-4 py-2.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-45 min-h-10', {
@@ -79,14 +79,21 @@ export function ClipCard({clip,src,selected,onSelect,onEdit,onPublish,onApprove,
     <div className="clip-copy">
       <div className="flex items-start gap-3"><ScoreRing score={score}/><div className="min-w-0"><h3>{clip.title||'Untitled moment'}</h3><button className="text-xs text-muted underline underline-offset-4" onClick={()=>setWhy(v=>!v)} aria-expanded={why}>Why this clip?</button></div></div>
       {why&&<p className="clip-reason">{clip.clip_scores?.[0]?.reason||clip.reason||'A score is an editorial signal, not a guarantee of views.'}</p>}
+      <div className="clip-signals"><span className="status-chip"><i className="size-1.5 rounded-full bg-current"/>Hook {Math.round(Number(clip.hook_score??clip.clip_scores?.[0]?.hook_score??0))}</span><span className="status-chip"><Captions size={12}/>{clip.caption_config?.enabled===false?'Captions off':'Captions ready'}</span></div>
+      {(clip.ai_spec?.hook||clip.hook)&&<p className="clip-hook"><b>Hook</b> “{clip.ai_spec?.hook||clip.hook}”</p>}
       <div className="clip-card-actions"><Button size="sm" onClick={onApprove} disabled={!onApprove}>{clip.status==='approved'?<Check size={13}/>:null}Approve</Button><Button size="sm" onClick={onEdit}>Edit</Button><Button size="sm" variant="primary" onClick={onPublish}>Publish</Button></div>
       {exportUrl&&<a className="clip-export" href={exportUrl.toString()} download><Download size={13}/>Download MP4</a>}
     </div>
   </article>;
 }
-export function Timeline({duration,current,onSeek,words=[],cuts=[]}) {
-  const safeDuration=Math.max(1,duration||1);
-  return <div className="timeline"><div className="timeline-ruler">{[0,.25,.5,.75,1].map(t=><span key={t}>{formatTime(t*safeDuration)}</span>)}</div><svg viewBox="0 0 1000 48" preserveAspectRatio="none" className="timeline-speech" role="img" aria-label="Speech activity derived from timed transcript words, not an audio amplitude waveform"><path d="M0 24H1000" stroke="var(--border)"/>{words.filter(w=>w.start_ms<safeDuration*1000).slice(0,1000).map((w,i)=>{const x=w.start_ms/safeDuration, width=Math.max(1,(w.end_ms-w.start_ms)/safeDuration),height=12+Math.min(25,String(w.word).length*3);return <rect key={w.id||i} x={x} y={(48-height)/2} width={width} height={height} rx="1" fill={current*1000>=w.start_ms&&current*1000<w.end_ms?'var(--accent)':'var(--subtle)'}/>})}{cuts.map((cut,i)=><path key={i} d={`M${cut.start/safeDuration*1000} 0V48`} stroke="var(--destructive)" strokeWidth="2"/>)}</svg><input aria-label="Seek video timeline" type="range" min="0" max={safeDuration} step=".01" value={Math.min(current,safeDuration)} onChange={e=>onSeek(Number(e.target.value))}/><div className="timeline-track">{words.slice(0,100).map((w,i)=><button key={w.id||i} className={current*1000>=w.start_ms&&current*1000<w.end_ms?'active':''} onClick={()=>onSeek(w.start_ms/1000)}>{w.word}</button>)}{!words.length&&<span>Timed caption words appear here after transcription.</span>}</div>{cuts.length>0&&<div className="text-xs text-muted mt-2">{cuts.length} cut markers</div>}</div>;
+export function Timeline({duration,current,onSeek,words=[],cuts=[],rangeStart=0,rangeEnd=duration}) {
+  const sourceDuration=Math.max(1,duration||1);
+  const start=Math.max(0,Math.min(sourceDuration,Number(rangeStart)||0));
+  const end=Math.max(start+.25,Math.min(sourceDuration,Number(rangeEnd)||sourceDuration));
+  const clipDuration=Math.max(.25,end-start);
+  const relative=value=>Math.max(0,Math.min(1000,(Number(value)-start)/clipDuration*1000));
+  const scopedWords=words.filter(w=>w.end_ms>start*1000&&w.start_ms<end*1000);
+  return <div className="timeline" data-range={`${start}-${end}`}><div className="timeline-ruler">{[0,.25,.5,.75,1].map(t=><span key={t}>{formatTime(start+t*clipDuration)}</span>)}</div><svg viewBox="0 0 1000 48" preserveAspectRatio="none" className="timeline-speech" role="img" aria-label="Speech activity for the selected clip, derived from timed transcript words"><path d="M0 24H1000" stroke="var(--border)"/>{scopedWords.slice(0,1000).map((w,i)=>{const x=relative(w.start_ms/1000),width=Math.max(1,(w.end_ms-w.start_ms)/1000/clipDuration*1000),height=12+Math.min(25,String(w.word).length*3);return <rect key={w.id||i} x={x} y={(48-height)/2} width={width} height={height} rx="1" fill={current*1000>=w.start_ms&&current*1000<w.end_ms?'var(--accent)':'var(--subtle)'}/>})}{cuts.map((cut,i)=><path key={i} d={`M${relative(cut.start)} 0V48`} stroke="var(--destructive)" strokeWidth="2"/>)}</svg><input aria-label="Seek selected clip timeline" type="range" min={start} max={end} step=".01" value={Math.max(start,Math.min(current,end))} onChange={e=>onSeek(Number(e.target.value))}/><div className="timeline-track">{scopedWords.slice(0,100).map((w,i)=><button key={w.id||i} className={current*1000>=w.start_ms&&current*1000<w.end_ms?'active':''} onClick={()=>onSeek(Math.max(start,w.start_ms/1000))}>{w.word}</button>)}{!scopedWords.length&&<span>Timed caption words appear here after transcription.</span>}</div><div className="text-xs text-muted mt-2">Showing selected clip · {formatTime(start)}–{formatTime(end)}{cuts.length>0?` · ${cuts.length} cut markers`:''}</div></div>;
 }
 export function Calendar({month,items=[],onDay,onReschedule,selectedDay}) {
   const year=month.getFullYear(),m=month.getMonth(),start=new Date(year,m,1).getDay(),days=new Date(year,m+1,0).getDate();
