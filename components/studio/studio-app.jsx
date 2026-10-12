@@ -41,7 +41,13 @@ export default function StudioApp() {
         // detectSessionInUrl owns the PKCE exchange; a second exchange reuses a one-time code.
         const response=await supabase.auth.getSession();
         if(response.error||(code&&!response.data?.session))throw new Error('Sign-in incomplete.');
-        if(alive){setUser(response.data?.session?.user||null);setReady(true);setAuthError('')}
+        let verifiedUser=null;
+        if(response.data?.session){
+          const verified=await supabase.auth.getUser(response.data.session.access_token);
+          if(verified.error||!verified.data?.user){await supabase.auth.signOut().catch(()=>{});throw new Error('Your saved session expired. Please sign in again.')}
+          verifiedUser=verified.data.user;
+        }
+        if(alive){setUser(verifiedUser);setReady(true);setAuthError('')}
         if(code){for(const key of ['code','sb_flow_id','error','error_description'])url.searchParams.delete(key);window.history.replaceState({},'',url)}
       }catch{if(alive){setAuthError('Sign-in could not finish. Please retry from the same browser.');setReady(true)}}
       finally{clearTimeout(timeout)}
