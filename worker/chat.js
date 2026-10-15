@@ -10,6 +10,8 @@ const clipSchema = {type:"object",properties:{
 const schema = {type:"object",properties:{summary:{type:"string"},unsupportedReason:{type:"string"},clips:{type:"array",items:clipSchema}},required:["summary","unsupportedReason","clips"]};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const geminiKeyHealth = new Map();
+let geminiHealthReporter = null;
+export function setGeminiHealthReporter(reporter){geminiHealthReporter=typeof reporter==='function'?reporter:null;}
 const cooldownMs = 60_000;
 function configuredGeminiKeys(primaryKey) {
   const candidates=[
@@ -36,7 +38,7 @@ export async function generateGeminiWithRetry(ai,model,contents,config={},attemp
   // server environment keys only and never logs or returns their values.
   return generateGeminiWithRotation({
     primaryKey:process.env.GEMINI_API_KEY||"",
-    model,contents,config,attemptsPerKey:Math.max(1,attempts)
+    model,contents,config,attemptsPerKey:Math.max(1,attempts),onHealth:geminiHealthReporter
   });
 }
 async function emitKeyHealth(onHealth,label,state){
