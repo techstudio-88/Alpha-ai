@@ -57,7 +57,7 @@ create table if not exists public.credit_ledger (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  job_id uuid references public.processing_jobs(id) on delete set null,
+  job_id uuid not null references public.processing_jobs(id) on delete restrict,
   amount integer not null check (amount <> 0),
   transaction_type text not null check (transaction_type in ('reserve','refund','adjustment')),
   reason text not null check (length(trim(reason)) between 1 and 500),
@@ -496,6 +496,7 @@ declare
   v_actor_email text;
   v_balance public.usage_credits;
   v_entry public.credit_ledger;
+  v_adjustment_job_id uuid := gen_random_uuid();
 begin
   if p_amount=0 or length(trim(coalesce(p_reason,''))) not between 1 and 500
     or length(trim(coalesce(p_idempotency_key,'')))<8 then
@@ -528,8 +529,12 @@ begin
     update public.usage_credits set credits=credits+p_amount,updated_at=now()
       where id=v_balance.id;
   end if;
+  insert into public.processing_jobs(id,workspace_id,job_type,status,progress,payload)
+    values(v_adjustment_job_id,p_workspace_id,'credit_adjustment','completed',100,
+      jsonb_build_object('requestedBy',p_actor_user_id,'targetUserId',p_target_user_id,'reason',trim(p_reason)))
+    on conflict(id) do nothing;
   insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key,metadata)
-    values(p_workspace_id,p_target_user_id,null,p_amount,'adjustment',trim(p_reason),p_idempotency_key,
+    values(p_workspace_id,p_target_user_id,v_adjustment_job_id,p_amount,'adjustment',trim(p_reason),p_idempotency_key,
       jsonb_build_object('actorUserId',p_actor_user_id))
     returning * into v_entry;
   return v_entry;
