@@ -3,13 +3,14 @@ import {authorizeWorkflow,checked,problem,wakeWorker,workflowError} from '../../
 export const runtime='nodejs';
 
 import {normalizePreferences} from '../../../lib/chat-brief.mjs';
+import {UUID} from '../../../lib/video-workflow.mjs';
 
 export async function POST(request){
   try{
     const body=await request.json().catch(()=>({}));
     const {workspaceId,projectId,jobId,preferences={}}=body||{};
     const {admin,token,user}=await authorizeWorkflow(request,workspaceId);
-    if(!projectId||!jobId)throw problem('Project and processing job are required.');
+    if(!UUID.test(projectId||'')||!UUID.test(jobId||''))throw problem('Valid project and processing job IDs are required.');
     const job=checked(await admin.from('processing_jobs').select('id,workspace_id,project_id,status,payload').eq('id',jobId).eq('workspace_id',workspaceId).eq('project_id',projectId).maybeSingle());
     if(!job)throw problem('Processing job not found.',404);
     if(job.status!=='awaiting_preferences')throw problem('This job has already started. Refresh the chat to see its progress.',409);
