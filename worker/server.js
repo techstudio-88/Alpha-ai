@@ -1059,13 +1059,15 @@ async function processPublishJobs(){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   console.log("Supabase server-side key configured:",!!KEY);
   const restoreGeminiHealth=async()=>{try{const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until,last_status,success_count,failure_count,rate_limit_count,last_used_at"}});restoreGeminiKeyHealth(rows)}catch{console.warn("gemini_key_health_restore_unavailable")}};
-  setInterval(processPublishJobs,30000);
-  setTimeout(processPublishJobs,10000);
-  setTimeout(expirePendingParts,10000);
-  setInterval(expirePendingParts,60000);
-  setTimeout(processApprovedPendingParts,12000);
-  setInterval(processApprovedPendingParts,15000);
-  setTimeout(resumeQueuedJobs,5000);
-  setInterval(resumeQueuedJobs,15000);
-  void restoreGeminiHealth().finally(()=>app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT)));
+  void restoreGeminiHealth().finally(()=>{
+    setInterval(processPublishJobs,30000);
+    setTimeout(processPublishJobs,10000);
+    setTimeout(expirePendingParts,10000);
+    setInterval(expirePendingParts,60000);
+    setTimeout(processApprovedPendingParts,12000);
+    setInterval(processApprovedPendingParts,15000);
+    setTimeout(resumeQueuedJobs,5000);
+    setInterval(resumeQueuedJobs,15000);
+    app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+  });
 }
