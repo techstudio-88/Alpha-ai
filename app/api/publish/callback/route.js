@@ -1,23 +1,28 @@
 import {createClient} from '@supabase/supabase-js';
-import {createHmac,timingSafeEqual} from 'node:crypto';
+import {createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
+import {UUID} from '../../../../lib/video-workflow.mjs';
+import {checkRateLimit,rateLimitResponse} from '../../../../lib/rate-limit';
 import {encryptCredential} from '../../../../lib/credential-cipher.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
 
 export async function GET(request){
+  const errorId=randomUUID();
   try{
+    const rate=await checkRateLimit(request,{endpoint:'auth',plan:'free'});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const url=new URL(request.url),code=url.searchParams.get('code');
     const [state,signature]=(url.searchParams.get('state')||'').split('.');
     const stateSecret=process.env.OAUTH_STATE_SECRET||process.env.CRON_SECRET;
     const workerSecret=process.env.MEDIA_WORKER_SECRET;
     if(!stateSecret||!workerSecret)throw new Error('YouTube connection credentials are not configured.');
-    if(!code||!state||!/^[a-f\d]{64}$/i.test(signature||''))return Response.json({error:'Invalid OAuth state.'},{status:400});
+    if(!code||!state||!/^[a-f\d]{64}$/i.test(signature||''))return Response.json({error:'Invalid OAuth state.',errorId},{status:400});
     const expected=createHmac('sha256',stateSecret).update(state).digest();
     if(!timingSafeEqual(Buffer.from(signature,'hex'),expected))return Response.json({error:'Invalid OAuth state.'},{status:400});
     const context=JSON.parse(Buffer.from(state,'base64url').toString('utf8'));
-    if(!context.workspace_id||!context.user_id||!context.exp||Date.now()>Number(context.exp))return Response.json({error:'OAuth state expired.'},{status:400});
+    if(!UUID.test(context.workspace_id||'')||!UUID.test(context.user_id||'')||!context.exp||Date.now()>Number(context.exp))return Response.json({error:'OAuth state expired or invalid.' ,errorId},{status:400});
     const service=createClient(process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,{auth:{persistSession:false}});
     const member=await service.from('workspace_members').select('workspace_id').eq('workspace_id',context.workspace_id).eq('user_id',context.user_id).maybeSingle();
-    if(member.error||!member.data)return Response.json({error:'Workspace membership is no longer valid.'},{status:403});
+    if(member.error||!member.data)return Response.json({error:'Workspace membership is no longer valid.',errorId},{status:403});
     await requireWorkerCapability('encrypted-credentials');
     const redirect=process.env.YOUTUBE_REDIRECT_URI||new URL('/api/publish/callback',url.origin).toString();
     const response=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:process.env.YOUTUBE_CLIENT_ID||'',client_secret:process.env.YOUTUBE_CLIENT_SECRET||'',redirect_uri:redirect,grant_type:'authorization_code'}),signal:AbortSignal.timeout(10000)});
@@ -31,5 +36,8 @@ export async function GET(request){
     const result=await service.from('publish_connections').upsert({workspace_id:context.workspace_id,user_id:context.user_id,platform:'youtube',provider_account_id:channel.id,account_name:channel.snippet?.localized?.title||channel.snippet?.title||'YouTube',access_token:encryptCredential(token.access_token,workerSecret),refresh_token:refresh,expires_at:new Date(Date.now()+Number(token.expires_in||3600)*1000).toISOString(),scopes:String(token.scope||'').split(' ').filter(Boolean),status:'connected',metadata:{channel_thumbnail:channel.snippet?.thumbnails?.default?.url||null},updated_at:new Date().toISOString()},{onConflict:'workspace_id,platform'});
     if(result.error)throw new Error('The channel connection could not be saved. Please retry.');
     return Response.redirect(new URL('/studio?view=publish&connected=youtube',url.origin));
-  }catch(error){return Response.json({error:error.message||'YouTube connection failed.'},{status:500})}
+  }catch(error){
+    console.error('youtube_oauth_callback_failure',{errorId,category:'oauth'});
+    return Response.json({error:'YouTube connection failed. Contact support with error ID '+errorId+'.',errorId},{status:500,headers:{'Cache-Control':'no-store'}});
+  }
 }
