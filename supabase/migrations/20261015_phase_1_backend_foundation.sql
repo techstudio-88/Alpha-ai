@@ -517,3 +517,33 @@ end
 $$;
 revoke all on function public.admin_adjust_credits(uuid,uuid,uuid,integer,text,text) from public,anon,authenticated;
 grant execute on function public.admin_adjust_credits(uuid,uuid,uuid,integer,text,text) to service_role;
+
+
+-- Derive the standard entitlements from the server-owned plan field; clients cannot
+-- update this table. Pro's initial allowance is 180 video minutes/day pending product confirmation.
+create or replace function public.apply_standard_workspace_entitlements()
+returns trigger language plpgsql set search_path=''
+as $$
+begin
+  if new.plan='free' then
+    new.daily_video_minutes:=20;new.max_resolution:=720;new.watermark_text:='[APP NAME]';
+    new.title_regenerations:=3;new.cover_rotations:=1;new.auto_publish:=false;
+    new.scheduling_enabled:=false;new.brand_kit_limit:=1;new.priority_queue:=false;new.fair_use_unlimited:=false;
+  elsif new.plan='pro' then
+    new.daily_video_minutes:=180;new.max_resolution:=1080;new.watermark_text:='';
+    new.title_regenerations:=30;new.cover_rotations:=10;new.auto_publish:=true;
+    new.scheduling_enabled:=false;new.brand_kit_limit:=1;new.priority_queue:=false;new.fair_use_unlimited:=false;
+  elsif new.plan='studio' then
+    new.daily_video_minutes:=999999;new.max_resolution:=3840;new.watermark_text:='';
+    new.title_regenerations:=999999;new.cover_rotations:=999999;new.auto_publish:=true;
+    new.scheduling_enabled:=true;new.brand_kit_limit:=10;new.priority_queue:=true;new.fair_use_unlimited:=true;
+  end if;
+  new.updated_at:=now();
+  return new;
+end
+$$;
+revoke all on function public.apply_standard_workspace_entitlements() from public,anon,authenticated;
+drop trigger if exists apply_standard_workspace_entitlements_before_write on public.workspace_entitlements;
+create trigger apply_standard_workspace_entitlements_before_write
+  before insert or update of plan on public.workspace_entitlements
+  for each row execute function public.apply_standard_workspace_entitlements();
