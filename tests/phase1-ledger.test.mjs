@@ -78,30 +78,30 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     const videoJob=randomUUID();
     await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','processing',$4)",
       [videoJob,workspace,project,JSON.stringify({requestedBy:user,mediaAssetId:asset})]);
-    const videoPlan=(await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[]'::jsonb) as plan",
+    const videoPlan=(await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[1190,2390]'::jsonb) as plan",
       [workspace,project,user,videoJob,asset])).rows[0].plan;
     assert.equal(videoPlan.split,true);
     assert.equal(videoPlan.deferCurrent,false);
-    assert.equal(Number(videoPlan.partEndSeconds),1200);
+    assert.equal(Number(videoPlan.partEndSeconds),1190);
     assert.equal(Number(videoPlan.pendingParts),2);
-    assert.equal(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved),20);
+    assert.ok(Math.abs(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved)-1190/60)<0.001);
     await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[]'::jsonb)",
       [workspace,project,user,videoJob,asset]);
     assert.equal(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved),20);
     const pending=(await db.query("select id,part_number,start_seconds,end_seconds from public.pending_processing_parts where parent_job_id=$1 order by part_number",[videoJob])).rows;
     assert.deepEqual(pending.map(row=>row.part_number),[2,3]);
-    assert.equal(Number(pending[0].start_seconds),1200);
-    assert.equal(Number(pending[0].end_seconds),2400);
+    assert.equal(Number(pending[0].start_seconds),1190);
+    assert.equal(Number(pending[0].end_seconds),2390);
     await db.query("update public.processing_jobs set status='completed' where id=$1",[videoJob]);
     await db.query("select public.finish_video_usage_for_job($1,true)",[videoJob]);
     const finalized=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0];
     assert.equal(Number(finalized.minutes_reserved),0);
-    assert.equal(Number(finalized.minutes_completed),20);
+    assert.ok(Math.abs(Number(finalized.minutes_completed)-1190/60)<0.001);
     await db.query("update public.pending_processing_parts set status='approved',scheduled_for=now()-interval '1 minute',expires_at=now()+interval '2 days' where id=$1",[pending[0].id]);
     const delayed=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
     assert.equal(delayed.queued,false);
     assert.ok(delayed.rescheduledFor);
-    await db.query("update public.video_usage_daily set minutes_completed=0 where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user]);
+    await db.query("update public.video_usage_daily set minutes_completed=0,minutes_reserved=0 where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user]);
     await db.query("update public.pending_processing_parts set status='approved',scheduled_for=now()-interval '1 minute',usage_date=(now() at time zone 'Asia/Kolkata')::date where id=$1",[pending[0].id]);
     const claimed=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
     assert.equal(claimed.queued,true);
