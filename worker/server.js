@@ -754,10 +754,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("processing_job_completed")
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"completed",updated_at:new Date().toISOString()}}).catch(()=>{});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("processing_job_completed")
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
-  if(cancelled)return;
+  if(cancelled){if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"cancelled",updated_at:new Date().toISOString()}}).catch(()=>{});return;}
   const errorId=randomUUID();
   const message=String(e?.message||"");
   const failureType=e?.retryableProviderUnavailable||/gemini|ai provider|transcri|model/i.test(message)?"ai":
@@ -783,6 +783,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     payload:{...checkpoint,retryCount,lastFailureType:failureType}
   }).catch(()=>{});
   console.error("job_failure",{errorId,failureType,terminal,providerPaused});
+  if(terminal&&p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"failed",updated_at:new Date().toISOString()}}).catch(()=>{});
   if(terminal)await notifyOnce(p.workspaceId,p.requestedBy,"Video processing failed","Your job could not be completed. Contact support with error ID "+errorId+".","job_failed","job:"+p.jobId+":failed");
   if(terminal&&p.requestedBy&&p.workspaceId){
     await db("rpc/refund_failed_job_credits",{method:"POST",body:{
@@ -927,7 +928,7 @@ async function processApprovedPendingParts(){
   try{
     const now=new Date().toISOString();
     const parts=await db("pending_processing_parts",{params:{
-      status:"eq.approved",scheduled_for:"lte."+now,expires_at:"gt."+now,
+      status:"eq.approved",scheduled_for:"lte."+now,
       select:"id,workspace_id,project_id,user_id,media_asset_id,parent_job_id,part_number,start_seconds,end_seconds,timezone,scheduled_for",
       order:"scheduled_for.asc",limit:"5"
     }});
