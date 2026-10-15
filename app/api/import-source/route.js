@@ -1,42 +1,65 @@
-import{createClient}from"@supabase/supabase-js";
+import {createClient} from "@supabase/supabase-js";
+import {randomUUID} from "node:crypto";
+
 export const runtime="nodejs";
 export const maxDuration=50;
-const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
-const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function fail(message,status,errorId=randomUUID()) {
+  return Response.json({error:message,errorId},{status,headers:{"Cache-Control":"no-store"}});
+}
 async function callWorker(worker,ticket,payload){
-  let lastError=null;
+  let lastStatus=0;
   for(let attempt=0;attempt<4;attempt++){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);
     try{
-      const response=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","x-import-ticket":ticket||""},body:JSON.stringify(payload),signal:controller.signal,cache:"no-store"});
-      const result=await response.json().catch(()=>({}));
-      if(response.ok)return{response,result};
-      if(response.status===401||response.status===403||response.status===404)return{response,result};
-      lastError=new Error(result.error||`Media worker returned HTTP ${response.status}`);
-    }catch(error){lastError=error}finally{clearTimeout(timer)}
-    if(attempt<3)await sleep(750);
+      const response=await fetch(worker.replace(/\\/$/,"")+"/process",{
+        method:"POST",
+        headers:{"content-type":"application/json","x-import-ticket":ticket},
+        body:JSON.stringify(payload),signal:controller.signal,cache:"no-store"
+      });
+      if(response.ok)return {ok:true};
+      lastStatus=response.status;
+      if([401,403,404].includes(response.status))return {ok:false,status:response.status};
+    }catch(error){lastStatus=error?.name==="AbortError"?504:502}
+    finally{clearTimeout(timer)}
+    if(attempt<3)await sleep(750*(attempt+1));
   }
-  throw lastError||new Error("Media worker did not respond.");
+  return {ok:false,status:lastStatus||502};
 }
 export async function POST(request){
+  const errorId=randomUUID();
   try{
     const ticket=request.headers.get("x-import-ticket")||"";
-    const body=await request.json();const{url,sourceType,workspaceId,projectId,sourceId,jobId,mediaAssetId}=body||{};
-    if(!ticket)return Response.json({error:"Processing ticket is required."},{status:401});
-    if(!workspaceId||!projectId||!jobId)return Response.json({error:"Missing processing job context."},{status:400});
-    if(!supabaseUrl||!serviceKey)return Response.json({error:"Supabase server credentials are not configured."},{status:503});
+    const body=await request.json();
+    const {url,sourceType,workspaceId,projectId,sourceId,jobId,mediaAssetId,rightsConfirmed}=body||{};
+    if(!ticket)return fail("Processing authorization is required.",401,errorId);
+    if(!UUID.test(workspaceId||"")||!UUID.test(projectId||"")||!UUID.test(jobId||""))
+      return fail("A valid workspace, project and job are required.",400,errorId);
+    for(const [label,value] of [["source",sourceId],["video",mediaAssetId]])
+      if(value!=null&&value!==""&&!UUID.test(value))return fail("The "+label+" identifier is invalid.",400,errorId);
+    if(url&&!rightsConfirmed)return fail("Confirm that you own or have rights to this content before importing a URL.",403,errorId);
+    const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
+    if(!supabaseUrl||!serviceKey)return fail("The service is temporarily unavailable. Please try again later.",503,errorId);
     const verifier=createClient(supabaseUrl,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
-    const{data:rows,error:ticketError}=await verifier.rpc("validate_processing_ticket",{p_ticket:ticket});
+    const {data:rows,error:ticketError}=await verifier.rpc("validate_processing_ticket",{p_ticket:ticket});
     const valid=rows?.[0];
-    if(ticketError||!valid)return Response.json({error:"Invalid or expired processing ticket."},{status:401});
-    if(valid.workspace_id!==workspaceId||valid.project_id!==projectId||String(valid.job_id)!==String(jobId)||String(valid.source_id||"")!==String(sourceId||"")||String(valid.media_asset_id||"")!==String(mediaAssetId||""))return Response.json({error:"Processing ticket context mismatch."},{status:401});
+    if(ticketError||!valid)return fail("Processing authorization is invalid or expired.",401,errorId);
+    if(valid.workspace_id!==workspaceId||valid.project_id!==projectId||String(valid.job_id)!==String(jobId)||
+      String(valid.source_id||"")!==String(sourceId||"")||String(valid.media_asset_id||"")!==String(mediaAssetId||""))
+      return fail("Processing authorization does not match this job.",403,errorId);
     const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
-    const{response,result}=await callWorker(worker,ticket,{url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:valid.user_id});
-    if(!response.ok){const status=response.status===401||response.status===403?response.status:502;const fallback=response.status===429?"The media worker is restarting or temporarily throttled. Please retry in a moment.":result.error||"Media worker rejected the job.";return Response.json({error:fallback},{status});}
-    return Response.json({ok:true,jobId,worker:result});
+    const result=await callWorker(worker,ticket,{url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,
+      sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:valid.user_id,
+      rightsConfirmed:Boolean(rightsConfirmed)});
+    if(!result.ok){
+      const status=[401,403].includes(result.status)?result.status:502;
+      return fail(status===401||status===403?"The media worker rejected this processing request.":"Your job is saved, but the media worker has not acknowledged it yet. Please retry shortly.",status,errorId);
+    }
+    return Response.json({ok:true,jobId},{headers:{"Cache-Control":"no-store"}});
   }catch(error){
-    console.error("import-source",error);
-    return Response.json({error:error?.name==="AbortError"?"Media worker is waking up. Please retry the import.":error?.message||"Unable to start media ingestion."},{status:502});
+    console.error("import_source_failure",{errorId,category:error?.name==="AbortError"?"timeout":"internal"});
+    return fail("We couldn't start video processing. Please retry using the same project.",500,errorId);
   }
 }
