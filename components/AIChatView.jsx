@@ -181,7 +181,7 @@ export default function AIChatView({workspace,supabase,onNavigate}){
         </div><small className="chatComposerHint">{pending?"Processing continues in this saved conversation. You can open another chat.":"YouTube · Drive shared files · Dropbox · OneDrive · direct video URLs. Source access and storage limits apply."}</small>
       </div>
     </section>
-    <Modal open={quotaNotice.length>0} onOpenChange={open=>{if(!open)setQuotaNotice([])}} title="Later parts of your video need approval" description="Part 1 can process in the current window. These later parts are held for their scheduled day and expire if you do not approve them within 48 hours.">
+    <Modal open={quotaNotice.length>0} onOpenChange={open=>{if(!open)setQuotaNotice([])}} title="Later parts of your video need approval" description="The first eligible part is queued for its processing window. These later parts are held for their scheduled day and expire if you do not approve them within 48 hours.">
       <div className="space-y-3">
         {quotaNotice.map(part=><div key={part.id} className="panel p-3"><b>Part {part.part_number}</b><p className="text-sm text-muted mt-1">{Math.max(1,Math.round((Number(part.end_seconds)-Number(part.start_seconds))/60))} minutes · {new Date(part.scheduled_for).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}</p><p className="text-xs text-muted mt-1">{part.usage_date} · {part.timezone}</p></div>)}
         <div className="flex justify-end gap-2"><button className="btn small" onClick={()=>setQuotaNotice([])}>Not now</button><button className="btn small primary" onClick={()=>{setQuotaNotice([]);onNavigate?.("pending")}}>Review pending parts</button></div>
