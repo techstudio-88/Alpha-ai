@@ -111,7 +111,7 @@ export async function uploadGeminiFileWithRotation(filePath,mimeType="video/mp4"
       const file=await ai.files.upload({file:filePath,config:{mimeType}});
       state={...state,successes:state.successes+1,cooldownUntil:0,lastStatus:"upload_ok",lastUsedAt:Date.now()};
       geminiKeyHealth.set(item.label,state);await emitKeyHealth(onHealth,item.label,state);
-      return file;
+      return {file,ai};
     }catch(error){
       last=error;
       const limited=rateLimited(error),temporary=retryableProviderError(error);
