@@ -345,3 +345,49 @@ end
 $$;
 revoke all on function public.claim_processing_job(text) from public,anon,authenticated;
 grant execute on function public.claim_processing_job(text) to service_role;
+
+
+-- Server-owned entitlement records. The absence of a row means Free, never elevated access.
+create table if not exists public.workspace_entitlements (
+  workspace_id uuid primary key references public.workspaces(id) on delete cascade,
+  plan text not null default 'free' check (plan in ('free','pro','studio')),
+  daily_video_minutes numeric(12,2) not null default 20 check (daily_video_minutes >= 0),
+  max_resolution integer not null default 720 check (max_resolution in (720,1080,2160,3840)),
+  watermark_text text not null default '[APP NAME]',
+  title_regenerations integer not null default 3 check (title_regenerations >= 0),
+  cover_rotations integer not null default 1 check (cover_rotations >= 0),
+  auto_publish boolean not null default false,
+  scheduling_enabled boolean not null default false,
+  brand_kit_limit integer not null default 1 check (brand_kit_limit >= 1),
+  priority_queue boolean not null default false,
+  fair_use_unlimited boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+alter table public.workspace_entitlements enable row level security;
+drop policy if exists workspace_entitlements_member_read on public.workspace_entitlements;
+create policy workspace_entitlements_member_read on public.workspace_entitlements
+  for select to authenticated using (exists (
+    select 1 from public.workspace_members m
+    where m.workspace_id=workspace_entitlements.workspace_id and m.user_id=(select auth.uid())
+  ));
+revoke insert, update, delete on public.workspace_entitlements from anon, authenticated;
+grant select on public.workspace_entitlements to authenticated;
+grant select, insert, update, delete on public.workspace_entitlements to service_role;
+insert into public.workspace_entitlements(workspace_id)
+  select w.id from public.workspaces w
+  on conflict(workspace_id) do nothing;
+
+create or replace function public.seed_workspace_entitlements()
+returns trigger language plpgsql security definer set search_path=''
+as $$
+begin
+  insert into public.workspace_entitlements(workspace_id) values(new.id)
+    on conflict(workspace_id) do nothing;
+  return new;
+end
+$$;
+revoke all on function public.seed_workspace_entitlements() from public,anon,authenticated;
+drop trigger if exists seed_workspace_entitlements_after_workspace_insert on public.workspaces;
+create trigger seed_workspace_entitlements_after_workspace_insert
+  after insert on public.workspaces
+  for each row execute function public.seed_workspace_entitlements();
