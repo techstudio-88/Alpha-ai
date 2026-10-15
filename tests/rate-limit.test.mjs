@@ -57,7 +57,7 @@ test("rate limiting can use a standard Redis URL without Upstash REST",async()=>
     socket.on("data",chunk=>{
       input+=chunk.toString("utf8");
       if(input.includes("EVAL")){
-        socket.write("*2\\r\\n:4\\r\\n:29\\r\\n");
+        socket.write("*2\r\n:4\r\n:29\r\n");
         input="";
       }
     });
