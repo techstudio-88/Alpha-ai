@@ -156,7 +156,7 @@ begin
   end loop;
 
   if v_deferred then
-    v_next_retry:=((v_schedule_date::text||' 09:00:00')::timestamp at time zone v_timezone);
+    v_next_retry:=(((v_local_date+1)::text||' 09:00:00')::timestamp at time zone v_timezone);
     v_plan:=jsonb_build_object('split',true,'deferCurrent',true,'partNumber',1,
       'partStartSeconds',v_next_start,'partEndSeconds',v_next_end,'sourceDurationSeconds',p_duration_seconds,
       'timezone',v_timezone,'usageDate',v_local_date+1,'scheduledFor',v_next_retry,
@@ -246,8 +246,8 @@ begin
   ) on conflict(workspace_id,idempotency_key) do nothing returning * into v_job;
   if v_job.id is null then
     select * into v_job from public.processing_jobs j where j.workspace_id=v_part.workspace_id and j.idempotency_key=v_key;
+    update public.video_usage_daily set minutes_reserved=greatest(0,minutes_reserved-v_minutes),updated_at=now() where id=v_usage.id;
     if v_job.video_minutes_reserved<=0 then
-      update public.video_usage_daily set minutes_reserved=greatest(0,minutes_reserved-v_minutes),updated_at=now() where id=v_usage.id;
       return jsonb_build_object('queued',false,'reason','job_exists_without_quota');
     end if;
   end if;
