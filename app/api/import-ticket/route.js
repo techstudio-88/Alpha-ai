@@ -1,5 +1,6 @@
 import {createClient} from "@supabase/supabase-js";
 import {randomUUID} from "node:crypto";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../lib/rate-limit";
 export const runtime="nodejs";
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function fail(error,status,errorId){return Response.json({error,errorId},{status,headers:{"Cache-Control":"no-store"}})}
@@ -22,6 +23,9 @@ export async function POST(request){
     if(mediaAssetId!=null&&mediaAssetId!==""&&!UUID.test(mediaAssetId))return fail("The video identifier is invalid.",400,errorId);
     const {data:isMember,error:memberError}=await client.rpc("is_workspace_member",{wid:workspaceId});
     if(memberError||!isMember)return fail("Workspace access denied.",403,errorId);
+    const plan=await resolveWorkspacePlan(client,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"upload_start",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const {data:ticketRows,error:ticketError}=await client.rpc("issue_processing_ticket",{
       p_workspace_id:workspaceId,p_project_id:projectId,p_source_id:sourceId||null,p_job_id:jobId,p_media_asset_id:mediaAssetId||null
     });
