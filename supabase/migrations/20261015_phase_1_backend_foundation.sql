@@ -14,6 +14,16 @@ alter table public.processing_jobs
   add column if not exists reserved_credits integer not null default 0,
   add column if not exists video_minutes_reserved numeric(12,2) not null default 0;
 
+alter table public.publish_jobs
+  add column if not exists error_id text,
+  add column if not exists failure_type text,
+  add column if not exists next_retry_at timestamptz,
+  add column if not exists max_attempts integer not null default 5;
+
+create index if not exists publish_jobs_retry_due_idx
+  on public.publish_jobs(status,next_retry_at,scheduled_for)
+  where status in ('queued','processing');
+
 alter table public.processing_jobs
   drop constraint if exists processing_jobs_max_attempts_check,
   add constraint processing_jobs_max_attempts_check check (max_attempts between 1 and 20) not valid,
