@@ -311,8 +311,9 @@ function dedupeClipCandidates(candidates){
 async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!hasGeminiKeys()||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:firstGeminiKey()});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch{const errorId=randomUUID();console.warn("repurpose_generation_failed",{errorId,category:"ai"})}}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
   if(!hasGeminiKeys()||!instruction?.trim())return null;
-  const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
-  let file=await cachedGeminiUpload(ai,filePath);
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  let file=uploaded.file;
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini edit analysis failed: "+String(file?.state||"unknown"));
   const lo=Math.max(0,Math.min(sourceDuration,Number(selectedStart)||0));
@@ -359,9 +360,10 @@ async function downloadRemote(url,out,type="direct_url",opts={}){
 async function detectSpeakersWithGemini(filePath,duration,projectId){
   if(!hasGeminiKeys())return;
   try{
-    const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
-    let file=await cachedGeminiUpload(ai,filePath);
-    for(let i=0;i<60&&file.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
+    const uploaded=await cachedGeminiUploadWithClient(filePath);
+    const ai=uploaded.ai;
+    let file=uploaded.file;
+    for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
     if(file.state!=="ACTIVE")throw new Error("Speaker analysis media is unavailable.");
     const prompt="Identify distinct speakers in this video and return ONLY JSON array objects with speaker_label,start_seconds,end_seconds,confidence. Use Speaker 1, Speaker 2 etc. Cover only intervals where a person is speaking. Do not invent speakers or timestamps. Duration is "+duration.toFixed(3)+" seconds.";
      const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),prompt]),{responseMimeType:"application/json"});
@@ -956,7 +958,7 @@ ${transcript}`;
 app.post("/assistant",async(req,res)=>{
   try{
     if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker."});
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
