@@ -972,7 +972,14 @@ app.post("/assistant",async(req,res)=>{
     const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
     const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt);
     return res.json({ok:true,text:String(result.text||"").trim()});
-  }catch{const errorId=randomUUID();console.error("worker_assistant_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
+  }catch(error){
+    const errorId=randomUUID();
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.warn("worker_assistant_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    if(unavailable)return res.status(503).set("Retry-After",String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))))
+      .json({error:"AI providers are temporarily unavailable. Please retry shortly.",errorId});
+    return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId});
+  }
 });
 app.post("/thumbnail/analyze",async(req,res)=>{
   const errorId=randomUUID();
@@ -1052,7 +1059,6 @@ async function processPublishJobs(){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   console.log("Supabase server-side key configured:",!!KEY);
   const restoreGeminiHealth=async()=>{try{const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until,last_status,success_count,failure_count,rate_limit_count,last_used_at"}});restoreGeminiKeyHealth(rows)}catch{console.warn("gemini_key_health_restore_unavailable")}};
-  void restoreGeminiHealth();
   setInterval(processPublishJobs,30000);
   setTimeout(processPublishJobs,10000);
   setTimeout(expirePendingParts,10000);
@@ -1061,5 +1067,5 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   setInterval(processApprovedPendingParts,15000);
   setTimeout(resumeQueuedJobs,5000);
   setInterval(resumeQueuedJobs,15000);
-  app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+  void restoreGeminiHealth().finally(()=>app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT)));
 }
