@@ -456,3 +456,64 @@ end
 $$;
 revoke all on function public.submit_ai_chat_job(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb) from public,anon,authenticated;
 grant execute on function public.submit_ai_chat_job(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb) to service_role;
+
+
+-- Admin-only manual adjustment RPC. The API must authenticate the actor against
+-- control_center_members before calling; the RPC also checks active membership.
+create or replace function public.admin_adjust_credits(
+  p_workspace_id uuid,
+  p_target_user_id uuid,
+  p_actor_user_id uuid,
+  p_amount integer,
+  p_reason text,
+  p_idempotency_key text
+) returns public.credit_ledger
+language plpgsql
+security definer
+set search_path=''
+as $$
+declare
+  v_actor_email text;
+  v_balance public.usage_credits;
+  v_entry public.credit_ledger;
+begin
+  if p_amount=0 or length(trim(coalesce(p_reason,''))) not between 1 and 500
+    or length(trim(coalesce(p_idempotency_key,'')))<8 then
+    raise exception using errcode='22023',message='Invalid credit adjustment';
+  end if;
+  select lower(email) into v_actor_email from auth.users where id=p_actor_user_id;
+  if v_actor_email is null or not exists(
+    select 1 from public.control_center_members a where lower(a.email)=v_actor_email and a.active=true
+  ) then raise exception using errcode='42501',message='Admin access denied'; end if;
+  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
+  if found then
+    if v_entry.user_id<>p_target_user_id or v_entry.workspace_id<>p_workspace_id
+      or v_entry.amount<>p_amount or v_entry.transaction_type<>'adjustment' then
+      raise exception using errcode='23505',message='Credit idempotency key conflict';
+    end if;
+    return v_entry;
+  end if;
+  if not exists(select 1 from public.workspace_members m where m.workspace_id=p_workspace_id and m.user_id=p_target_user_id)
+    then raise exception using errcode='42501',message='Target workspace access denied'; end if;
+  select * into v_balance from public.usage_credits
+    where workspace_id=p_workspace_id and user_id=p_target_user_id for update;
+  if not found then
+    if p_amount<0 then raise exception using errcode='P0001',message='INSUFFICIENT_CREDITS'; end if;
+    insert into public.usage_credits(workspace_id,user_id,credits,updated_at)
+      values(p_workspace_id,p_target_user_id,p_amount,now());
+  else
+    if v_balance.credits+p_amount<0 then
+      raise exception using errcode='P0001',message='INSUFFICIENT_CREDITS';
+    end if;
+    update public.usage_credits set credits=credits+p_amount,updated_at=now()
+      where id=v_balance.id;
+  end if;
+  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key,metadata)
+    values(p_workspace_id,p_target_user_id,null,p_amount,'adjustment',trim(p_reason),p_idempotency_key,
+      jsonb_build_object('actorUserId',p_actor_user_id))
+    returning * into v_entry;
+  return v_entry;
+end
+$$;
+revoke all on function public.admin_adjust_credits(uuid,uuid,uuid,integer,text,text) from public,anon,authenticated;
+grant execute on function public.admin_adjust_credits(uuid,uuid,uuid,integer,text,text) to service_role;
