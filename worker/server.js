@@ -174,7 +174,7 @@ async function analyzeTranscriptWithGemini(segments,sourceDuration){
         const end=Math.max(start,Math.min(windowEnd,sourceDuration,Number(x.end_seconds)||start));
         if(end-start>=Math.min(2,sourceDuration))all.push({...x,start_seconds:start,end_seconds:end});
       }
-    }catch(error){console.warn("Gemini transcript window failed:",windowStart,error.message)}
+    }catch{console.warn("gemini_transcript_window_failed")}
   }
   return all.length?dedupeClipCandidates(all):[];
 }
@@ -363,8 +363,8 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
         const linked=clean.map(s=>{const mid=(s.start_ms+s.end_ms)/2;const hit=(ts||[]).find(t=>mid>=Number(t.start_ms)&&mid<=Number(t.end_ms));return {...s,transcript_segment_id:hit?.id||null}});
         if(linked.length)await db("speaker_segments",{method:"POST",body:linked});
       }
-    }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
-  }catch(e){console.warn("speaker detection fallback:",e.message)}
+    }catch{console.warn("speaker_transcript_mapping_failed")}
+  }catch{console.warn("speaker_detection_fallback")}
 }
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
@@ -651,7 +651,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(GEMINI_API_KEY){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
     try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("Gemini transcript clip candidates",p.jobId,candidates?.length||0)}
-    catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
+    catch{console.warn("gemini_clip_analysis_fallback")}
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
@@ -767,7 +767,7 @@ async function authorize(req){
         if(String(row.job_id)!==String(req.body?.jobId)||String(row.workspace_id)!==String(req.body?.workspaceId)||String(row.project_id)!==String(req.body?.projectId))return null;
         return {id:row.user_id,mode:"processing-ticket",jobId:row.job_id,workspaceId:row.workspace_id,projectId:row.project_id};
       }
-    }catch(e){console.warn("processing ticket validation failed:",e.message)}
+    }catch{console.warn("processing_ticket_validation_failed")}
   }
   const bearer=req.get("authorization")||"";
   if(!bearer.startsWith("Bearer ")||!PUBLIC_KEY)return null;
@@ -808,7 +808,7 @@ app.post("/process",async(req,res)=>{
     }
     res.status(202).json({accepted:true,queued:true,jobId:row.id});
     setImmediate(()=>resumeQueuedJobs());
-  }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+  }catch{const errorId=randomUUID();console.error("worker_authorize_process_failure",{errorId});res.status(500).json({error:"The worker could not authorize this request. Retry or contact support with the error ID.",errorId})}
 });
 app.post('/editor/plan',async(req,res)=>{
   try{
@@ -824,7 +824,7 @@ app.post('/editor/plan',async(req,res)=>{
         return JSON.parse(result.text);
       }});
     return res.json(plan);
-  }catch(error){if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.'});const failure=aiFailure(error);console.warn('editor plan failure',failure.code);return res.status(failure.status).json(failure)}
+  }catch(error){const errorId=randomUUID();if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.',errorId});const failure=aiFailure(error);console.warn('editor_plan_failure',{errorId,code:failure.code});return res.status(failure.status).json({error:failure.error,errorId})}
 });
 app.post("/assistant/plan",async(req,res)=>{
   try{
@@ -846,7 +846,7 @@ ${transcript}`;
     if(!match)throw new Error("Gemini returned no clip plan JSON.");
     let plan;try{plan=JSON.parse(match[0])}catch{throw new Error("Gemini returned invalid clip plan JSON.");}
     return res.json({ok:true,plan});
-  }catch(e){console.error("assistant/plan",e);return res.status(500).json({error:e.message||"Clip planning failed."})}
+  }catch{const errorId=randomUUID();console.error("worker_assistant_plan_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
 });
 app.post("/assistant",async(req,res)=>{
   try{
@@ -858,7 +858,7 @@ app.post("/assistant",async(req,res)=>{
     const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
     const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
     return res.json({ok:true,text:String(result.text||"").trim()});
-  }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
+  }catch{const errorId=randomUUID();console.error("worker_assistant_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
 });
 const activeJobs=new Set();
 let recoveryInFlight=false;
@@ -879,8 +879,8 @@ async function resumeQueuedJobs(){
     await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
     console.log("resuming queued/stale job",row.id,row.status,row.progress,"attempt",retryCount);
-    processJob({...normalized,retryCount}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
-  }catch(e){console.warn("queued-job recovery failed:",e.message)}
+    processJob({...normalized,retryCount}).catch(()=>console.error("queued_job_runner_failure",{jobId:row.id})).finally(()=>activeJobs.delete(row.id));
+  }catch{console.warn("queued_job_recovery_failed")}
   finally{recoveryInFlight=false}
 }
 async function processPublishJobs(){
