@@ -1,5 +1,6 @@
 import {authorizeWorkflow,checked,mediaContext,problem,wakeWorker,workflowError} from "../../../../../lib/workflow-server";
 import {UUID} from "../../../../../lib/video-workflow.mjs";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../../../lib/rate-limit";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
@@ -11,6 +12,9 @@ export async function POST(request) {
     if (!prompt || prompt.length > 6000 || !UUID.test(sessionId || "") || !UUID.test(requestId || ""))
       throw problem("A chat, request ID and instruction (up to 6,000 characters) are required.");
     const {admin,user,token} = await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"ai_call",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const {asset} = await mediaContext(admin,workspaceId,projectId,mediaAssetId);
     let source;
     if (sourceId) {
