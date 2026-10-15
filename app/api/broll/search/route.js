@@ -1,6 +1,6 @@
 import {createClient} from "@supabase/supabase-js";
 import {randomUUID} from "node:crypto";
-import {UUID} from "../../../lib/video-workflow.mjs";
+import {UUID} from "../../../../lib/video-workflow.mjs";
 import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../lib/rate-limit";
 
 export const runtime="nodejs";
