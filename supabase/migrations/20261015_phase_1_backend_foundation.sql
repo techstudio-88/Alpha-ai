@@ -445,6 +445,7 @@ begin
     returning * into v_job;
 
   perform public.reserve_job_credits(p_workspace,p_id,p_user,v_cost,'AI chat job accepted','job:'||p_id::text||':reserve');
+  select * into v_job from public.processing_jobs where id=p_id;
 
   update public.ai_chat_sessions set project_id=p_project,media_asset_id=p_asset,updated_at=now()
     where id=p_session;
