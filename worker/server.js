@@ -637,7 +637,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       }
     }
     let reframeKeyframes=null;
-    if(p.reframe!==false&&p.aspect!=="16:9"&&GEMINI_API_KEY){
+    if(p.reframe!==false&&p.aspect!=="16:9"&&hasGeminiKeys()){
       try{await patchJob(p.jobId,{progress:76,current_stage:"reframing",payload:{...p,aiEditStatus:"analyzing_reframe"}});const reframeInput=path.join(dir2,"reframe-input.mp4");await renderClip(input,reframeInput,start,end);reframeKeyframes=await analyzeReframeWithGemini(reframeInput,end-start);p={...p,reframeStatus:"ready",reframeKeyframes};await patchJob(p.jobId,{payload:p})}catch(error){p={...p,reframeStatus:"fallback",reframeError:error.message};await patchJob(p.jobId,{payload:p});console.warn("AI reframe unavailable; using centered crop:",error.message)}
     }
     if(p.captions!==false&&!srtPath&&!assPath)throw new Error("Captions were requested, but no timed transcript is available.");
@@ -680,7 +680,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const chunkSeconds=60;
   const chunkCount=Math.max(1,Math.ceil(duration/chunkSeconds));
   let nextChunk=Math.max(0,Number(p.transcribeChunk||0));
-  const browserTranscription=process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY;
+  const browserTranscription=process.env.TRANSCRIPTION_PROVIDER==="browser"||!hasGeminiKeys();
   let transcriptionChunks=Array.isArray(p.transcriptionChunks)?p.transcriptionChunks:[];
   if(browserTranscription&&nextChunk<chunkCount && transcriptionChunks.length<chunkCount){
     transcriptionChunks=[];
@@ -748,11 +748,18 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const topicWindows=[];
   for(let start=0;start<safeDuration;start+=300){const end=Math.min(safeDuration,start+300);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
-  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const rr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(GEMINI_MODEL)+":generateContent?key="+encodeURIComponent(GEMINI_API_KEY),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});const jj=await rr.json().catch(()=>({}));const raw=jj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"[]";const named=JSON.parse(raw);if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}
+  if(hasGeminiKeys()&&topicWindows.length){
+    try{
+      const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));
+      const result=await generateGeminiWithRetry(null,GEMINI_MODEL,prompt,{responseMimeType:"application/json"});
+      const named=JSON.parse(result.text||"[]");
+      if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}});
+    }catch{console.warn("topic_segmentation_fallback",{errorId:randomUUID(),category:"ai_failure"})}
+  }
   if(topicRows.length)await db("video_topics",{method:"POST",body:topicRows.map(t=>({workspace_id:p.workspaceId,project_id:t.project_id,video_id:null,title:t.name,summary:t.metadata?.source==="gemini"?"AI-segmented video topic":"Deterministic video topic",start_ms:Math.round(Number(t.metadata?.start_seconds||0)*1000),end_ms:Math.round(Number(t.metadata?.end_seconds||0)*1000),keywords:[],confidence:Number(t.score||50)/100}))}).catch(e=>console.warn("topic save failed:",e.message));
   await setStage(p,"topic_segmentation","completed",100);
   let candidates=null;
-  if(GEMINI_API_KEY){
+  if(hasGeminiKeys()){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
     try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("gemini_transcript_candidates",{count:candidates?.length||0})}
     catch{console.warn("gemini_clip_analysis_fallback")}
@@ -818,7 +825,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       caption_config:{style:captionStyle,color:"#ffffff",enabled:captions},
       broll_config:preferences.broll===true?[{status:"suggested"}]:[]
     }});
-    await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
+    await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:hasGeminiKeys()?"gemini":"deterministic"}});
   }
   await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(()=>{});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"completed",updated_at:new Date().toISOString()}}).catch(()=>{});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("processing_job_completed")
 }catch(e){
@@ -861,7 +868,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(!terminal&&p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing"}}).catch(()=>{});
   if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
+app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!hasGeminiKeys()?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
