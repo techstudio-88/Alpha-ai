@@ -522,7 +522,29 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const partDuration=Math.max(0,Math.min(Number(partProbe.format?.duration||0),Number(partStream?.duration||partProbe.format?.duration||0)));
     if(!partStream||!Number.isFinite(partDuration)||partDuration<0.25)throw new Error("The scheduled video part could not be prepared.");
     duration=partDuration;
-    p={...p,partOffsetSeconds:partStart,partDurationSeconds:partDuration};
+    const originalAsset=asset;
+    const partStoragePath=p.workspaceId+"/"+p.projectId+"/parts/"+p.jobId+".mp4";
+    const partSize=await upload(segmentPath,partStoragePath,"video/mp4");
+    let partAsset=(await db("media_assets",{params:{storage_path:"eq."+partStoragePath,project_id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"*",limit:"1"}}))[0]||null;
+    if(!partAsset){
+      const created=await db("media_assets",{method:"POST",body:{
+        workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,
+        name:String(originalAsset?.name||"Imported video").replace(/\.[^.]+$/,"")+" - Part "+String(p.partNumber||1),
+        storage_path:partStoragePath,mime_type:"video/mp4",size_bytes:partSize,duration_seconds:partDuration,status:"uploaded",
+        metadata:{derived_from_asset_id:originalAsset?.id||p.originalMediaAssetId||null,processing_job_id:p.jobId,
+          part_number:Number(p.partNumber)||1,source_start_seconds:partStart,source_end_seconds:partEnd}
+      }});
+      partAsset=created?.[0]||null;
+    }
+    if(!partAsset?.id)throw new Error("The processed video part could not be saved.");
+    const existingPartVideo=(await db("videos",{params:{media_asset_id:"eq."+partAsset.id,select:"id",limit:"1"}}))[0];
+    if(!existingPartVideo)await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:partAsset.id,
+      title:partAsset.name,duration_seconds:partDuration,width:Number(partStream.width||0),height:Number(partStream.height||0),
+      fps:Number((partStream.r_frame_rate||"0/1").split("/")[0])/(Number((partStream.r_frame_rate||"0/1").split("/")[1])||1),
+      status:"ready",metadata:{derived_from_asset_id:originalAsset?.id||p.originalMediaAssetId||null,part_number:Number(p.partNumber)||1}}});
+    p={...p,originalMediaAssetId:originalAsset?.id||p.originalMediaAssetId||null,mediaAssetId:partAsset.id,
+      partOffsetSeconds:partStart,partDurationSeconds:partDuration};
+    asset=partAsset;
     await patchJob(p.jobId,{payload:p});
   }else{
     await patchJob(p.jobId,{payload:p});
