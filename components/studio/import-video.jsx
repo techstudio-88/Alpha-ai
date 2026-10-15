@@ -16,7 +16,8 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
     let project;
     try{
       if(demo){notify('This is a sample workspace. Sign in to import your own footage.');return}
-      const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);\n      if(!isFile&&!rightsConfirmed)throw new Error('Confirm that you own or have permission to use this content before importing a link.');
+      const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);
+      if(!isFile&&!rightsConfirmed)throw new Error('Confirm that you own or have permission to use this content before importing a link.');
       if(isFile&&input.size>512*1024*1024)throw new Error('Choose a video under 512 MB. Larger-source support needs a higher worker and storage budget.');
       if(isFile&&!input.type.startsWith('video/')&&!/\.(mp4|mov|webm|mkv)$/i.test(input.name))throw new Error('Choose an MP4, MOV, WebM, or MKV video.');
       const name=isFile?input.name.replace(/\.[^.]+$/,''):parsed.sourceType==='youtube'?'YouTube recording':'Imported recording';
