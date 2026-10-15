@@ -1,5 +1,6 @@
 import {authorizeWorkflow,checked,problem,workflowError} from "../../../lib/workflow-server";
 import {UUID} from "../../../lib/video-workflow.mjs";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../lib/rate-limit";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 
@@ -7,6 +8,9 @@ export async function GET(request){
   try{
     const workspaceId=new URL(request.url).searchParams.get("workspace_id");
     const {admin,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"api",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const rows=checked(await admin.from("pending_processing_parts")
       .select("id,workspace_id,project_id,user_id,media_asset_id,parent_job_id,part_number,start_seconds,end_seconds,usage_date,timezone,scheduled_for,status,job_id,expires_at,decided_at,created_at,updated_at")
       .eq("workspace_id",workspaceId).eq("user_id",user.id)
@@ -27,6 +31,9 @@ export async function POST(request){
     if(!UUID.test(partId||""))throw problem("A valid pending-part ID is required.");
     if(!["approve","decline","reschedule"].includes(action))throw problem("Choose approve, decline or reschedule.");
     const {admin,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"api",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const part=checked(await admin.from("pending_processing_parts").select("id,status,expires_at,scheduled_for")
       .eq("id",partId).eq("workspace_id",workspaceId).eq("user_id",user.id).maybeSingle());
     if(!part)throw problem("Pending part not found.",404);
