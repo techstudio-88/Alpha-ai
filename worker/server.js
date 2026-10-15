@@ -901,6 +901,21 @@ async function resumeQueuedJobs(){
   }catch{console.warn("queued_job_recovery_failed")}
   finally{recoveryInFlight=false}
 }
+async function expirePendingParts(){
+  if(!KEY)return;
+  try{
+    const now=new Date().toISOString();
+    const due=await db("pending_processing_parts",{params:{status:"eq.pending",expires_at:"lte."+now,
+      select:"id,workspace_id,user_id,part_number",order:"expires_at.asc",limit:"50"}});
+    for(const part of due||[]){
+      const updated=await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+part.id,status:"eq.pending",expires_at:"lte."+now},
+        body:{status:"expired",updated_at:now}});
+      if(updated?.length)await notifyOnce(part.workspace_id,part.user_id,"Pending video part expired",
+        "Part "+part.part_number+" expired because it was not approved within 48 hours.",
+        "pending_part_expired","pending-part:"+part.id+":expired");
+    }
+  }catch{console.warn("pending_part_expiry_scan_failed")}
+}
 async function processPublishJobs(){
   if(!KEY)return;
   try{await runPublishQueue({db,supabaseUrl:SUPA,headers:baseAuth,secret:SECRET})}
@@ -910,6 +925,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   console.log("Supabase server-side key configured:",!!KEY);
   setInterval(processPublishJobs,30000);
   setTimeout(processPublishJobs,10000);
+  setTimeout(expirePendingParts,10000);
+  setInterval(expirePendingParts,60000);
   setTimeout(resumeQueuedJobs,5000);
   setInterval(resumeQueuedJobs,15000);
   app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
