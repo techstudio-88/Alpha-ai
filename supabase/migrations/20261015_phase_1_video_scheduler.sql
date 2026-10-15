@@ -257,3 +257,40 @@ end
 $$;
 revoke all on function public.claim_due_pending_part(uuid) from public,anon,authenticated;
 grant execute on function public.claim_due_pending_part(uuid) to service_role;
+
+-- Move a reservation to completed usage on success, or release it on terminal failure/cancellation.
+create or replace function public.finish_video_usage_for_job(p_job_id uuid,p_succeeded boolean default false)
+returns jsonb
+language plpgsql
+security definer
+set search_path=''
+as $$
+declare
+  v_job public.processing_jobs;
+  v_usage public.video_usage_daily;
+  v_minutes numeric;
+begin
+  select * into v_job from public.processing_jobs j where j.id=p_job_id for update;
+  if not found then return jsonb_build_object('updated',false,'reason','job_not_found'); end if;
+  v_minutes:=greatest(0,coalesce(v_job.video_minutes_reserved,0));
+  if v_minutes<=0 or v_job.video_usage_date is null then
+    return jsonb_build_object('updated',false,'reason','no_reservation');
+  end if;
+  select * into v_usage from public.video_usage_daily u
+    where u.workspace_id=v_job.workspace_id and u.user_id=coalesce(nullif(v_job.payload->>'requestedBy','')::uuid, null)
+      and u.usage_date=v_job.video_usage_date for update;
+  if not found then
+    update public.processing_jobs set video_minutes_reserved=0 where id=p_job_id;
+    return jsonb_build_object('updated',false,'reason','usage_row_missing');
+  end if;
+  update public.video_usage_daily set
+    minutes_reserved=greatest(0,minutes_reserved-v_minutes),
+    minutes_completed=minutes_completed+case when p_succeeded then v_minutes else 0 end,
+    updated_at=now()
+    where id=v_usage.id;
+  update public.processing_jobs set video_minutes_reserved=0 where id=p_job_id;
+  return jsonb_build_object('updated',true,'minutes',v_minutes,'completed',p_succeeded);
+end
+$$;
+revoke all on function public.finish_video_usage_for_job(uuid,boolean) from public,anon,authenticated;
+grant execute on function public.finish_video_usage_for_job(uuid,boolean) to service_role;
