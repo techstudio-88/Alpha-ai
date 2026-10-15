@@ -31,16 +31,13 @@ function retryableProviderError(error) {
   return /429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar|timeout|ECONNRESET/i.test(String(error?.status||"")+" "+String(error?.message||""));
 }
 export async function generateGeminiWithRetry(ai,model,contents,config={},attempts=3){
-  let last;
-  for(let attempt=0;attempt<attempts;attempt++){
-    try{return await ai.models.generateContent({model,contents,config})}
-    catch(error){
-      last=error;
-      if(!retryableProviderError(error)||attempt===attempts-1)throw error;
-      await sleep(700*(attempt+1));
-    }
-  }
-  throw last;
+  // Route every shared Gemini generation call through the same multi-key failover
+  // pool. The passed client remains useful for file uploads; generation itself uses
+  // server environment keys only and never logs or returns their values.
+  return generateGeminiWithRotation({
+    primaryKey:process.env.GEMINI_API_KEY||"",
+    model,contents,config,attemptsPerKey:Math.max(1,attempts)
+  });
 }
 async function emitKeyHealth(onHealth,label,state){
   if(!onHealth)return;
