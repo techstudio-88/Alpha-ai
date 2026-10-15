@@ -12,22 +12,23 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const geminiKeyHealth = new Map();
 const cooldownMs = 60_000;
 function configuredGeminiKeys(primaryKey) {
-  const values = [
-    process.env.GEMINI_API_KEY_1,
-    primaryKey,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEY_4,
-    process.env.GEMINI_API_KEY_5,
-    ...(process.env.GEMINI_API_KEYS || "").split(",")
-  ].map(value => String(value || "").trim()).filter(Boolean);
-  return [...new Set(values)];
+  const candidates=[
+    {label:"GEMINI_API_KEY_1",value:process.env.GEMINI_API_KEY_1},
+    {label:"GEMINI_API_KEY",value:primaryKey||process.env.GEMINI_API_KEY},
+    {label:"GEMINI_API_KEY_2",value:process.env.GEMINI_API_KEY_2},
+    {label:"GEMINI_API_KEY_3",value:process.env.GEMINI_API_KEY_3},
+    {label:"GEMINI_API_KEY_4",value:process.env.GEMINI_API_KEY_4},
+    {label:"GEMINI_API_KEY_5",value:process.env.GEMINI_API_KEY_5},
+    ...(process.env.GEMINI_API_KEYS||"").split(",").map((value,index)=>({label:"GEMINI_API_KEYS_"+(index+1),value}))
+  ].map(item=>({...item,value:String(item.value||"").trim()})).filter(item=>item.value);
+  const seen=new Set();
+  return candidates.filter(item=>{if(seen.has(item.value))return false;seen.add(item.value);return true;});
 }
 function rateLimited(error) {
-  return /429|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(String(error?.status || "") + " " + String(error?.message || ""));
+  return /429|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(String(error?.status||"")+" "+String(error?.message||""));
 }
 function retryableProviderError(error) {
-  return /429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar|timeout|ECONNRESET/i.test(String(error?.status || "") + " " + String(error?.message || ""));
+  return /429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar|timeout|ECONNRESET/i.test(String(error?.status||"")+" "+String(error?.message||""));
 }
 export async function generateGeminiWithRetry(ai,model,contents,config={},attempts=3){
   let last;
@@ -41,36 +42,44 @@ export async function generateGeminiWithRetry(ai,model,contents,config={},attemp
   }
   throw last;
 }
-// Each key is tried independently. Health is kept in memory; durable health records
-// may be written by the worker using key labels only, never secret material.
-export async function generateGeminiWithRotation({primaryKey,model,contents,config={},attemptsPerKey=2}) {
+async function emitKeyHealth(onHealth,label,state){
+  if(!onHealth)return;
+  try{await onHealth({keyLabel:label,isAvailable:(state.cooldownUntil||0)<=Date.now(),
+    cooldownUntil:state.cooldownUntil?new Date(state.cooldownUntil).toISOString():null,
+    lastStatus:state.lastStatus,successCount:state.successes,failureCount:state.failures,
+    rateLimitCount:state.rateLimits,lastUsedAt:state.lastUsedAt?new Date(state.lastUsedAt).toISOString():null});}catch{}
+}
+// Key values never leave this module and are never included in health records or logs.
+export async function generateGeminiWithRotation({primaryKey,model,contents,config={},attemptsPerKey=2,onHealth}) {
   const keys=configuredGeminiKeys(primaryKey);
   if(!keys.length) throw new Error("Gemini is not configured on the media worker.");
   const now=Date.now();
-  const candidates=keys.filter(key=>(geminiKeyHealth.get(key)?.cooldownUntil||0)<=now);
+  const candidates=keys.filter(item=>(geminiKeyHealth.get(item.label)?.cooldownUntil||0)<=now);
   if(!candidates.length) {
     const failure=new Error("AI processing is temporarily unavailable. The job should remain queued for automatic retry.");
     failure.retryableProviderUnavailable=true;
     failure.providerStatus="cooldown";
-    failure.retryAfterMs=Math.max(1000,Math.min(...keys.map(k=>geminiKeyHealth.get(k)?.cooldownUntil||now+1000))-now);
+    failure.retryAfterMs=Math.max(1000,Math.min(...keys.map(item=>geminiKeyHealth.get(item.label)?.cooldownUntil||now+1000))-now);
     throw failure;
   }
   let last;
-  for(const key of candidates) {
-    const state=geminiKeyHealth.get(key)||{successes:0,failures:0,rateLimits:0,cooldownUntil:0};
+  for(const item of candidates) {
+    let state=geminiKeyHealth.get(item.label)||{successes:0,failures:0,rateLimits:0,cooldownUntil:0};
     for(let attempt=0;attempt<attemptsPerKey;attempt++) {
       try {
-        const ai=new GoogleGenAI({apiKey:key,httpOptions:{timeout:120000}});
+        const ai=new GoogleGenAI({apiKey:item.value,httpOptions:{timeout:120000}});
         const result=await ai.models.generateContent({model,contents,config});
-        geminiKeyHealth.set(key,{...state,successes:state.successes+1,cooldownUntil:0,lastStatus:"ok",lastUsedAt:Date.now()});
+        state={...state,successes:state.successes+1,cooldownUntil:0,lastStatus:"ok",lastUsedAt:Date.now()};
+        geminiKeyHealth.set(item.label,state);await emitKeyHealth(onHealth,item.label,state);
         return result;
       } catch(error) {
         last=error;
         const limited=rateLimited(error);
         const temporary=retryableProviderError(error);
-        geminiKeyHealth.set(key,{...state,failures:state.failures+1,rateLimits:state.rateLimits+(limited?1:0),
+        state={...state,failures:state.failures+1,rateLimits:state.rateLimits+(limited?1:0),
           cooldownUntil:limited?Date.now()+cooldownMs:temporary?Date.now()+10_000:Date.now()+cooldownMs,
-          lastStatus:limited?"429":temporary?"temporary_failure":"provider_failure",lastUsedAt:Date.now()});
+          lastStatus:limited?"429":temporary?"temporary_failure":"provider_failure",lastUsedAt:Date.now()};
+        geminiKeyHealth.set(item.label,state);await emitKeyHealth(onHealth,item.label,state);
         if(!temporary||attempt===attemptsPerKey-1)break;
         await sleep(700*(attempt+1));
       }
@@ -136,7 +145,15 @@ export async function generateChatPlan(p,{db,patchJob,key,model}) {
   if(clip&&p.selection)clip={...clip,...p.selection};
   const plan=await planTranscript({words,duration:Number(asset.duration_seconds),prompt:p.prompt,history,clip,
     generate:async(contents,responseSchema)=>{
-      const result=await generateGeminiWithRotation({primaryKey:key,model,contents,config:{responseMimeType:"application/json",responseJsonSchema:responseSchema}});
+      const result=await generateGeminiWithRotation({primaryKey:key,model,contents,config:{responseMimeType:"application/json",responseJsonSchema:responseSchema},
+        onHealth:async health=>{
+          const fields={key_label:health.keyLabel,is_available:health.isAvailable,cooldown_until:health.cooldownUntil,
+            last_status:health.lastStatus,success_count:health.successCount,failure_count:health.failureCount,
+            rate_limit_count:health.rateLimitCount,last_used_at:health.lastUsedAt,updated_at:new Date().toISOString()};
+          const existing=await db("gemini_key_health",{params:{key_label:"eq."+health.keyLabel,select:"key_label"}});
+          if(existing.length)await db("gemini_key_health",{method:"PATCH",params:{key_label:"eq."+health.keyLabel},body:fields});
+          else await db("gemini_key_health",{method:"POST",body:fields});
+        }});
       try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
     },
     onProgress:async(index,total)=>patchJob(p.jobId,{progress:65+Math.round(index/total*25),current_stage:"gemini_planning",payload:{...p,transcriptId:transcript.id,analysisWindow:index+1,analysisWindows:total}})
