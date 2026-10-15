@@ -64,7 +64,11 @@ export async function DELETE(request){
  try{
   const body=await request.json().catch(()=>null);
   if(!UUID.test(body?.id||""))return fail("A valid API-key ID is required.",400,errorId);
-  const {admin}=clients();
+  const {auth,admin}=clients();
+  const header=request.headers.get("authorization")||"";
+  if(!header.startsWith("Bearer "))return fail("Authentication required.",401,errorId);
+  const {data:{user},error:authError}=await auth.auth.getUser(header.slice(7));
+  if(authError||!user)return fail("Your session is invalid or expired. Sign in again.",401,errorId);
   const {data:key,error:keyError}=await admin.from("api_keys").select("id,workspace_id").eq("id",body.id).maybeSingle();
   if(keyError)return fail("Unable to load the API key.",500,errorId);
   if(!key)return fail("API key not found.",404,errorId);
