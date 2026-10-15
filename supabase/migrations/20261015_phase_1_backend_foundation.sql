@@ -391,3 +391,65 @@ drop trigger if exists seed_workspace_entitlements_after_workspace_insert on pub
 create trigger seed_workspace_entitlements_after_workspace_insert
   after insert on public.workspaces
   for each row execute function public.seed_workspace_entitlements();
+
+
+-- Keep AI chat submission and credit reservation in the same database transaction.
+-- A failed balance check rolls back the job and user message, so no uncharged work is queued.
+create or replace function public.submit_ai_chat_job(
+  p_id uuid, p_session uuid, p_workspace uuid, p_user uuid, p_project uuid,
+  p_asset uuid, p_prompt text, p_payload jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path=''
+as $$
+declare
+  v_session public.ai_chat_sessions;
+  v_job public.processing_jobs;
+  v_cost integer := greatest(1,least(100,coalesce(nullif(p_payload->>'creditCost','')::integer,1)));
+begin
+  if not exists(select 1 from public.workspace_members where workspace_id=p_workspace and user_id=p_user)
+    or not exists(select 1 from public.projects where id=p_project and workspace_id=p_workspace)
+    or (p_asset is not null and not exists(select 1 from public.media_assets where id=p_asset and project_id=p_project and workspace_id=p_workspace))
+  then raise exception using errcode='42501',message='Video workspace context mismatch'; end if;
+
+  insert into public.ai_chat_sessions(id,workspace_id,user_id,title,project_id,media_asset_id)
+    values(p_session,p_workspace,p_user,left(p_prompt,80),p_project,p_asset) on conflict(id) do nothing;
+  select * into v_session from public.ai_chat_sessions where id=p_session for update;
+  if v_session.workspace_id<>p_workspace or v_session.user_id<>p_user then
+    raise exception using errcode='42501',message='Chat access denied';
+  end if;
+
+  select * into v_job from public.processing_jobs where id=p_id for update;
+  if found then
+    if v_job.workspace_id<>p_workspace or v_job.payload->>'sessionId'<>p_session::text then
+      raise exception using errcode='23505',message='Request conflict';
+    end if;
+    if v_job.status in ('queued','processing') then
+      perform public.reserve_job_credits(p_workspace,p_id,p_user,v_cost,'AI chat job accepted','job:'||p_id::text||':reserve');
+    end if;
+    return to_jsonb(v_job);
+  end if;
+
+  if exists(select 1 from public.processing_jobs where workspace_id=p_workspace
+    and payload->>'sessionId'=p_session::text
+    and status in ('queued','processing','awaiting_transcription','transcribing'))
+  then raise exception using errcode='23505',message='This chat already has an active job. Wait for it to finish.'; end if;
+
+  insert into public.ai_chat_messages(id,session_id,workspace_id,user_id,role,content,metadata)
+    values(p_id,p_session,p_workspace,p_user,'user',p_prompt,
+      jsonb_build_object('jobId',p_id,'clipId',p_payload->>'clipId','mediaAssetId',p_asset));
+  insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,progress,payload)
+    values(p_id,p_workspace,p_project,'process_media','queued',0,
+      p_payload||jsonb_build_object('creditCost',v_cost,'idempotencyKey','job:'||p_id::text))
+    returning * into v_job;
+
+  perform public.reserve_job_credits(p_workspace,p_id,p_user,v_cost,'AI chat job accepted','job:'||p_id::text||':reserve');
+
+  update public.ai_chat_sessions set project_id=p_project,media_asset_id=p_asset,updated_at=now()
+    where id=p_session;
+  return to_jsonb(v_job);
+end
+$$;
+revoke all on function public.submit_ai_chat_job(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.submit_ai_chat_job(uuid,uuid,uuid,uuid,uuid,uuid,text,jsonb) to service_role;
