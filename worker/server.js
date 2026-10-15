@@ -941,9 +941,10 @@ app.post('/editor/plan',async(req,res)=>{
   }catch(error){const errorId=randomUUID();if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.',errorId});const failure=aiFailure(error);console.warn('editor_plan_failure',{errorId,code:failure.code});return res.status(failure.status).json({error:failure.error,errorId})}
 });
 app.post("/assistant/plan",async(req,res)=>{
+  const errorId=randomUUID();
   try{
-    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
-    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized",errorId});
+    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker.",errorId});
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const transcript=String(req.body?.transcript||"").slice(0,60000);
@@ -960,7 +961,13 @@ ${transcript}`;
     if(!match)throw new Error("Gemini returned no clip plan JSON.");
     let plan;try{plan=JSON.parse(match[0])}catch{throw new Error("Gemini returned invalid clip plan JSON.");}
     return res.json({ok:true,plan});
-  }catch{const errorId=randomUUID();console.error("worker_assistant_plan_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
+  }catch(error){
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.warn("worker_assistant_plan_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    if(unavailable)return res.status(503).set("Retry-After",String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))))
+      .json({error:"AI providers are temporarily unavailable. Please retry shortly.",errorId});
+    return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId});
+  }
 });
 app.post("/assistant",async(req,res)=>{
   try{
