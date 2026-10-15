@@ -18,7 +18,10 @@ alter table public.publish_jobs
   add column if not exists error_id text,
   add column if not exists failure_type text,
   add column if not exists next_retry_at timestamptz,
-  add column if not exists max_attempts integer not null default 5;
+  add column if not exists max_attempts integer not null default 5,
+  add column if not exists idempotency_key text;
+create unique index if not exists publish_jobs_idempotency_uidx
+  on public.publish_jobs(idempotency_key) where idempotency_key is not null;
 
 create index if not exists publish_jobs_retry_due_idx
   on public.publish_jobs(status,next_retry_at,scheduled_for)
