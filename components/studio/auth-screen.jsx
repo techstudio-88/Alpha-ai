@@ -14,11 +14,18 @@ export default function AuthScreen({mode='signin'}){
     fetch('/api/auth/options',{signal:controller.signal}).then(r=>r.json()).then(setOptions).catch(()=>{});
     return()=>controller.abort();
   },[]);
+  async function checkAuthRateLimit(identity=''){
+    const response=await fetch('/api/auth/rate-limit',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({email:identity}),cache:'no-store'});
+    const body=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error((body.error||'Sign-in protection is temporarily unavailable.')+(body.errorId?' Error ID: '+body.errorId:''));
+  }
   async function submit(e){
     e.preventDefault();setMessage('');setError('');setBusy(true);
     try{
       if(!supabase)throw new Error('Sign-in is not configured in this environment. You can explore the sample studio below.');
       if(options?.emailEnabled===false)throw new Error('Email accounts are disabled in Alpha’s Supabase settings. Use Google or GitHub until the owner enables Email under Authentication → Providers.');
+      await checkAuthRateLimit(email);
       const response=reset?await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/auth/update-password'}):signup?await supabase.auth.signUp({email,password,options:{data:{full_name:name},emailRedirectTo:window.location.origin+'/auth/callback?next=/studio'}}):await supabase.auth.signInWithPassword({email,password});
       if(response.error)throw response.error;
       if(reset)setMessage('Check your inbox for a password-reset link.');
@@ -32,6 +39,7 @@ export default function AuthScreen({mode='signin'}){
       if(!supabase)throw new Error('Sign-in is not configured in this environment.');
       const enabled=provider==='google'?options?.googleEnabled:options?.githubEnabled;
       if(enabled===false)throw new Error(`${provider==='google'?'Google':'GitHub'} sign-in is not enabled for Alpha.ai yet. Please use the other sign-in option or ask the workspace owner to enable it.`);
+      await checkAuthRateLimit('');
       const {error}=await supabase.auth.signInWithOAuth({provider,options:{redirectTo:window.location.origin+'/auth/callback?next=/studio'} });
       if(error)throw error;
     }catch(err){setError(err.message);setBusy(false)}
