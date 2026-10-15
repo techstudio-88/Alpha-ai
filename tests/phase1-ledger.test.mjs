@@ -123,10 +123,10 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     const featureBlocked=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-4') as result",[workspace,user])).rows[0].result;
     assert.equal(featureBlocked.allowed,false);assert.equal(Number(featureBlocked.limit),3);
     await db.query("select public.finish_workspace_feature_usage($1,false)",[feature2.usageId]);
-    const featureRetry=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-5') as result",[workspace,user])).rows[0].result;
-    assert.equal(featureRetry.allowed,true);
     const sameFeatureRetry=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-2') as result",[workspace,user])).rows[0].result;
     assert.equal(sameFeatureRetry.allowed,true);assert.equal(sameFeatureRetry.duplicate,false);assert.equal(sameFeatureRetry.usageId,feature2.usageId);
+    const featureRetry=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-5') as result",[workspace,user])).rows[0].result;
+    assert.equal(featureRetry.allowed,false);
     const cover1=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-1') as result",[workspace,user])).rows[0].result;
     const cover2=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-2') as result",[workspace,user])).rows[0].result;
     assert.equal(cover1.allowed,true);assert.equal(cover2.allowed,false);
