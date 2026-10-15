@@ -61,11 +61,11 @@ export async function POST(request){
       });
       if(reserveError)return failure("Usage limits could not be checked. Please retry.",503,errorId);
       if(!reservation?.allowed)return failure(tool==="title"?"Your plan's daily title-generation limit has been reached. Upgrade your plan to continue.":"Your plan's daily cover-rotation limit has been reached. Upgrade your plan to continue.",429,errorId);
-      usageId=reservation.usageId||null;
-      if(reservation.duplicate&&usageId){
-        const {data:existing}=await admin.from("workspace_feature_usage").select("status").eq("id",usageId).maybeSingle();
-        if(existing?.status==="completed")return failure("This request was already completed. Use a new request ID to generate another result.",409,errorId);
+      if(reservation.duplicate){
+        const state=String(reservation.status||"reserved");
+        return failure(state==="completed"?"This request was already completed. Use a new request ID to generate another result.":"This request is already being processed. Wait for it to finish before retrying.",409,errorId);
       }
+      usageId=reservation.usageId||null;
     }
     const worker=(process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com").replace(/\/$/,"");
     const secret=process.env.MEDIA_WORKER_SECRET||"";
