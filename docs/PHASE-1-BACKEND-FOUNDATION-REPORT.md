@@ -44,8 +44,10 @@ Live migration history contains these Phase 1 versions:
 - `20261015110548` — `20261015_phase_1_rls_update_checks`
 - `20261015110930` — `20261015_phase_1_priority_queue`
 - `20261015111118` — `20261015_phase_1_brand_kit_limits`
+- `20261015110930` — `20261015_phase_1_priority_queue`
+- `20261015111118` — `20261015_phase_1_brand_kit_limits`
 
-The feature-limit idempotency fix was applied to production and now reactivates a refunded reservation only if the daily cap still permits it. The RLS update-policy fix was applied and live-verified: all five affected policies now include `WITH CHECK`.
+The feature-limit idempotency fix was applied to production and now reactivates a refunded reservation only if the daily cap still permits it. The RLS update-policy fix was applied and live-verified: all five affected policies now include `WITH CHECK`. The Studio-priority queue RPC and database-enforced brand-kit cap were also applied and are present in production migration history.
 
 Migration files in the branch:
 
@@ -69,7 +71,7 @@ Configure one option on **Vercel `alpha-ai`**:
 - Upstash: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or
 - Standard Redis/TLS: `REDIS_URL` (a `redis://` or `rediss://` connection URL).
 
-The Render Key Value service `alpha-ai-rate-limit-redis` exists, but its connection URL/credentials are not exposed by the connected Render management API. Do not invent a URL or copy credentials into source control.
+The Render Key Value service `alpha-ai-rate-limit-redis` exists and reports `available` in Singapore, but its connection URL/credentials are not exposed by the connected Render management API. The Vercel runtime has no configured Redis endpoint/token, so rate-limited routes fail closed until the connection is added. Do not invent a URL or copy credentials into source control.
 
 ### Worker environment
 
