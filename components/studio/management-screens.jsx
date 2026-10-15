@@ -1,12 +1,50 @@
 "use client";
 
 import {useEffect,useState} from 'react';
-import {CalendarDays,Check,ChevronLeft,ChevronRight,Copy,Download,KeyRound,Link2,Plus,RefreshCw,TrendingUp,Upload,Users,Youtube} from 'lucide-react';
+import {CalendarDays,CalendarClock,Check,ChevronLeft,ChevronRight,Clock,Copy,Download,KeyRound,Link2,Plus,RefreshCw,TrendingUp,Upload,Users,X,Youtube} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import {studioApi,unwrap,useResource,useRows,useStudio} from './data';
 import {Button,ButtonLink,Calendar,EmptyState,ErrorState,Input,Modal,ScreenSkeleton,Select,Tabs} from './ui';
 import {Heading,Status} from './project-screens';
 import {PricingCards} from './marketing';
+
+export function PendingScreen(){
+  const {workspace,demo,notify,refresh}=useStudio();
+  const resource=useResource(async()=>{
+    if(demo)return {items:[]};
+    return studioApi('/api/pending-parts?workspace_id='+encodeURIComponent(workspace.id));
+  },[workspace?.id,demo]);
+  const [schedules,setSchedules]=useState({}),[busyId,setBusyId]=useState(''),[error,setError]=useState('');
+  const items=resource.data?.items||[];
+  const localValue=value=>{const date=new Date(value);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16)};
+  async function act(item,action){
+    setBusyId(item.id);setError('');
+    try{
+      const body={workspaceId:workspace.id,partId:item.id,action};
+      if(action==='reschedule'){
+        const value=schedules[item.id]||localValue(item.scheduledFor);
+        if(!value||new Date(value)<=new Date())throw new Error('Choose a future scheduled time.');
+        body.scheduledFor=new Date(value).toISOString();
+      }
+      if(demo)throw new Error('Sign in to manage real pending jobs.');
+      await studioApi('/api/pending-parts',{body});
+      await resource.retry();refresh();
+      notify(action==='approve'?'Part approved for scheduling.':action==='decline'?'Pending part declined.':'Pending part rescheduled.');
+    }catch(e){setError(e.message||'The pending part could not be updated.')}
+    finally{setBusyId('')}
+  }
+  if(resource.loading)return <ScreenSkeleton/>;
+  if(resource.error)return <ErrorState message={resource.error} onRetry={resource.retry}/>;
+  return <><Heading title="Pending processing" description="Review later parts of long videos. Approved parts wait for their scheduled processing time."/>
+    {error&&<div className="mb-5"><ErrorState message={error} onRetry={()=>setError('')}/></div>}
+    {items.length===0?<EmptyState icon={CalendarClock} title="Nothing pending" description="Parts that need a later processing window will appear here with their date, status, and approval controls."/>:
+      <div className="grid gap-4">{items.map(item=><article key={item.id} className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold">Part {item.partNumber}</h2><p className="text-xs text-muted mt-1">{Math.round((item.endSeconds-item.startSeconds)/60)} minutes · {item.usageDate} ({item.timezone})</p></div><Status value={item.status}/></div>
+        <div className="grid gap-3 mt-4 sm:grid-cols-2"><div><p className="text-xs text-muted">Scheduled for</p><p className="text-sm mt-1">{new Date(item.scheduledFor).toLocaleString()}</p></div><div><p className="text-xs text-muted">Approval expires</p><p className="text-sm mt-1">{new Date(item.expiresAt).toLocaleString()}</p></div></div>
+        {(item.status==='pending'||item.status==='approved')&&<div className="mt-4 flex flex-wrap items-end gap-2"><label className="field min-w-[220px] flex-1">Reschedule time<input className="input" type="datetime-local" value={schedules[item.id]??localValue(item.scheduledFor)} onChange={e=>setSchedules(v=>({...v,[item.id]:e.target.value}))}/></label><Button size="sm" busy={busyId===item.id} disabled={Boolean(busyId)} onClick={()=>act(item,'reschedule')}><CalendarClock size={14}/>Reschedule</Button>{item.status==='pending'&&<><Button size="sm" variant="primary" busy={busyId===item.id} disabled={Boolean(busyId)} onClick={()=>act(item,'approve')}><Check size={14}/>Approve</Button><Button size="sm" variant="secondary" disabled={Boolean(busyId)} onClick={()=>act(item,'decline')}><X size={14}/>Decline</Button></>}</div>}
+      </article>)}</div>}
+  </>;
+}
 
 export function PublishScreen(){
   const {workspace,demo,clipId,notify,navigate,refresh,state}=useStudio();
