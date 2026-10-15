@@ -940,7 +940,7 @@ app.post("/assistant/plan",async(req,res)=>{
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const transcript=String(req.body?.transcript||"").slice(0,60000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
     const instruction=`You are Alpha.ai's professional short-form video editor. Return ONLY valid JSON.
 Schema: {"summary":"string","clips":[{"a":0,"b":0,"title":"string","score":0,"reason":"string","aspect":"9:16","captionStyle":"pop","captionColor":"#00f2fe","hook":"string","zooms":[],"cuts":[],"transitions":"cut","broll":[],"overlays":[]}]}
 The transcript is an indexed list where each token is "index:word". Choose 3-6 clips, normally 20-60 seconds, starting with a hook and ending on a complete thought. a/b MUST be transcript word indexes. score is 0-100. Use aspect 9:16, 1:1 or 16:9; captionStyle pop/bold/minimal/none; transitions cut/fade/flash. cuts are [[fromWordIndex,toWordIndex]]. zooms are word indexes. broll is [{"at":wordIndex,"idea":"string"}]. overlays is [{"text":"string","at":wordIndex,"dur":2}].
@@ -962,7 +962,7 @@ app.post("/assistant",async(req,res)=>{
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
     const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt);
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch{const errorId=randomUUID();console.error("worker_assistant_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
