@@ -952,6 +952,25 @@ app.post("/assistant",async(req,res)=>{
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch{const errorId=randomUUID();console.error("worker_assistant_failure",{errorId});return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId})}
 });
+app.post("/thumbnail/analyze",async(req,res)=>{
+  const errorId=randomUUID();
+  try{
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized",errorId});
+    const imageBase64=String(req.body?.imageBase64||"");
+    const mimeType=String(req.body?.mimeType||"");
+    if(!["image/jpeg","image/png","image/webp","image/gif"].includes(mimeType)||!imageBase64||imageBase64.length>1400000)
+      return res.status(400).json({error:"Provide a supported image under 1 MB.",errorId});
+    const prompt="Analyze this creator thumbnail. Return JSON with overall_score,mobile_readability,clarity,curiosity,contrast,emotion,text_readability,topic_clarity,benchmark_percentile and an analysis object containing strengths,weaknesses,improvements. Scores are heuristic, not a verified market percentile.";
+    const result=await generateGeminiWithRetry(null,GEMINI_MODEL,[{role:"user",parts:[{text:prompt},{inlineData:{mimeType,data:imageBase64}}]}],{responseMimeType:"application/json"});
+    const analysis=JSON.parse(String(result.text||"{}"));
+    return res.json({ok:true,analysis});
+  }catch(error){
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.error("thumbnail_analysis_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    return res.status(unavailable?503:500).set("Retry-After",unavailable?String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))):"5")
+      .json({error:unavailable?"AI providers are temporarily unavailable. Your request was not charged; retry later.":"Thumbnail analysis failed. Contact support with the error ID.",errorId});
+  }
+});
 const activeJobs=new Set();
 let recoveryInFlight=false;
 async function resumeQueuedJobs(){
