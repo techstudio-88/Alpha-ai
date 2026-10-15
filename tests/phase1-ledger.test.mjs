@@ -45,6 +45,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.exec(migration);
     const videoMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_video_scheduler.sql",import.meta.url),"utf8");
     await db.exec(videoMigration);
+    const featureMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_feature_limits.sql",import.meta.url),"utf8");
+    await db.exec(featureMigration);
     const user=randomUUID(),workspace=randomUUID(),project=randomUUID(),asset=randomUUID();
     await db.query("insert into auth.users(id) values($1)",[user]);
     await db.query("insert into public.workspaces(id) values($1)",[workspace]);
@@ -110,6 +112,21 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     const duplicateClaim=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
     assert.equal(duplicateClaim.queued,false);
     assert.equal((await db.query("select count(*)::int as n from public.processing_jobs where idempotency_key=$1",["pending-part:"+pending[0].id])).rows[0].n,1);
+    const feature1=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-1') as result",[workspace,user])).rows[0].result;
+    const feature2=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-2') as result",[workspace,user])).rows[0].result;
+    const feature3=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-3') as result",[workspace,user])).rows[0].result;
+    assert.equal(feature1.allowed,true);assert.equal(feature2.allowed,true);assert.equal(feature3.allowed,true);
+    const featureBlocked=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-4') as result",[workspace,user])).rows[0].result;
+    assert.equal(featureBlocked.allowed,false);assert.equal(Number(featureBlocked.limit),3);
+    await db.query("select public.finish_workspace_feature_usage($1,false)",[feature2.usageId]);
+    const featureRetry=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-5') as result",[workspace,user])).rows[0].result;
+    assert.equal(featureRetry.allowed,true);
+    const cover1=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-1') as result",[workspace,user])).rows[0].result;
+    const cover2=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-2') as result",[workspace,user])).rows[0].result;
+    assert.equal(cover1.allowed,true);assert.equal(cover2.allowed,false);
+    const duplicateFeature=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-1') as result",[workspace,user])).rows[0].result;
+    assert.equal(duplicateFeature.duplicate,true);
+
     assert.equal((await db.query("select reserved_credits from public.processing_jobs where id=$1",[job])).rows[0].reserved_credits,0);
 
     await db.query("update public.usage_credits set credits=0 where workspace_id=$1 and user_id=$2",[workspace,user]);
