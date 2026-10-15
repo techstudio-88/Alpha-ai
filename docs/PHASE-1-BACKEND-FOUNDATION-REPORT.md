@@ -44,8 +44,9 @@ Status terms below are conservative. A code change is not called complete until 
 ### Required for this branch's protected rate-limited routes
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
+- `REDIS_URL` (alternative: standard `redis://` or `rediss://` connection URL; configure either this or both Upstash variables)
 
-Both are still absent from Vercel production. A free Redis-compatible Render Key Value instance was provisioned, but the current rate-limit implementation requires Upstash REST URL/token; that Redis instance is not wired to the app. Protected routes therefore still fail closed with a friendly 503 until a compatible REST endpoint and credentials are configured.
+Both Upstash variables are still absent from Vercel production. The rate limiter now supports either Upstash REST or a standard `REDIS_URL` (Redis/Redis TLS). A free Redis-compatible Render Key Value instance was provisioned, but its connection URL/credentials are not available from the management API and the browser session is signed out. Protected routes therefore still fail closed with a friendly 503 until `REDIS_URL` or the two Upstash variables are configured.
 
 ### Gemini key rotation (worker environment only)
 - Existing: `GEMINI_API_KEY`
@@ -90,4 +91,4 @@ The user approved the initial 1-credit-per-AI-chat-job policy, the provisional P
 - Production migrations `20261015_phase_1_backend_foundation`, `20261015_phase_1_video_scheduler`, and `20261015_phase_1_video_scheduler_fix` applied successfully; live migration history records versions `20261015062057`, `20261015063111`, and `20261015063508`.
 - Live catalog check confirmed all ordinary tables in `public` have RLS enabled; new Phase 1 tables and RPCs are present.
 - Vercel production environment names were inspected without reading secret values; `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, and `MEDIA_WORKER_URL` are absent.
-- A free Render Key Value instance `alpha-ai-rate-limit-redis` was provisioned in Singapore, but is not connected. The dashboard connection details could not be retrieved because the browser session is signed out. The app still expects Upstash REST, so rate-limited endpoints continue to return a safe 503 until a compatible Redis endpoint is configured. The intended Oracle worker endpoint also remains unavailable; earlier project context confirms no Oracle public HTTPS endpoint has yet been provisioned or shared.
+- A free Render Key Value instance `alpha-ai-rate-limit-redis` was provisioned in Singapore, but is not connected. The dashboard connection details could not be retrieved because the browser session is signed out. The app supports Upstash REST or a standard Redis/Redis TLS connection. The Render dashboard session is signed out, so the connection URL/password could not be retrieved or installed into Vercel. Rate-limited endpoints continue to return a safe 503 until `REDIS_URL` or both Upstash variables are configured. The intended Oracle worker endpoint also remains unavailable; earlier project context confirms no Oracle public HTTPS endpoint has yet been provisioned or shared.
