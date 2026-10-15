@@ -1,8 +1,10 @@
 import {authorizeWorkflow,checked,problem,wakeWorker,workflowError} from '../../../../lib/workflow-server';
+import {UUID} from '../../../../lib/video-workflow.mjs';
 export const runtime='nodejs';
 export async function POST(request){
   try{
     const {workspaceId,jobId,action}=await request.json();
+    if(!UUID.test(jobId||''))throw problem('A valid job is required.');
     const {admin,token}=await authorizeWorkflow(request,workspaceId);
     if(!['cancel','retry'].includes(action))throw problem('Choose cancel or retry.');
     const job=checked(await admin.from('processing_jobs').select('id,project_id,status,payload').eq('id',jobId).eq('workspace_id',workspaceId).maybeSingle());
