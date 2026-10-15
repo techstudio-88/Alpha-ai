@@ -546,7 +546,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(renderedVersion?.storage_path){
       await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:renderedVersion.storage_path,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180)}});
       await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:renderedVersion.version}});
-      console.log("editor render reused existing job version",p.jobId,clip.id,renderedVersion.version);
+      console.log("editor_render_reused_existing_version");
       return;
     }
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
@@ -560,7 +560,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await setStage(p,"export","completed",100);
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:storagePath,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180),ai_spec:{...(clip.ai_spec||{}),...editData},caption_config:{style:p.captionStyle||"pop",color:p.captionColor||"#ffffff"},reframe_config:{aspect:p.aspect||"9:16"}}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
-    console.log("editor render completed",p.jobId,clip.id);
+    console.log("editor_render_completed");
     return;
   }
   await patchJob(p.jobId,{progress:35});
@@ -603,7 +603,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       current_stage:"transcription",
       payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}
     });
-    console.log("browser transcription queued",p.jobId,"chunks",chunkCount,"next",nextChunk);
+    console.log("browser_transcription_queued",{chunks:chunkCount,nextChunk});
     return;
   }
   if(!browserTranscription){
@@ -650,7 +650,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   let candidates=null;
   if(GEMINI_API_KEY){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
-    try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("Gemini transcript clip candidates",p.jobId,candidates?.length||0)}
+    try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("gemini_transcript_candidates",{count:candidates?.length||0})}
     catch{console.warn("gemini_clip_analysis_fallback")}
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
@@ -744,7 +744,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     dead_lettered_at:terminal&&retryCount>=5?new Date().toISOString():null,
     payload:{...checkpoint,retryCount,lastFailureType:failureType}
   }).catch(()=>{});
-  console.error("job_failure",{errorId,jobId:p.jobId,failureType,terminal,providerPaused});
+  console.error("job_failure",{errorId,failureType,terminal,providerPaused});
   if(terminal&&p.requestedBy&&p.workspaceId){
     await db("rpc/refund_failed_job_credits",{method:"POST",body:{
       p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,
@@ -878,8 +878,8 @@ async function resumeQueuedJobs(){
     if(retryCount>5){const previous=(await db('processing_jobs',{params:{id:'eq.'+row.id,select:'error'}}))[0];await patchJob(row.id,{status:"failed",error:"Automatic recovery stopped after 5 attempts. Last failure: "+(previous?.error||payload.lastFailure||'worker interrupted before saving an error'),lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
     await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
-    console.log("resuming queued/stale job",row.id,row.status,row.progress,"attempt",retryCount);
-    processJob({...normalized,retryCount}).catch(()=>console.error("queued_job_runner_failure",{jobId:row.id})).finally(()=>activeJobs.delete(row.id));
+    console.log("resuming_queued_job",{status:row.status,progress:row.progress,attempt:retryCount});
+    processJob({...normalized,retryCount}).catch(()=>console.error("queued_job_runner_failure")).finally(()=>activeJobs.delete(row.id));
   }catch{console.warn("queued_job_recovery_failed")}
   finally{recoveryInFlight=false}
 }
