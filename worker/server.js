@@ -371,11 +371,20 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
     }catch{console.warn("speaker_transcript_mapping_failed")}
   }catch{console.warn("speaker_detection_fallback")}
 }
+async function notifyOnce(workspaceId,userId,title,message,eventType,dedupeKey){
+  if(!workspaceId||!userId||!dedupeKey)return;
+  try{
+    const existing=await db("notifications",{params:{dedupe_key:"eq."+dedupeKey,select:"id",limit:"1"}});
+    if(existing?.length)return;
+    await db("notifications",{method:"POST",body:{workspace_id:workspaceId,user_id:userId,title,message,event_type:eventType,dedupe_key:dedupeKey}});
+  }catch{}
+}
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
   if(!project)throw new Error("Processing project does not belong to this workspace.");
   if(!p.requestedBy)p.requestedBy=project.owner_id;
+  await notifyOnce(p.workspaceId,p.requestedBy,"Video processing started","Your accepted video job has started processing.","job_started","job:"+p.jobId+":started");
   const entitlementRows=await db("workspace_entitlements",{params:{workspace_id:"eq."+p.workspaceId,select:"plan,max_resolution,watermark_text,daily_video_minutes,auto_publish,scheduling_enabled,brand_kit_limit,priority_queue,fair_use_unlimited,title_regenerations,cover_rotations",limit:"1"}});
   p={...p,entitlements:entitlementRows?.[0]||{plan:"free",max_resolution:720,watermark_text:"[APP NAME]",daily_video_minutes:20,auto_publish:false,scheduling_enabled:false,brand_kit_limit:1,priority_queue:false,fair_use_unlimited:false,title_regenerations:3,cover_rotations:1}};
   if(p.url&&!p.rightsConfirmed)throw new Error("URL rights confirmation is required before import.");
@@ -383,7 +392,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
   if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
   if(p.sessionId&&!(await db("ai_chat_sessions",{params:{id:"eq."+p.sessionId,workspace_id:"eq."+p.workspaceId,user_id:"eq."+p.requestedBy,select:"id"}})).length)throw new Error("Processing chat context mismatch.");
-  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); return; }
+  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); await notifyOnce(p.workspaceId,p.requestedBy,"AI job complete","Your AI editing plan is ready.","job_completed","job:"+p.jobId+":completed"); return; }
   if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
     await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
@@ -723,7 +732,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
@@ -752,6 +761,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     payload:{...checkpoint,retryCount,lastFailureType:failureType}
   }).catch(()=>{});
   console.error("job_failure",{errorId,failureType,terminal,providerPaused});
+  if(terminal)await notifyOnce(p.workspaceId,p.requestedBy,"Video processing failed","Your job could not be completed. Contact support with error ID "+errorId+".","job_failed","job:"+p.jobId+":failed");
   if(terminal&&p.requestedBy&&p.workspaceId){
     await db("rpc/refund_failed_job_credits",{method:"POST",body:{
       p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,
