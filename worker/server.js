@@ -18,6 +18,9 @@ import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
+const firstGeminiKey=()=>process.env.GEMINI_API_KEY||process.env.GEMINI_API_KEY_1||process.env.GEMINI_API_KEY_2||process.env.GEMINI_API_KEY_3||process.env.GEMINI_API_KEY_4||process.env.GEMINI_API_KEY_5||String(process.env.GEMINI_API_KEYS||"").split(",").map(value=>value.trim()).find(Boolean)||"";
+const hasGeminiKeys=()=>Boolean(firstGeminiKey());
+
 const jobDirs=new Map();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
 async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const prefer=table==="gemini_key_health"&&method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation";const r=await fetch(u,{method,headers:{...headers,Prefer:prefer},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
@@ -38,13 +41,18 @@ function cmd(command,args){return new Promise((resolve,reject)=>{
   p.on("close",code=>code?finish(reject,new Error(err.slice(-7000)||command+" failed with exit code "+code)):finish(resolve,out));
 })}
 const geminiUploads=new Map();
-async function cachedGeminiUpload(ai,filePath,mimeType="video/mp4"){
+async function cachedGeminiUploadWithClient(filePath,mimeType="video/mp4"){
   if(!geminiUploads.has(filePath)){
-    const entry={ai,promise:null};
+    const entry={ai:null,promise:null};
     entry.promise=uploadGeminiFileWithRotation(filePath,mimeType).then(uploaded=>{entry.ai=uploaded.ai;return uploaded.file});
     geminiUploads.set(filePath,entry);
   }
-  return geminiUploads.get(filePath).promise;
+  const entry=geminiUploads.get(filePath);
+  const file=await entry.promise;
+  return {file,ai:entry.ai};
+}
+async function cachedGeminiUpload(ai,filePath,mimeType="video/mp4"){
+  return (await cachedGeminiUploadWithClient(filePath,mimeType)).file;
 }
 async function cleanupGeminiFiles(dir){
   for(const [filePath,entry] of geminiUploads){if(filePath.startsWith(dir+path.sep)){
@@ -107,9 +115,10 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   if(!actual||Math.abs(actual-keptDuration/speed)>.75)throw new Error("Rendered edit duration does not match the requested range, cuts, and speed.");
 }
 async function analyzeVideoWithGemini(filePath,sourceDuration){
-  if(!GEMINI_API_KEY)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-  let file=await cachedGeminiUpload(ai,filePath);
+  if(!hasGeminiKeys())return null;
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  let file=uploaded.file;
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini video analysis failed: "+String(file?.state||"unknown"));
   const maxClip=Math.min(45,sourceDuration);
@@ -132,9 +141,10 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
   ).slice(0,8);
 }
 async function analyzeReframeWithGemini(filePath,sourceDuration){
-  if(!GEMINI_API_KEY||sourceDuration<=0)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-  const file=await cachedGeminiUpload(ai,filePath);
+  if(!hasGeminiKeys()||sourceDuration<=0)return null;
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  const file=uploaded.file;
   let active=file;
   for(let i=0;i<60&&active?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));active=await ai.files.get({name:active.name})}
   if(active?.state!=="ACTIVE")throw new Error("Reframe video analysis failed.");
@@ -159,8 +169,8 @@ function reframeExpr(keyframes,axis){
   return "if(lt(t,"+first.time_seconds.toFixed(3)+"),"+value(first)+","+expr+")";
 }
 async function analyzeTranscriptWithGemini(segments,sourceDuration){
-  if(!GEMINI_API_KEY||!Array.isArray(segments)||!segments.length)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  if(!hasGeminiKeys()||!Array.isArray(segments)||!segments.length)return null;
+  const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
   const schema={type:"object",properties:{candidates:{type:"array",items:{type:"object",properties:{
     start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},
     hook_score:{type:"number"},emotional_intensity:{type:"number"},information_density:{type:"number"},
@@ -298,10 +308,10 @@ function dedupeClipCandidates(candidates){
   }
   return kept;
 }
-async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch{const errorId=randomUUID();console.warn("repurpose_generation_failed",{errorId,category:"ai"})}}
+async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!hasGeminiKeys()||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:firstGeminiKey()});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch{const errorId=randomUUID();console.warn("repurpose_generation_failed",{errorId,category:"ai"})}}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
-  if(!GEMINI_API_KEY||!instruction?.trim())return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  if(!hasGeminiKeys()||!instruction?.trim())return null;
+  const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
   let file=await cachedGeminiUpload(ai,filePath);
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini edit analysis failed: "+String(file?.state||"unknown"));
@@ -347,9 +357,9 @@ async function downloadRemote(url,out,type="direct_url",opts={}){
   if(lastError)throw lastError;
 }}
 async function detectSpeakersWithGemini(filePath,duration,projectId){
-  if(!GEMINI_API_KEY)return;
+  if(!hasGeminiKeys())return;
   try{
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
     let file=await cachedGeminiUpload(ai,filePath);
     for(let i=0;i<60&&file.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
     if(file.state!=="ACTIVE")throw new Error("Speaker analysis media is unavailable.");
@@ -696,7 +706,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     return;
   }
   if(!browserTranscription){
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
     for(let i=nextChunk;i<chunkCount;i++){
       const start=i*chunkSeconds,length=Math.min(chunkSeconds,duration-start),chunkAudio=path.join(dir,"server-chunk-"+i+".wav");
       await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
@@ -905,11 +915,11 @@ app.post("/process",async(req,res)=>{
 app.post('/editor/plan',async(req,res)=>{
   try{
     if(!SECRET||req.get('x-worker-secret')!==SECRET)return res.status(401).json({error:'Unauthorized'});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:'AI provider is not configured on the media worker.'});
+    if(!hasGeminiKeys())return res.status(503).json({error:'AI provider is not configured on the media worker.'});
     const {words,draft,duration}=req.body||{};
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt||prompt.length>3000||!Array.isArray(words)||!words.length||words.length>1800||!draft)return res.status(400).json({error:'Choose a word-timed clip and a valid editing request.'});
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY,httpOptions:{timeout:20000}});
+    const ai=new GoogleGenAI({apiKey:firstGeminiKey(),httpOptions:{timeout:20000}});
     const plan=await planTranscript({words,duration:Number(duration),prompt,history:[],clip:{...draft,start_seconds:draft.start,end_seconds:draft.end},
       onProgress:async()=>{},generate:async(contents,responseSchema)=>{
         const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,contents,{responseMimeType:'application/json',responseJsonSchema:responseSchema});
@@ -921,7 +931,7 @@ app.post('/editor/plan',async(req,res)=>{
 app.post("/assistant/plan",async(req,res)=>{
   try{
     if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker."});
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const transcript=String(req.body?.transcript||"").slice(0,60000);
