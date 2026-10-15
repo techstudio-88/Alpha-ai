@@ -3,7 +3,7 @@
 Branch: `phase-1/backend-foundation`  
 Pull request: [#3 — Phase 1 backend foundation](https://github.com/techstudio-88/Alpha-ai/pull/3)  
 Baseline: `main` at `214f4b278e1fb103e2ac8ce52a580dc1ad857c10`  
-Production migration status: **APPLIED AND VERIFIED** (`20261015062057`, `20261015_phase_1_backend_foundation`)
+Production migrations status: **APPLIED AND VERIFIED** (`20261015062057` foundation, `20261015063111` video scheduler, `20261015063508` scheduler fix).
 
 ## Audit findings before implementation
 
@@ -30,14 +30,14 @@ Status terms below are conservative. A code change is not called complete until 
 | UUID/database integrity | Partial | UUID validation added to import ticket/source and job status paths; workflow project/media context checks tightened. A complete audit of every API route and every cross-table ownership relationship remains. |
 | Durable jobs | Partial | Existing queue/leases retained; migration adds retry metadata, normalized failure fields, idempotency, output locations, and dead-letter recovery. Backoff and safe error IDs are added to worker failure handling. Migration applied; verify worker restart/recovery against the live worker. |
 | Upload/ingestion | Partial | File selection/drop now starts upload automatically; existing TUS chunking/retries remain. URL import requires rights confirmation and worker validation; known YouTube URL variants already have tests. Server-side speed/ETA display, cancellation controls, and comprehensive file/duration checks remain. |
-| Daily video-minute limits | Blocked | Schema for daily usage and pending parts exists, but the limit reservation, midnight-in-user-timezone accounting, and FFmpeg boundary-aware splitting are not wired end-to-end. Long videos must not be considered supported until this is done. |
-| Pending page/scheduler | Partial | Added a Pending page in Studio, authenticated list/approve/decline/reschedule API, 48-hour expiry worker, and idempotent job-start/job-finish/expiry notifications. Due-part scheduler and actual part render pipeline remain, so approved pending parts do not yet run end-to-end. |
+| Daily video-minute limits | Partial | Added atomic daily-minute reservation in the database, IST-default timezone handling, splitting plans with FFmpeg silence-boundary hints, deferred Part 1 when today's allowance is exhausted, and daily usage finalization/release. Unit tests cover a 50-minute Free-plan source (20/20/10 minutes) and idempotent reservation. End-to-end deployed-worker tests and the complete popup/approval workflow still need verification. |
+| Pending page/scheduler | Partial | Pending page and authenticated list/approve/decline/reschedule API remain. Added an atomic due-part claim RPC that reserves that day's quota, reschedules when quota is exhausted, prevents duplicate queue inserts, and feeds a worker scheduler. The worker now trims scheduled segments from the stored source and updates part status on completion/failure/cancellation; expiry remains 48 hours with deduplicated notifications. Live-worker behavior is not yet verified. |
 | Plans/entitlements | Partial | Server-owned workspace entitlements define Free/Pro/Studio defaults; FFmpeg export paths now cap resolution and burn the Free watermark, and publishing API/worker check auto-publish/scheduling entitlements. Daily-minute enforcement, regeneration/cover limits, brand-kit limits, and priority-queue enforcement remain. The user approved the provisional Pro allowance of 180 minutes/day, 30 title/description/tag regenerations and 10 cover rotations. No payment provider/purchase flow was added. No payment provider/purchase flow was added. |
 | Gemini rotation | Partial | Shared text generation and cached file uploads now use the multi-key failover helper; remaining direct text-generation calls were routed through it, per-key health is persisted by label, and saved cooldowns are restored at worker startup. Provider rotation tests passed in CI; live 429/restart behavior has not been verified against the deployed worker. |
 | Rate limiting | Partial | Upstash-backed per-user/per-IP helper wired into email/OAuth authentication attempts, import tickets, source fetch, AI chat, Drive import, publishing, admin diagnostics, and job-status polling. Other endpoints still need coverage. Protected paths return 503 if Redis configuration is absent or unavailable. |
 | Security | Partial | Server errors are sanitized in the updated workflow/ingestion paths; private credentials stay in environment variables and Gemini health stores labels only. Full per-endpoint authorization, signed-media URL review, encrypted OAuth token migration, and table-by-table anonymous-policy review remain. |
 | Admin diagnostics | Partial | Admin-only diagnostics API is connected to the existing hidden admin page's Diagnostics tab, with queue/job, key-health, publishing and credit-ledger views. Production schema application and live verification remain; upload/export/publish error correlation still needs a completeness audit. |
-| Automated tests | Partial | PostgreSQL-WASM ledger tests cover reserve/idempotency/refund/insufficient balance/atomic chat submission. New Gemini tests cover key rotation, health reporting and provider-unavailable retry signaling. Full CI passed on application commit `620ae6aa530bc29334480ca75ae8f4e46edd3467`, including the new Gemini rotation tests. The suite still does not cover every requested isolation, daily-splitting, plan-limit and rate-limit scenario. |
+| Automated tests | Partial | PostgreSQL-WASM tests now cover ledger reserve/idempotency/refund/insufficient balance, tenant integrity, daily quota reservation, 50-minute splitting, quota finalization, pending-part rescheduling, and idempotent queue claims. Gemini rotation/upload failover tests pass. Added rate-limit tests for hashed identifiers, plan caps, `Retry-After`, and fail-closed behavior. The newest run for those rate-limit tests is still pending at report time. Full end-to-end isolation, every plan limit, and deployed-worker failure/recovery tests remain. |
 
 ## Environment variables
 
@@ -71,8 +71,11 @@ No secret values were read into this report.
 ## Migration to review and run
 
 - `supabase/migrations/20261015_phase_1_backend_foundation.sql`
+- `supabase/migrations/20261015_phase_1_video_scheduler.sql`
 
-This migration was applied successfully through the Supabase migration workflow. The recorded database migration version is `20261015062057`. Live verification confirmed the new ledger, usage, pending-part, entitlement and Gemini-health tables exist with RLS enabled, and the reservation/refund/claim/chat/admin RPCs exist. Applying the schema does not mean the full workflow is production-ready; compatible app/worker deployment and runtime tests are still required.
+A follow-up migration named `20261015_phase_1_video_scheduler_fix` was applied to correct the scheduler's partial-index conflict target; the source migration file contains the corrected definition.
+
+These migrations were applied successfully through the Supabase migration workflow. The recorded versions are `20261015062057`, `20261015063111`, and `20261015063508`. Live verification confirmed the ledger, usage, pending-part, entitlement and Gemini-health tables exist with RLS enabled, and the reservation/refund/claim/chat/admin and video-quota RPCs exist. Applying the schema does not mean the full workflow is production-ready; compatible app/worker deployment and runtime tests are still required.
 
 ## Approvals and remaining external configuration
 
@@ -83,8 +86,8 @@ The user approved the initial 1-credit-per-AI-chat-job policy, the provisional P
 - Production project lookup: Vercel project accessible; latest deployment was reported `READY` at audit time.
 - Supabase project lookup: `gmgswfsajvkiqrpsnuvx` reported `ACTIVE_HEALTHY`.
 - Early CI attempts exposed escaped-regex/newline syntax issues and a publish-test fixture missing the new entitlement lookup. These were fixed in subsequent commits.
-- Full CI passed on commit `ceaabeef9614de586c07729b815b8dd53f7d3bfb`: lint, unit/database tests, typecheck, production build, and Playwright UI tests. [Verified CI run](https://github.com/techstudio-88/Alpha-ai/actions/runs/38666703528).
-- Production migration `20261015_phase_1_backend_foundation` applied successfully; live migration history records version `20261015062057`.
+- Full CI passed on commit `1cc25b3292911c096df2a71608fb5a2a0753aaec`: lint, unit/database tests including the new video scheduler migration tests, typecheck, production build, and Playwright UI tests. [Verified CI run](https://github.com/techstudio-88/Alpha-ai/actions/runs/38693346005).
+- Production migrations `20261015_phase_1_backend_foundation`, `20261015_phase_1_video_scheduler`, and `20261015_phase_1_video_scheduler_fix` applied successfully; live migration history records versions `20261015062057`, `20261015063111`, and `20261015063508`.
 - Live catalog check confirmed all ordinary tables in `public` have RLS enabled; new Phase 1 tables and RPCs are present.
 - Vercel production environment names were inspected without reading secret values; `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, and `MEDIA_WORKER_URL` are absent.
-- A free Render Key Value instance `alpha-ai-rate-limit-redis` was provisioned in Singapore. It is not yet connected because the current code expects Upstash's REST protocol, and Render Key Value does not provide that REST interface in the available management response.
+- A free Render Key Value instance `alpha-ai-rate-limit-redis` was provisioned in Singapore, but is not connected. The dashboard connection details could not be retrieved because the browser session is signed out. The app still expects Upstash REST, so rate-limited endpoints continue to return a safe 503 until a compatible Redis endpoint is configured. The intended Oracle worker endpoint also remains unavailable; earlier project context confirms no Oracle public HTTPS endpoint has yet been provisioned or shared.
