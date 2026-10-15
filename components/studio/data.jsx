@@ -9,7 +9,8 @@ export async function studioApi(path,{body,method,signal}={}){
   if(!supabase)throw new Error('Sign-in is not configured in this environment.');
   const {data}=await supabase.auth.getSession();
   if(!data.session?.access_token)throw new Error('Your session expired. Sign in to continue.');
-  const response=await fetch(path,{method:method||(body?'POST':'GET'),headers:{Authorization:`Bearer ${data.session.access_token}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store',signal:signal||AbortSignal.timeout(25000)});
+  const timezone=(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'Asia/Kolkata'}catch{return 'Asia/Kolkata'}})();
+  const response=await fetch(path,{method:method||(body?'POST':'GET'),headers:{Authorization:`Bearer ${data.session.access_token}`,'X-User-Timezone':timezone,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store',signal:signal||AbortSignal.timeout(25000)});
   const result=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(result.error||`The request could not finish (${response.status}).`);
   return result;
