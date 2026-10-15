@@ -75,7 +75,7 @@ export async function POST(request){
     const storagePath=`${workspaceId}/${project.id}/exports/${crypto.randomUUID()}/${root}.zip`;
     checked(await admin.storage.from('media').upload(storagePath,archive,{contentType:'application/zip',upsert:false}));
     const signed=checked(await admin.storage.from('media').createSignedUrl(storagePath,300,{download:root+'.zip'}));
-    await admin.rpc('record_daily_usage',{p_workspace_id:workspaceId,p_user_id:user.id,p_usage_date:new Date().toISOString().slice(0,10),p_export_count:1}).then(result=>{if(result.error)console.warn('export usage accounting failed:',result.error.message)});
+    await admin.rpc('record_daily_usage',{p_workspace_id:workspaceId,p_user_id:user.id,p_usage_date:new Date().toISOString().slice(0,10),p_export_count:1}).then(result=>{if(result.error)console.warn('export_usage_accounting_failed')});
     return Response.json({url:signed.signedUrl,filename:root+'.zip',clipCount:clips.length,fileCount:files.length,expiresIn:300},{headers:{'Cache-Control':'private, no-store'}});
   }catch(error){return workflowError(error)}
 }
