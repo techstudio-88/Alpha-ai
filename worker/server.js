@@ -73,11 +73,16 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   const speed=Math.max(.5,Math.min(2,Number(opts.speed)||1));
   const zoom=Math.max(.8,Math.min(1.4,Number(opts.zoom)||1));
   const aspect=["9:16","16:9","1:1"].includes(opts.aspect)?opts.aspect:"9:16";
-  const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
+  const maxResolution=[720,1080,2160,3840].includes(Number(opts.maxResolution))?Number(opts.maxResolution):1080;
+  const shortSide=maxResolution>=2160?2160:maxResolution;
+  const longSide=maxResolution>=2160?3840:maxResolution===1080?1920:1280;
+  const size=aspect==="16:9"?[longSide,shortSide]:aspect==="1:1"?[shortSide,shortSide]:[shortSide,longSide];
   const sw=Math.round(size[0]*Math.max(1,zoom)/2)*2,sh=Math.round(size[1]*Math.max(1,zoom)/2)*2;
   const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles='${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}'`:"";
   const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=0.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=0.18":opts.transition==="dip"?",fade=t=in:st=0:d=0.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=0.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const watermarkText=opts.watermarkText?String(opts.watermarkText).replace(/[^a-zA-Z0-9 _.-]/g,"").slice(0,40):"";
+  const watermarkFilter=watermarkText?",drawtext=font='DejaVu Sans':text='"+watermarkText.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'")+"':fontcolor=white@0.92:fontsize=24:box=1:boxcolor=black@0.35:boxborderw=10:x=w-tw-24:y=h-th-24":"";
+  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}${watermarkFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   const args=["-y","-ss",String(Math.max(0,Number(start))),"-t",String(requested),"-i",input];
   if(opts.cutRanges?.length){
@@ -371,6 +376,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
   if(!project)throw new Error("Processing project does not belong to this workspace.");
   if(!p.requestedBy)p.requestedBy=project.owner_id;
+  const entitlementRows=await db("workspace_entitlements",{params:{workspace_id:"eq."+p.workspaceId,select:"plan,max_resolution,watermark_text,daily_video_minutes,auto_publish,scheduling_enabled,brand_kit_limit,priority_queue,fair_use_unlimited,title_regenerations,cover_rotations",limit:"1"}});
+  p={...p,entitlements:entitlementRows?.[0]||{plan:"free",max_resolution:720,watermark_text:"[APP NAME]",daily_video_minutes:20,auto_publish:false,scheduling_enabled:false,brand_kit_limit:1,priority_queue:false,fair_use_unlimited:false,title_regenerations:3,cover_rotations:1}};
   if(p.url&&!p.rightsConfirmed)throw new Error("URL rights confirmation is required before import.");
   if(p.mediaAssetId&&!(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing video context mismatch.");
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
@@ -552,7 +559,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
     await setStage(p,"clip_render","running",0);await patchJob(p.jobId,{progress:80});
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges,maxResolution:p.entitlements?.max_resolution,watermarkText:p.entitlements?.plan==="free"?(p.entitlements?.watermark_text||"[APP NAME]"):null});
     await setStage(p,"clip_render","completed",100);await setStage(p,"export","running",0);await patchJob(p.jobId,{progress:92});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
@@ -697,7 +704,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
         try{reframeKeyframes=await analyzeReframeWithGemini(analysisPath,end-start)}catch{console.warn('Speaker framing unavailable; preserving centered fallback for this clip.')}
       }
        const aspect=["9:16","1:1","16:9"].includes(preferences.aspect)?preferences.aspect:"9:16";
-       await renderEditedClip(input,rendered,start,end,{aspect,srtPath:captionFile,transition,reframeKeyframes});
+       await renderEditedClip(input,rendered,start,end,{aspect,srtPath:captionFile,transition,reframeKeyframes,maxResolution:p.entitlements?.max_resolution,watermarkText:p.entitlements?.plan==="free"?(p.entitlements?.watermark_text||"[APP NAME]"):null});
       const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
       await upload(rendered,storagePath,"video/mp4");
        const editData={source_start:start,source_end:end,duration_seconds:end-start,aspect,captions,captionStyle,captionColor:"#ffffff",transition,effect:"none",hook:candidate.hook||"",broll:preferences.broll===true};
