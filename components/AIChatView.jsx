@@ -3,6 +3,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {ArrowUp,CalendarClock,ChevronRight,FileVideo,History,Link,LoaderCircle,MessageSquare,Paperclip,Plus,RefreshCw,Scissors,Sparkles,X} from "lucide-react";
 import {Upload} from "tus-js-client";
 import {allPages} from "../lib/video-workflow.mjs";
+import {Modal} from "./studio/ui";
 
 const activeStatuses=["queued","processing","awaiting_transcription","transcribing"];
 const time=value=>{const n=Math.max(0,Number(value)||0);return `${Math.floor(n/60)}:${String(Math.floor(n%60)).padStart(2,"0")}`};
@@ -47,7 +48,8 @@ function ClipResult({clip,job,supabase,onEdit,onRetry}){
 export default function AIChatView({workspace,supabase,onNavigate}){
   const [sessions,setSessions]=useState([]),[sessionId,setSessionId]=useState(""),[messages,setMessages]=useState([]),[assets,setAssets]=useState([]),[assetId,setAssetId]=useState(""),[source,setSource]=useState(null),[clips,setClips]=useState([]),[jobs,setJobs]=useState([]);
   const [input,setInput]=useState(""),[url,setUrl]=useState(""),[rightsConfirmed,setRightsConfirmed]=useState(false),[showLink,setShowLink]=useState(false),[showHistory,setShowHistory]=useState(false),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[uploadProgress,setUploadProgress]=useState(null),[paused,setPaused]=useState(false);
-  const [dragging,setDragging]=useState(false);
+  const [dragging,setDragging]=useState(false),[quotaNotice,setQuotaNotice]=useState([]);
+  const seenPendingParts=useRef(new Set());
   const textarea=useRef(null),bottom=useRef(null),uploader=useRef(null),requestId=useRef(null),refreshRef=useRef(null),stopUpload=useRef(null);
   const asset=assets.find(a=>a.id===assetId);
   const pending=jobs.some(j=>activeStatuses.includes(j.status));
@@ -66,11 +68,19 @@ export default function AIChatView({workspace,supabase,onNavigate}){
       if(running)return;running=true;
       try{
         const session=check(await supabase.auth.getSession())?.session;
-        const [history,media]=await Promise.all([
+        const [history,media,pendingResult]=await Promise.all([
           supabase.from("ai_chat_sessions").select("*").eq("workspace_id",workspace.id).eq("user_id",session?.user.id).order("updated_at",{ascending:false}).limit(100),
-          supabase.from("media_assets").select("id,name,status,project_id,duration_seconds,storage_path,projects!inner(workspace_id)").eq("projects.workspace_id",workspace.id).order("created_at",{ascending:false}).limit(150)
+          supabase.from("media_assets").select("id,name,status,project_id,duration_seconds,storage_path,projects!inner(workspace_id)").eq("projects.workspace_id",workspace.id).order("created_at",{ascending:false}).limit(150),
+          supabase.from("pending_processing_parts").select("id,part_number,start_seconds,end_seconds,usage_date,timezone,scheduled_for,expires_at,status")
+            .eq("workspace_id",workspace.id).eq("status","pending").order("part_number",{ascending:true}).limit(20)
         ]);
         const h=check(history),a=check(media);
+        if(!pendingResult.error){
+          const parts=pendingResult.data||[];
+          const unseen=parts.filter(part=>!seenPendingParts.current.has(part.id));
+          parts.forEach(part=>seenPendingParts.current.add(part.id));
+          if(unseen.length)setQuotaNotice(unseen);
+        }
         let m=[],j=[],c=[];
         if(sessionId){
           m=await allPages(async(offset,size)=>check(await supabase.from("ai_chat_messages").select("*").eq("session_id",sessionId).eq("workspace_id",workspace.id).order("created_at").order("id").range(offset,offset+size-1)));
@@ -171,5 +181,11 @@ export default function AIChatView({workspace,supabase,onNavigate}){
         </div><small className="chatComposerHint">{pending?"Processing continues in this saved conversation. You can open another chat.":"YouTube · Drive shared files · Dropbox · OneDrive · direct video URLs. Source access and storage limits apply."}</small>
       </div>
     </section>
+    <Modal open={quotaNotice.length>0} onOpenChange={open=>{if(!open)setQuotaNotice([])}} title="Later parts of your video need approval" description="Part 1 can process in the current window. These later parts are held for their scheduled day and expire if you do not approve them within 48 hours.">
+      <div className="space-y-3">
+        {quotaNotice.map(part=><div key={part.id} className="panel p-3"><b>Part {part.part_number}</b><p className="text-sm text-muted mt-1">{Math.max(1,Math.round((Number(part.end_seconds)-Number(part.start_seconds))/60))} minutes · {new Date(part.scheduled_for).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}</p><p className="text-xs text-muted mt-1">{part.usage_date} · {part.timezone}</p></div>)}
+        <div className="flex justify-end gap-2"><button className="btn small" onClick={()=>setQuotaNotice([])}>Not now</button><button className="btn small primary" onClick={()=>{setQuotaNotice([]);onNavigate?.("pending")}}>Review pending parts</button></div>
+      </div>
+    </Modal>
   </div>
 }
