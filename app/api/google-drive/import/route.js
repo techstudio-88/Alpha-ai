@@ -2,6 +2,7 @@ import{createClient}from"@supabase/supabase-js";
 import {randomUUID} from "node:crypto";
 import {encryptCredential} from '../../../../lib/credential-cipher.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
+import {UUID} from '../../../../lib/video-workflow.mjs';
 import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from '../../../../lib/rate-limit';
 export const runtime="nodejs";
 const fail=(error,status,errorId)=>Response.json({error,errorId},{status,headers:{"Cache-Control":"no-store"}});
@@ -11,7 +12,7 @@ export async function POST(request){
   const auth=request.headers.get("authorization")||"";const body=await request.json();const{accessToken,file,workspaceId,userId}=body||{};
    const workerSecret=process.env.MEDIA_WORKER_SECRET||"";
    if(!workerSecret)return fail("The import service is temporarily unavailable.",503,errorId);
-  if(!auth.startsWith("Bearer ")||!accessToken||!file?.id||!workspaceId)return fail("Choose a valid Drive video and workspace.",400,errorId);
+  if(!auth.startsWith("Bearer ")||!accessToken||!file?.id||!UUID.test(workspaceId||""))return fail("Choose a valid Drive video and workspace.",400,errorId);
   const supabase=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:auth}}});
   const{data:{user},error}=await supabase.auth.getUser(auth.slice(7));if(error||!user||user.id!==userId)return fail("Your session is invalid or expired. Sign in again.",401,errorId);
   const{data:isMember,error:memberError}=await supabase.rpc("is_workspace_member",{wid:workspaceId});if(memberError||!isMember)return fail("Workspace access denied.",403,errorId);
@@ -20,6 +21,8 @@ export async function POST(request){
   const blocked=rateLimitResponse(rate);if(blocked)return blocked;
   const meta=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(file.id)+"?fields=id,name,mimeType,size,modifiedTime,capabilities",{headers:{Authorization:"Bearer "+accessToken}});const md=await meta.json();if(!meta.ok)return fail("Unable to verify the selected Drive file.",400,errorId);
   if(!md.mimeType?.startsWith("video/"))return fail("The selected Drive file is not a video.",400,errorId);
+  const driveSize=Number(md.size||0);
+  if(driveSize>5*1024**3)return fail("Choose a video no larger than 5 GB.",413,errorId);
   if(md.capabilities?.canDownload===false)return fail("Google Drive does not allow this file to be downloaded.",400,errorId);
   await requireWorkerCapability('encrypted-credentials');
   const project=await supabase.from("projects").insert({workspace_id:workspaceId,owner_id:user.id,name:md.name?.replace(/\.[^.]+$/,"")||"Google Drive video",status:"uploading"}).select().single();if(project.error)throw project.error;
