@@ -170,7 +170,6 @@ function reframeExpr(keyframes,axis){
 }
 async function analyzeTranscriptWithGemini(segments,sourceDuration){
   if(!hasGeminiKeys()||!Array.isArray(segments)||!segments.length)return null;
-  const ai=new GoogleGenAI({apiKey:firstGeminiKey()});
   const schema={type:"object",properties:{candidates:{type:"array",items:{type:"object",properties:{
     start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},
     hook_score:{type:"number"},emotional_intensity:{type:"number"},information_density:{type:"number"},
