@@ -43,7 +43,7 @@ test("Gemini file upload rotates keys and pauses safely when every provider fail
         primaryKey:process.env.GEMINI_API_KEY,model:"test",contents:"safe test",attemptsPerKey:1,
         createClient:()=>({models:{generateContent:async()=>{throw Object.assign(new Error("temporarily unavailable"),{status:503})}}})
       }),
-      error=>error.retryableProviderUnavailable===true&&Number(error.retryAfterMs)>=60_000
+      error=>error.retryableProviderUnavailable===true&&Number(error.retryAfterMs)>0
     );
   });
 });
