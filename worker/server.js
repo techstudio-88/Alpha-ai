@@ -436,7 +436,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(fs.statSync(input).size>MAX_DOWNLOAD_BYTES)throw new Error('The source exceeds the worker download size limit.');
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
   const originalProbe=probe; const sourceBeforeNormalize=input; input=await normalizeIfVfr(input,originalProbe,dir); const normalizedProbe=input!==sourceBeforeNormalize?JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input])):originalProbe;
-  const stream=normalizedProbe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(normalizedProbe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
+  const stream=normalizedProbe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(normalizedProbe.format?.duration||0),streamDuration=Number(stream?.duration||0);let duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0)));const width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
   if(!stream||!Number.isFinite(duration)||duration<=0)throw new Error("The source is not a readable video with a finite duration.");
   if(duration>3600)throw new Error("This worker accepts source videos up to 60 minutes.");
   if(!asset){
@@ -480,8 +480,24 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});
     await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{});
   }
+  const sourceDuration=duration;
   p={...p,mediaAssetId:asset.id,url:null,driveAccessToken:undefined,googlePhotosAccessToken:undefined,driveCredential:undefined,photosCredential:undefined};
-  await patchJob(p.jobId,{payload:p});
+  const partStart=Number(p.partStartSeconds),partEnd=Number(p.partEndSeconds);
+  if(Number.isFinite(partStart)&&Number.isFinite(partEnd)&&partStart>=0&&partEnd>partStart&&partEnd<=sourceDuration+0.5&&partEnd-partStart<sourceDuration-0.25){
+    const segmentPath=path.join(dir,"scheduled-part.mp4");
+    await patchJob(p.jobId,{progress:22,current_stage:"preparing_scheduled_part",payload:p});
+    await cmd("ffmpeg",["-y","-ss",String(partStart),"-i",input,"-t",String(partEnd-partStart),"-map","0:v:0","-map","0:a?","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",segmentPath]);
+    input=segmentPath;
+    const partProbe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
+    const partStream=partProbe.streams.find(x=>x.codec_type==="video");
+    const partDuration=Math.max(0,Math.min(Number(partProbe.format?.duration||0),Number(partStream?.duration||partProbe.format?.duration||0)));
+    if(!partStream||!Number.isFinite(partDuration)||partDuration<0.25)throw new Error("The scheduled video part could not be prepared.");
+    duration=partDuration;
+    p={...p,partOffsetSeconds:partStart,partDurationSeconds:partDuration};
+    await patchJob(p.jobId,{payload:p});
+  }else{
+    await patchJob(p.jobId,{payload:p});
+  }
   if(p.operation==="chat_ingest") {
     p.url=null;
     await db("ai_chat_sessions",{method:"PATCH",params:{id:"eq."+p.sessionId},body:{media_asset_id:asset.id,updated_at:new Date().toISOString()}});
@@ -906,6 +922,38 @@ async function resumeQueuedJobs(){
   }catch{console.warn("queued_job_recovery_failed")}
   finally{recoveryInFlight=false}
 }
+async function processApprovedPendingParts(){
+  if(!KEY)return;
+  try{
+    const now=new Date().toISOString();
+    const parts=await db("pending_processing_parts",{params:{
+      status:"eq.approved",scheduled_for:"lte."+now,expires_at:"gt."+now,
+      select:"id,workspace_id,project_id,user_id,media_asset_id,parent_job_id,part_number,start_seconds,end_seconds,timezone,scheduled_for",
+      order:"scheduled_for.asc",limit:"5"
+    }});
+    for(const part of parts||[]){
+      const key="pending-part:"+part.id;
+      let job=(await db("processing_jobs",{params:{workspace_id:"eq."+part.workspace_id,idempotency_key:"eq."+key,select:"id,status",limit:"1"}}))[0];
+      if(!job){
+        const inserted=await db("processing_jobs",{method:"POST",params:{on_conflict:"workspace_id,idempotency_key"},
+          body:{workspace_id:part.workspace_id,project_id:part.project_id,job_type:"process_media",status:"queued",progress:0,
+            idempotency_key:key,next_retry_at:new Date(Date.now()+120000).toISOString(),
+            payload:{workspaceId:part.workspace_id,projectId:part.project_id,requestedBy:part.user_id,
+              mediaAssetId:part.media_asset_id,sourceType:"upload",operation:"process_video_part",
+              partNumber:part.part_number,parentJobId:part.parent_job_id,partStartSeconds:Number(part.start_seconds),
+              partEndSeconds:Number(part.end_seconds),scheduledPartId:part.id}}});
+        job=inserted?.[0]||null;
+        if(!job)job=(await db("processing_jobs",{params:{workspace_id:"eq."+part.workspace_id,idempotency_key:"eq."+key,select:"id,status",limit:"1"}}))[0];
+      }
+      if(!job?.id)continue;
+      const changed=await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+part.id,status:"eq.approved"},
+        body:{status:"queued",job_id:job.id,updated_at:now}});
+      if(!changed?.length)continue;
+      await db("processing_jobs",{method:"PATCH",params:{id:"eq."+job.id,workspace_id:"eq."+part.workspace_id},
+        body:{status:"queued",next_retry_at:null,updated_at:now}});
+    }
+  }catch{console.warn("pending_part_scheduler_scan_failed")}
+}
 async function expirePendingParts(){
   if(!KEY)return;
   try{
@@ -934,6 +982,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   setTimeout(processPublishJobs,10000);
   setTimeout(expirePendingParts,10000);
   setInterval(expirePendingParts,60000);
+  setTimeout(processApprovedPendingParts,12000);
+  setInterval(processApprovedPendingParts,15000);
   setTimeout(resumeQueuedJobs,5000);
   setInterval(resumeQueuedJobs,15000);
   app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
