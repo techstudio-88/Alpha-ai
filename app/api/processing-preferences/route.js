@@ -4,12 +4,16 @@ export const runtime='nodejs';
 
 import {normalizePreferences} from '../../../lib/chat-brief.mjs';
 import {UUID} from '../../../lib/video-workflow.mjs';
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from '../../../lib/rate-limit';
 
 export async function POST(request){
   try{
     const body=await request.json().catch(()=>({}));
     const {workspaceId,projectId,jobId,preferences={}}=body||{};
     const {admin,token,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:'api',userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     if(!UUID.test(projectId||'')||!UUID.test(jobId||''))throw problem('Valid project and processing job IDs are required.');
     const job=checked(await admin.from('processing_jobs').select('id,workspace_id,project_id,status,payload').eq('id',jobId).eq('workspace_id',workspaceId).eq('project_id',projectId).maybeSingle());
     if(!job)throw problem('Processing job not found.',404);
