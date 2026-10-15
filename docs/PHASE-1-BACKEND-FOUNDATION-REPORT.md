@@ -26,7 +26,7 @@ Status is conservative: code or a passing unit test alone does not prove live pr
 | Durable background jobs | **Partial** | Durable queue, lease-based claims, retry/backoff, cancellation checks, recovery scan, error IDs, failure categories, dead-letter state, progress checkpoints, and pending-part scheduler exist. Live restart/cancel/recovery tests and worker deployment verification remain. |
 | Upload and ingestion | **Partial** | Server-side size/duration checks, YouTube source recognition, rights confirmation for URL imports, stored original media, and source/asset reuse are implemented in the current code path. Resumable upload and previously reported real-world upload failures need regression verification. |
 | Daily minutes and pending parts | **Partial** | Production migrations implement daily usage separate from AI credits, timezone-aware limits (IST fallback), silence-boundary-aware splitting, pending approval/decline/reschedule, scheduler claims, 48-hour expiry, and notifications. The full user-visible 50-minute flow and all day-boundary races need end-to-end verification. |
-| Free/Pro/Studio entitlements | **Partial** | Database defaults and server-side resolution/watermark/publishing checks exist; tests verify the defaults. The complete set of per-feature limits, priority queue behavior, brand-kit limits, upgrade responses, and plan-specific live enforcement still needs coverage. Pro default is currently 180 minutes/day as the approved provisional value. |
+| Free/Pro/Studio entitlements | **Partial** | Database defaults and server-side resolution/watermark/publishing checks exist; tests verify the defaults. Studio priority ordering is now in the durable queue claim RPC, and a database trigger enforces the combined brand-kit limit across `brand_kits` and `brand_kit_profiles`. Remaining: complete end-to-end coverage of all limits, upgrade responses, and live enforcement. Pro default is 180 minutes/day as the approved provisional value. |
 | Gemini key rotation | **Partial** | Worker rotation supports `GEMINI_API_KEY`, `GEMINI_API_KEY_1` through `GEMINI_API_KEY_5`, or `GEMINI_API_KEYS`; generation and file uploads share rotation, key health is stored without values, cooldowns are restored before worker schedulers start, and provider-unavailable responses include retry guidance. Live tests with real configured keys and worker restart are still needed. |
 | Rate limiting | **Blocked on configuration** | Per-user/IP/endpoint limits and `Retry-After` responses are implemented. They fail closed when Redis is unavailable. Vercel production currently has none of `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, or `REDIS_URL`, so protected routes can return a safe 503 until a Redis connection is configured. |
 | Admin diagnostics | **Partial** | The hidden admin page calls an admin-only diagnostics API for failed jobs, backlog, key health, credit changes, and source/publish failures. Runtime visibility and real production worker metrics still need verification. |
@@ -42,6 +42,8 @@ Live migration history contains these Phase 1 versions:
 - `20261015065623` — `20261015_phase_1_feature_limits`
 - `20261015110308` — `20261015_phase_1_feature_limits_idempotency`
 - `20261015110548` — `20261015_phase_1_rls_update_checks`
+- `20261015110930` — `20261015_phase_1_priority_queue`
+- `20261015111118` — `20261015_phase_1_brand_kit_limits`
 
 The feature-limit idempotency fix was applied to production and now reactivates a refunded reservation only if the daily cap still permits it. The RLS update-policy fix was applied and live-verified: all five affected policies now include `WITH CHECK`.
 
@@ -53,6 +55,8 @@ Migration files in the branch:
 - `supabase/migrations/20261015_phase_1_plan_entitlements.sql`
 - `supabase/migrations/20261015_phase_1_feature_limits_idempotency.sql`
 - `supabase/migrations/20261015_phase_1_rls_update_checks.sql`
+- `supabase/migrations/20261015_phase_1_priority_queue.sql`
+- `supabase/migrations/20261015_phase_1_brand_kit_limits.sql`
 
 Do not re-run already recorded migrations manually; use the repository's migration workflow for future changes.
 
@@ -102,6 +106,7 @@ Still blocked on external configuration/deployment:
 
 - Live Supabase migration history verified the six Phase 1 migrations listed above.
 - Live RLS query verified `WITH CHECK` exists on the five repaired UPDATE policies.
+- Live catalog checks verified the Studio priority queue function and both brand-kit limit triggers are installed.
 - Earlier complete CI run passed on commit `3dfac2c0b73f2ebe8517e26a45d10b45ffb93b62`: [GitHub Actions run](https://github.com/techstudio-88/Alpha-ai/actions/runs/38724895705).
-- Additional worker and tool-generation hardening commits were pushed after that run. CI for the newest commit must finish successfully before this branch can be considered code-verified.
+- Additional worker, tool-generation, Google Photos/Drive, and clip-API hardening commits were pushed after that run. CI for the newest commit must finish successfully before this branch can be considered code-verified.
 - Production site and worker have not been verified end-to-end against the latest branch. Phase 1 is **not complete** while the Redis and compatible worker deployment blockers remain.
