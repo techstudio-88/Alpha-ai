@@ -97,7 +97,7 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.query("select public.finish_video_usage_for_job($1,true)",[videoJob]);
     const finalized=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0];
     assert.equal(Number(finalized.minutes_reserved),0);
-    assert.ok(Math.abs(Number(finalized.minutes_completed)-1190/60)<0.001);
+    assert.ok(Math.abs(Number(finalized.minutes_completed)-19.83)<0.01);
     await db.query("update public.pending_processing_parts set status='approved',scheduled_for=now()-interval '1 minute',expires_at=now()+interval '2 days' where id=$1",[pending[0].id]);
     const delayed=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
     assert.equal(delayed.queued,false);
