@@ -8,7 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,uploadGeminiFileWithRotation,setGeminiHealthReporter} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,uploadGeminiFileWithRotation,setGeminiHealthReporter,restoreGeminiKeyHealth} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
@@ -928,6 +928,8 @@ async function processPublishJobs(){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   console.log("Supabase server-side key configured:",!!KEY);
+  const restoreGeminiHealth=async()=>{try{const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until,last_status,success_count,failure_count,rate_limit_count,last_used_at"}});restoreGeminiKeyHealth(rows)}catch{console.warn("gemini_key_health_restore_unavailable")}};
+  void restoreGeminiHealth();
   setInterval(processPublishJobs,30000);
   setTimeout(processPublishJobs,10000);
   setTimeout(expirePendingParts,10000);
