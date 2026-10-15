@@ -34,8 +34,16 @@ export async function POST(request) {
       mediaAssetId:asset?.id || null,sourceId:source?.id || null,
       sourceType:asset ? "upload" : source.source_type,url:asset ? null : source.source_url,
       rightsConfirmed:Boolean(source?.metadata?.rights_confirmed),sessionId,requestId,clipId:clipId || null,prompt,requestedBy:user.id};
-    const job = checked(await admin.rpc("submit_ai_chat_job",{p_id:requestId,p_session:sessionId,
-      p_workspace:workspaceId,p_user:user.id,p_project:projectId,p_asset:asset?.id || null,p_prompt:prompt,p_payload:payload}));
+    const submitted = await admin.rpc("submit_ai_chat_job",{p_id:requestId,p_session:sessionId,
+      p_workspace:workspaceId,p_user:user.id,p_project:projectId,p_asset:asset?.id || null,p_prompt:prompt,p_payload:payload});
+    if(submitted.error) {
+      if(/INSUFFICIENT_CREDITS/.test(String(submitted.error.message||"")))
+        throw problem("You're out of AI credits. Upgrade your plan or add credits before starting another AI job.",402);
+      if(/active job/i.test(String(submitted.error.message||"")))
+        throw problem("This chat already has a job running. Wait for it to finish before starting another.",409);
+      throw problem("We couldn't accept this AI job. Please retry.",500);
+    }
+    const job=submitted.data;
     const warning = await wakeWorker({...payload,jobId:job.id},token);
     return Response.json({sessionId,jobId:job.id,warning},{status:202});
   } catch (error) { return workflowError(error); }
