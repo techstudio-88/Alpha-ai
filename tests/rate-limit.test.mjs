@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {createServer} from "node:net";
 import {checkRateLimit,rateLimitResponse} from "../lib/rate-limit.js";
 
-const envNames=["UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN"];
+const envNames=["UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","REDIS_URL"];
 async function withEnv(values,run){
   const old=Object.fromEntries(envNames.map(key=>[key,process.env[key]]));
   for(const key of envNames){if(values[key]===undefined)delete process.env[key];else process.env[key]=values[key]}
@@ -48,4 +49,26 @@ test("rate limiting hashes identifiers and enforces plan-specific user caps with
     assert.match(stored,/alpha:rl:ai_call:u:[a-f0-9]{64}/);
     assert.match(stored,/alpha:rl:ai_call:i:[a-f0-9]{64}/);
   });
+});
+
+test("rate limiting can use a standard Redis URL without Upstash REST",async()=>{
+  const server=createServer(socket=>{
+    let input="";
+    socket.on("data",chunk=>{
+      input+=chunk.toString("utf8");
+      if(input.includes("EVAL")){
+        socket.write("*2\\r\\n:4\\r\\n:29\\r\\n");
+        input="";
+      }
+    });
+  });
+  await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve)});
+  const address=server.address();
+  try{
+    await withEnv({REDIS_URL:"redis://127.0.0.1:"+address.port+"/0"},async()=>{
+      const result=await checkRateLimit(new Request("https://alpha.test/api",{headers:{"x-forwarded-for":"192.0.2.10"}}),{endpoint:"api",userId:"native-redis-user",plan:"free"});
+      assert.equal(result.allowed,true);
+      assert.equal(result.unavailable,undefined);
+    });
+  }finally{await new Promise(resolve=>server.close(resolve))}
 });
