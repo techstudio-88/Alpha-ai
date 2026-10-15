@@ -2,6 +2,8 @@ import {authorizeWorkflow,checked,problem,workflowError} from '../../../lib/work
 import {allPages,captionEvents} from '../../../lib/video-workflow.mjs';
 import {normalizePreferences} from '../../../lib/chat-brief.mjs';
 import {createZip} from '../../../lib/zip-export.mjs';
+import {UUID} from '../../../lib/video-workflow.mjs';
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from '../../../lib/rate-limit';
 
 export const runtime='nodejs';
 export const maxDuration=60;
@@ -42,7 +44,12 @@ function readme(clip,copy,platform,promoCode){
 export async function POST(request){
   try{
     const body=await request.json(),workspaceId=body.workspace_id||body.workspaceId,projectId=body.project_id||body.projectId;
+    if(!UUID.test(projectId||''))throw problem('A valid project is required.');
+    if(body.clip_id&&!UUID.test(body.clip_id))throw problem('A valid clip is required.');
     const {admin,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:'api',userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const project=checked(await admin.from('projects').select('id,name').eq('id',projectId).eq('workspace_id',workspaceId).maybeSingle());
     if(!project)throw problem('Project not found.',404);
     const member=checked(await admin.from('workspace_members').select('role,can_export').eq('workspace_id',workspaceId).eq('user_id',user.id).single());
