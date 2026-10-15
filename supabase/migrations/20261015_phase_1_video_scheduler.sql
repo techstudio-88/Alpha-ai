@@ -277,19 +277,7 @@ begin
   if v_minutes<=0 or v_job.video_usage_date is null then
     return jsonb_build_object('updated',false,'reason','no_reservation');
   end if;
-  if coalesce(v_job.payload->>'requestedBy','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}
-  update public.video_usage_daily set
-    minutes_reserved=greatest(0,minutes_reserved-v_minutes),
-    minutes_completed=minutes_completed+case when p_succeeded then v_minutes else 0 end,
-    updated_at=now()
-    where id=v_usage.id;
-  update public.processing_jobs set video_minutes_reserved=0 where id=p_job_id;
-  return jsonb_build_object('updated',true,'minutes',v_minutes,'completed',p_succeeded);
-end
-$$;
-revoke all on function public.finish_video_usage_for_job(uuid,boolean) from public,anon,authenticated;
-grant execute on function public.finish_video_usage_for_job(uuid,boolean) to service_role;
- then
+  if coalesce(v_job.payload->>'requestedBy','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     return jsonb_build_object('updated',false,'reason','job_user_missing');
   end if;
   v_user_id:=(v_job.payload->>'requestedBy')::uuid;
