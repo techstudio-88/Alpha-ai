@@ -12,6 +12,18 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const geminiKeyHealth = new Map();
 let geminiHealthReporter = null;
 export function setGeminiHealthReporter(reporter){geminiHealthReporter=typeof reporter==='function'?reporter:null;}
+export function restoreGeminiKeyHealth(rows=[]){
+  for(const row of Array.isArray(rows)?rows:[]){
+    if(!row?.key_label)continue;
+    const cooldown=Date.parse(row.cooldown_until||"")||0;
+    geminiKeyHealth.set(String(row.key_label),{
+      successes:Number(row.success_count)||0,failures:Number(row.failure_count)||0,
+      rateLimits:Number(row.rate_limit_count)||0,cooldownUntil:cooldown,
+      lastStatus:String(row.last_status||"restored"),
+      lastUsedAt:Date.parse(row.last_used_at||"")||0
+    });
+  }
+}
 const cooldownMs = 60_000;
 function configuredGeminiKeys(primaryKey) {
   const candidates=[
