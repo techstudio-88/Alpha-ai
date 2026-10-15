@@ -1,5 +1,6 @@
 import {createClient} from "@supabase/supabase-js";
 import {randomUUID} from "node:crypto";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../lib/rate-limit";
 
 export const runtime="nodejs";
 export const maxDuration=50;
@@ -49,6 +50,9 @@ export async function POST(request){
     if(valid.workspace_id!==workspaceId||valid.project_id!==projectId||String(valid.job_id)!==String(jobId)||
       String(valid.source_id||"")!==String(sourceId||"")||String(valid.media_asset_id||"")!==String(mediaAssetId||""))
       return fail("Processing authorization does not match this job.",403,errorId);
+    const plan=await resolveWorkspacePlan(verifier,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"link_fetch",userId:valid.user_id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
     const result=await callWorker(worker,ticket,{url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,
       sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:valid.user_id,
