@@ -719,14 +719,40 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
-  console.error("job",p.jobId,e);
-  // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
+  const errorId=randomUUID();
+  const message=String(e?.message||"");
+  const failureType=e?.retryableProviderUnavailable||/gemini|ai provider|transcri|model/i.test(message)?"ai":
+    /unsupported.*format|format.*unsupported|codec.*unsupported/i.test(message)?"unsupported_format":
+    /download|source url|source fetch|http 4\d\d/i.test(message)?"download":
+    /network|timeout|timed out|ECONNRESET|ENOTFOUND|fetch failed/i.test(message)?"network":"internal";
   const retryCount=Number(p.retryCount||0)+1;
-  const terminal=Boolean(p.sessionId)&&p.operation!=='render_edit'||retryCount>=5;
+  const providerPaused=Boolean(e?.retryableProviderUnavailable);
+  const terminal=!providerPaused&&(Boolean(p.sessionId)&&p.operation!=="render_edit"||retryCount>=5);
+  const retryDelay=providerPaused?Math.max(60_000,Number(e?.retryAfterMs)||60_000):Math.min(15*60_000,15_000*Math.pow(2,Math.max(0,retryCount-1)));
+  const userMessage=providerPaused?"AI capacity is temporarily unavailable. Your job is paused and will retry automatically.":
+    failureType==="download"?"We couldn't download the source video. Check the link and try again.":
+    failureType==="unsupported_format"?"This video format is not supported.":
+    failureType==="network"?"A temporary network issue interrupted processing. We'll retry automatically.":
+    failureType==="ai"?"AI processing failed. Please retry; your credits will be refunded if the job cannot be completed.":
+    "Processing failed unexpectedly. Contact support with the error ID.";
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
-  await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
-  if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
-   if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
+  const terminalStatus=terminal?(retryCount>=5?"dead_letter":"failed"):"queued";
+  await patchJob(p.jobId,{
+    status:terminalStatus,error:userMessage,error_id:errorId,failure_type:failureType,
+    next_retry_at:terminal?null:new Date(Date.now()+retryDelay).toISOString(),
+    dead_lettered_at:terminal&&retryCount>=5?new Date().toISOString():null,
+    payload:{...checkpoint,retryCount,lastFailureType:failureType}
+  }).catch(()=>{});
+  console.error("job_failure",{errorId,jobId:p.jobId,failureType,terminal,providerPaused});
+  if(terminal&&p.requestedBy&&p.workspaceId){
+    await db("rpc/refund_failed_job_credits",{method:"POST",body:{
+      p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,
+      p_reason:"Automatic refund after processing failure",p_idempotency_key:"job:"+p.jobId+":refund"
+    }}).catch(()=>{});
+  }
+  if(!terminal&&p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")
+    await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing"}}).catch(()=>{});
+  if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
