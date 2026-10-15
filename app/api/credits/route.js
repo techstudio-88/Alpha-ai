@@ -1,5 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {authorizeWorkflow,checked,workflowError} from "../../../lib/workflow-server";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../lib/rate-limit";
 
 export const runtime="nodejs";
 
@@ -8,6 +9,9 @@ export async function GET(request) {
     const url=new URL(request.url);
     const workspaceId=url.searchParams.get("workspace_id");
     const {admin,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"api",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const balance=checked(await admin.from("usage_credits")
       .select("credits,updated_at")
       .eq("workspace_id",workspaceId).eq("user_id",user.id).maybeSingle());
