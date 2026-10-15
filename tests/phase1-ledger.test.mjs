@@ -22,6 +22,14 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
         updated_at timestamptz default now(),current_stage text,attempt_count integer not null default 0,
         heartbeat_at timestamptz,lease_token uuid,lease_until timestamptz
       );
+      create table public.notifications(
+        id uuid primary key default gen_random_uuid(),workspace_id uuid not null,user_id uuid,
+        title text not null,message text,read_at timestamptz,created_at timestamptz default now()
+      );
+      create table public.publish_jobs(
+        id uuid primary key default gen_random_uuid(),workspace_id uuid,user_id uuid,clip_id uuid,platform text,
+        status text,scheduled_for timestamptz,created_at timestamptz default now(),updated_at timestamptz default now()
+      );
       create table public.usage_credits(
         id uuid primary key default gen_random_uuid(),workspace_id uuid,user_id uuid,
         credits integer not null,updated_at timestamptz default now(),unique(workspace_id,user_id)
