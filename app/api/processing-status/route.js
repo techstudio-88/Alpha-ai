@@ -16,7 +16,8 @@ export async function POST(request){
     if(!["queued","processing","transcribing","awaiting_transcription"].includes(job.status))
       return Response.json({jobId,status:job.status},{headers:{"Cache-Control":"no-store"}});
     const warning=await (async()=>{try{
-      const response=await fetch((process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com").replace(/\\/$/,"")+"/process",{
+      const workerBase=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
+      const response=await fetch((workerBase.endsWith("/")?workerBase.slice(0,-1):workerBase)+"/process",{
         method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token,
           ...(process.env.MEDIA_WORKER_SECRET?{"x-worker-secret":process.env.MEDIA_WORKER_SECRET}:{})},
         body:JSON.stringify({...job.payload,jobId,workspaceId,projectId:job.project_id}),
