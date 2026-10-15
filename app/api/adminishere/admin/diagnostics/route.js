@@ -1,6 +1,6 @@
 import {createClient} from "@supabase/supabase-js";
 import {randomUUID} from "node:crypto";
-import {checkRateLimit,rateLimitResponse} from "../../../../lib/rate-limit";
+import {checkRateLimit,rateLimitResponse} from "../../../../../lib/rate-limit";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const fail=(message,status,errorId)=>Response.json({error:message,errorId},{status,headers:{"Cache-Control":"no-store"}});
