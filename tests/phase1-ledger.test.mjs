@@ -47,6 +47,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.exec(videoMigration);
     const featureMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_feature_limits.sql",import.meta.url),"utf8");
     await db.exec(featureMigration);
+    const planMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_plan_entitlements.sql",import.meta.url),"utf8");
+    await db.exec(planMigration);
     const user=randomUUID(),workspace=randomUUID(),project=randomUUID(),asset=randomUUID();
     await db.query("insert into auth.users(id) values($1)",[user]);
     await db.query("insert into public.workspaces(id) values($1)",[workspace]);
@@ -126,6 +128,16 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     assert.equal(cover1.allowed,true);assert.equal(cover2.allowed,false);
     const duplicateFeature=(await db.query("select public.reserve_workspace_feature_usage($1,$2,'title_regeneration','Asia/Kolkata','title-1') as result",[workspace,user])).rows[0].result;
     assert.equal(duplicateFeature.duplicate,true);
+    await db.query("update public.workspace_entitlements set plan='pro' where workspace_id=$1",[workspace]);
+    const pro=(await db.query("select daily_video_minutes,max_resolution,title_regenerations,cover_rotations,auto_publish,watermark_text from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
+    assert.equal(Number(pro.daily_video_minutes),180);assert.equal(Number(pro.max_resolution),1080);
+    assert.equal(Number(pro.title_regenerations),30);assert.equal(Number(pro.cover_rotations),10);
+    assert.equal(pro.auto_publish,true);assert.equal(pro.watermark_text,"");
+    await db.query("update public.workspace_entitlements set plan='studio' where workspace_id=$1",[workspace]);
+    const studio=(await db.query("select daily_video_minutes,max_resolution,brand_kit_limit,priority_queue,fair_use_unlimited from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
+    assert.equal(Number(studio.daily_video_minutes),999999);assert.equal(Number(studio.max_resolution),3840);
+    assert.equal(Number(studio.brand_kit_limit),10);assert.equal(studio.priority_queue,true);assert.equal(studio.fair_use_unlimited,true);
+
 
     assert.equal((await db.query("select reserved_credits from public.processing_jobs where id=$1",[job])).rows[0].reserved_credits,0);
 
