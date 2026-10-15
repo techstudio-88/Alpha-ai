@@ -395,6 +395,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); await notifyOnce(p.workspaceId,p.requestedBy,"AI job complete","Your AI editing plan is ready.","job_completed","job:"+p.jobId+":completed"); return; }
   if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
     await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+    await notifyOnce(p.workspaceId,p.requestedBy,"AI job complete","Your AI editing plan is ready.","job_completed","job:"+p.jobId+":completed");
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
   }
   await patchJob(p.jobId,{progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
@@ -672,7 +673,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
     candidates=sentenceMoments(segments,safeDuration);
-    console.log("Deterministic transcript clip candidates",p.jobId,candidates.length);
+    console.log("deterministic_transcript_candidates",{count:candidates.length});
   }
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
@@ -732,7 +733,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("processing_job_completed")
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
