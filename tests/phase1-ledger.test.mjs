@@ -43,6 +43,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     `);
     const migration=await readFile(new URL("../supabase/migrations/20261015_phase_1_backend_foundation.sql",import.meta.url),"utf8");
     await db.exec(migration);
+    const videoMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_video_scheduler.sql",import.meta.url),"utf8");
+    await db.exec(videoMigration);
     const user=randomUUID(),workspace=randomUUID(),project=randomUUID(),asset=randomUUID();
     await db.query("insert into auth.users(id) values($1)",[user]);
     await db.query("insert into public.workspaces(id) values($1)",[workspace]);
@@ -72,6 +74,29 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.query("select public.refund_failed_job_credits($1,$2,$3,'test failure',$4)",[workspace,job,user,"job:"+job+":refund"]);
     assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,10);
     assert.equal((await db.query("select count(*)::int as n from public.credit_ledger where job_id=$1",[job])).rows[0].n,2);
+
+    const videoJob=randomUUID();
+    await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','processing',$4)",
+      [videoJob,workspace,project,JSON.stringify({requestedBy:user,mediaAssetId:asset})]);
+    const videoPlan=(await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[]'::jsonb) as plan",
+      [workspace,project,user,videoJob,asset])).rows[0].plan;
+    assert.equal(videoPlan.split,true);
+    assert.equal(videoPlan.deferCurrent,false);
+    assert.equal(Number(videoPlan.partEndSeconds),1200);
+    assert.equal(Number(videoPlan.pendingParts),2);
+    assert.equal(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved),20);
+    await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[]'::jsonb)",
+      [workspace,project,user,videoJob,asset]);
+    assert.equal(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved),20);
+    const pending=(await db.query("select id,part_number,start_seconds,end_seconds from public.pending_processing_parts where parent_job_id=$1 order by part_number",[videoJob])).rows;
+    assert.deepEqual(pending.map(row=>row.part_number),[2,3]);
+    assert.equal(Number(pending[0].start_seconds),1200);
+    assert.equal(Number(pending[0].end_seconds),2400);
+    await db.query("update public.processing_jobs set status='completed' where id=$1",[videoJob]);
+    await db.query("select public.finish_video_usage_for_job($1,true)",[videoJob]);
+    const finalized=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0];
+    assert.equal(Number(finalized.minutes_reserved),0);
+    assert.equal(Number(finalized.minutes_completed),20);
     assert.equal((await db.query("select reserved_credits from public.processing_jobs where id=$1",[job])).rows[0].reserved_credits,0);
 
     await db.query("update public.usage_credits set credits=0 where workspace_id=$1 and user_id=$2",[workspace,user]);
