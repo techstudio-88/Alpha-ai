@@ -243,7 +243,7 @@ begin
       'partNumber',v_part.part_number,'parentJobId',v_part.parent_job_id,
       'partStartSeconds',v_part.start_seconds,'partEndSeconds',v_part.end_seconds,'scheduledPartId',v_part.id,
       'videoQuotaPlanned',true)
-  ) on conflict(workspace_id,idempotency_key) do nothing returning * into v_job;
+  ) on conflict(workspace_id,idempotency_key) where idempotency_key is not null do nothing returning * into v_job;
   if v_job.id is null then
     select * into v_job from public.processing_jobs j where j.workspace_id=v_part.workspace_id and j.idempotency_key=v_key;
     update public.video_usage_daily set minutes_reserved=greatest(0,minutes_reserved-v_minutes),updated_at=now() where id=v_usage.id;
