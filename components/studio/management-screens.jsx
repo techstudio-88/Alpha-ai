@@ -29,13 +29,13 @@ export function PendingScreen(){
       if(demo)throw new Error('Sign in to manage real pending jobs.');
       await studioApi('/api/pending-parts',{body});
       await resource.retry();refresh();
-      notify(action==='approve'?'Part approved for scheduling.':action==='decline'?'Pending part declined.':'Pending part rescheduled.');
+      notify(action==='approve'?'Approval saved. Automatic execution is pending scheduler integration.':action==='decline'?'Pending part declined.':'Pending part rescheduled.');
     }catch(e){setError(e.message||'The pending part could not be updated.')}
     finally{setBusyId('')}
   }
   if(resource.loading)return <ScreenSkeleton/>;
   if(resource.error)return <ErrorState message={resource.error} onRetry={resource.retry}/>;
-  return <><Heading title="Pending processing" description="Review later parts of long videos. Approved parts wait for their scheduled processing time."/>
+  return <><Heading title="Pending processing" description="Review later parts of long videos. Approval is recorded here; automatic execution still requires the background scheduler."/>
     {error&&<div className="mb-5"><ErrorState message={error} onRetry={()=>setError('')}/></div>}
     {items.length===0?<EmptyState icon={CalendarClock} title="Nothing pending" description="Parts that need a later processing window will appear here with their date, status, and approval controls."/>:
       <div className="grid gap-4">{items.map(item=><article key={item.id} className="panel p-5">
