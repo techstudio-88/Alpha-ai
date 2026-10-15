@@ -99,6 +99,7 @@ export async function generateGeminiWithRotation({primaryKey,model,contents,conf
   const failure=new Error("AI processing is temporarily unavailable. The job should remain queued for automatic retry.");
   failure.retryableProviderUnavailable=true;
   failure.providerStatus=rateLimited(last)?"429":"unavailable";
+  failure.retryAfterMs=Math.max(1000,Math.min(...keys.map(item=>geminiKeyHealth.get(item.label)?.cooldownUntil||Date.now()+1000))-Date.now());
   throw failure;
 }
 
