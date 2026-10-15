@@ -84,5 +84,14 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
       [accepted,session,workspace,user,project,asset,"Create clips",JSON.stringify(payload)]);
     assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,4);
     assert.equal((await db.query("select count(*)::int as n from public.credit_ledger where job_id=$1 and transaction_type='reserve'",[accepted])).rows[0].n,1);
+
+    await db.query("update auth.users set email='admin@example.test' where id=$1",[user]);
+    await db.query("insert into public.control_center_members(email,role,active) values('admin@example.test','admin',true)");
+    await db.query("select public.admin_adjust_credits($1,$2,$3,2,'support adjustment',$4)",
+      [workspace,user,user,"admin-adjust:"+randomUUID()]);
+    assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,6);
+    const adjustment=(await db.query("select job_id from public.credit_ledger where transaction_type='adjustment'")).rows[0];
+    assert.ok(adjustment.job_id);
+    assert.equal((await db.query("select job_type from public.processing_jobs where id=$1",[adjustment.job_id])).rows[0].job_type,"credit_adjustment");
   }finally{await db.close()}
 });
