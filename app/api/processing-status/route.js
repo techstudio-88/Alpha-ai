@@ -10,7 +10,10 @@ export async function POST(request){
   try{
     const {workspaceId,jobId}=await request.json();
     if(!UUID.test(jobId||""))throw problem("A valid job is required.");
-    const {admin,token}=await authorizeWorkflow(request,workspaceId);
+    const {admin,token,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:"api",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const job=checked(await admin.from("processing_jobs").select("id,project_id,status,payload").eq("id",jobId).eq("workspace_id",workspaceId).maybeSingle());
     if(!job)throw problem("Processing job not found.",404);
     if(!["queued","processing","transcribing","awaiting_transcription"].includes(job.status))
