@@ -97,6 +97,18 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     const finalized=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0];
     assert.equal(Number(finalized.minutes_reserved),0);
     assert.equal(Number(finalized.minutes_completed),20);
+    await db.query("update public.pending_processing_parts set status='approved',scheduled_for=now()-interval '1 minute',expires_at=now()+interval '2 days' where id=$1",[pending[0].id]);
+    const delayed=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
+    assert.equal(delayed.queued,false);
+    assert.ok(delayed.rescheduledFor);
+    await db.query("update public.video_usage_daily set minutes_completed=0 where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user]);
+    await db.query("update public.pending_processing_parts set status='approved',scheduled_for=now()-interval '1 minute',usage_date=(now() at time zone 'Asia/Kolkata')::date where id=$1",[pending[0].id]);
+    const claimed=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
+    assert.equal(claimed.queued,true);
+    assert.equal((await db.query("select status,job_id from public.pending_processing_parts where id=$1",[pending[0].id])).rows[0].status,"queued");
+    const duplicateClaim=(await db.query("select public.claim_due_pending_part($1) as result",[pending[0].id])).rows[0].result;
+    assert.equal(duplicateClaim.queued,false);
+    assert.equal((await db.query("select count(*)::int as n from public.processing_jobs where idempotency_key=$1",["pending-part:"+pending[0].id])).rows[0].n,1);
     assert.equal((await db.query("select reserved_credits from public.processing_jobs where id=$1",[job])).rows[0].reserved_credits,0);
 
     await db.query("update public.usage_credits set credits=0 where workspace_id=$1 and user_id=$2",[workspace,user]);
