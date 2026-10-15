@@ -61,7 +61,7 @@ async function emitKeyHealth(onHealth,label,state){
     rateLimitCount:state.rateLimits,lastUsedAt:state.lastUsedAt?new Date(state.lastUsedAt).toISOString():null});}catch{}
 }
 // Key values never leave this module and are never included in health records or logs.
-export async function generateGeminiWithRotation({primaryKey,model,contents,config={},attemptsPerKey=2,onHealth}) {
+export async function generateGeminiWithRotation({primaryKey,model,contents,config={},attemptsPerKey=2,onHealth,createClient=options=>new GoogleGenAI(options)}) {
   const keys=configuredGeminiKeys(primaryKey);
   if(!keys.length) throw new Error("Gemini is not configured on the media worker.");
   const now=Date.now();
@@ -78,7 +78,7 @@ export async function generateGeminiWithRotation({primaryKey,model,contents,conf
     let state=geminiKeyHealth.get(item.label)||{successes:0,failures:0,rateLimits:0,cooldownUntil:0};
     for(let attempt=0;attempt<attemptsPerKey;attempt++) {
       try {
-        const ai=new GoogleGenAI({apiKey:item.value,httpOptions:{timeout:120000}});
+        const ai=createClient({apiKey:item.value,httpOptions:{timeout:120000}});
         const result=await ai.models.generateContent({model,contents,config});
         state={...state,successes:state.successes+1,cooldownUntil:0,lastStatus:"ok",lastUsedAt:Date.now()};
         geminiKeyHealth.set(item.label,state);await emitKeyHealth(onHealth,item.label,state);
@@ -103,7 +103,7 @@ export async function generateGeminiWithRotation({primaryKey,model,contents,conf
 }
 
 
-export async function uploadGeminiFileWithRotation(filePath,mimeType="video/mp4",onHealth=geminiHealthReporter) {
+export async function uploadGeminiFileWithRotation(filePath,mimeType="video/mp4",onHealth=geminiHealthReporter,createClient=options=>new GoogleGenAI(options)) {
   const keys=configuredGeminiKeys(process.env.GEMINI_API_KEY||"");
   if(!keys.length)throw new Error("Gemini is not configured on the media worker.");
   const now=Date.now();
@@ -119,7 +119,7 @@ export async function uploadGeminiFileWithRotation(filePath,mimeType="video/mp4"
   for(const item of candidates){
     let state=geminiKeyHealth.get(item.label)||{successes:0,failures:0,rateLimits:0,cooldownUntil:0};
     try{
-      const ai=new GoogleGenAI({apiKey:item.value,httpOptions:{timeout:120000}});
+      const ai=createClient({apiKey:item.value,httpOptions:{timeout:120000}});
       const file=await ai.files.upload({file:filePath,config:{mimeType}});
       state={...state,successes:state.successes+1,cooldownUntil:0,lastStatus:"upload_ok",lastUsedAt:Date.now()};
       geminiKeyHealth.set(item.label,state);await emitKeyHealth(onHealth,item.label,state);
