@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import {createClient} from "@supabase/supabase-js";
-import {UUID} from "../../../../../../../lib/video-workflow.mjs";
-import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../../../../../lib/rate-limit";
+import {UUID} from "../../../../../../lib/video-workflow.mjs";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../../../../lib/rate-limit";
 
 export const runtime="nodejs";
 const fail=(error,status,errorId)=>Response.json({error,errorId},{status,headers:{"Cache-Control":"no-store"}});
