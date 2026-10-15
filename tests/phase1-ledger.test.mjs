@@ -51,9 +51,17 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.query("insert into public.media_assets(id,workspace_id,project_id,status) values($1,$2,$3,'uploaded')",[asset,workspace,project]);
     await db.query("insert into public.usage_credits(workspace_id,user_id,credits) values($1,$2,10)",[workspace,user]);
 
+    const otherWorkspace=randomUUID(),otherProject=randomUUID();
+    await db.query("insert into public.workspaces(id) values($1)",[otherWorkspace]);
+    await db.query("insert into public.projects(id,workspace_id) values($1,$2)",[otherProject,otherWorkspace]);
+    await assert.rejects(db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','queued',$4)",
+      [randomUUID(),workspace,otherProject,JSON.stringify({requestedBy:user})]),/Processing job project\/workspace mismatch/);
+    await assert.rejects(db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','queued',$4)",
+      [randomUUID(),workspace,project,JSON.stringify({requestedBy:user,mediaAssetId:randomUUID()})]),/Processing job media asset\/workspace mismatch/);
+
     const job=randomUUID();
     await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','queued',$4)",
-      [job,workspace,project,JSON.stringify({requestedBy:user})]);
+      [job,workspace,project,JSON.stringify({requestedBy:user,mediaAssetId:asset})]);
     await db.query("select public.reserve_job_credits($1,$2,$3,1,'accepted test job',$4)",[workspace,job,user,"job:"+job+":reserve"]);
     await db.query("select public.reserve_job_credits($1,$2,$3,1,'accepted test job',$4)",[workspace,job,user,"job:"+job+":reserve"]);
     assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,9);
