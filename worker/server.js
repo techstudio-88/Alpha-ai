@@ -710,9 +710,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     for(let i=nextChunk;i<chunkCount;i++){
       const start=i*chunkSeconds,length=Math.min(chunkSeconds,duration-start),chunkAudio=path.join(dir,"server-chunk-"+i+".wav");
       await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
-      const file=await cachedGeminiUpload(ai,chunkAudio,"audio/wav");
-       const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),
-         "Transcribe only the spoken audio verbatim. Do not invent speech during silence. Return JSON {language:string,words:[{word:string,start:number,end:number}]} with word-level start/end in seconds relative to this "+length+" second audio chunk. Preserve the spoken language. No commentary"]),{responseMimeType:"application/json"});
+      const uploaded=await cachedGeminiUploadWithClient(chunkAudio,"audio/wav");
+      let file=uploaded.file;
+      for(let wait=0;wait<60&&file?.state==="PROCESSING";wait++){await new Promise(resolve=>setTimeout(resolve,1000));file=await uploaded.ai.files.get({name:file.name})}
+      if(file?.state!=="ACTIVE")throw new Error("Audio upload could not be prepared for transcription.");
+      const result=await generateGeminiWithRetry(uploaded.ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),
+        "Transcribe only the spoken audio verbatim. Do not invent speech during silence. Return JSON {language:string,words:[{word:string,start:number,end:number}]} with word-level start/end in seconds relative to this "+length+" second audio chunk. Preserve the spoken language. No commentary"]),{responseMimeType:"application/json"});
       const parsed=JSON.parse(result.text||"{}");
       if(!Array.isArray(parsed.words))throw new Error("Audio transcription returned an invalid response.");
       const wordRows=parsed.words.map(w=>({transcript_id:transcript.id,word:String(w.word||"").trim(),start_ms:Math.round((start+Math.max(0,Number(w.start)))*1000),end_ms:Math.round((start+Math.min(length,Number(w.end)))*1000)})).filter(w=>w.word&&Number.isFinite(w.start_ms)&&Number.isFinite(w.end_ms)&&w.end_ms>w.start_ms);
