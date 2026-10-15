@@ -51,6 +51,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.exec(planMigration);
     const featureIdempotencyMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_feature_limits_idempotency.sql",import.meta.url),"utf8");
     await db.exec(featureIdempotencyMigration);
+    const priorityQueueMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_priority_queue.sql",import.meta.url),"utf8");
+    await db.exec(priorityQueueMigration);
     const user=randomUUID(),workspace=randomUUID(),project=randomUUID(),asset=randomUUID();
     await db.query("insert into auth.users(id) values($1)",[user]);
     await db.query("insert into public.workspaces(id) values($1)",[workspace]);
