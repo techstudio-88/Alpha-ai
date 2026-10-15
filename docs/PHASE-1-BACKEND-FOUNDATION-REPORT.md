@@ -78,4 +78,4 @@ This migration is **not applied to production**. It adds credit accounting, serv
 - Production project lookup: Vercel project accessible; latest deployment was reported `READY` at audit time.
 - Supabase project lookup: `gmgswfsajvkiqrpsnuvx` reported `ACTIVE_HEALTHY`.
 - Early CI attempts exposed escaped-regex/newline syntax issues and a publish-test fixture missing the new entitlement lookup. These were fixed in subsequent commits.
-- Latest completed CI runs verified lint, syntax checks, database/unit tests, typecheck, and build. UI tests exposed an existing assistant quick-action contrast issue; a CSS token-based contrast fix was pushed. A fresh CI run is pending. Do not treat the branch as production-ready until the fresh full suite passes.
+- Full CI passed on code commit `c009f4ad170fe13ca51801bba62c73da26cce586`: lint, syntax checks, database/unit tests, typecheck, build, and Playwright UI tests. The report-only follow-up commit does not change application code. [CI run](https://github.com/techstudio-88/Alpha-ai/actions/runs/38661611461).
