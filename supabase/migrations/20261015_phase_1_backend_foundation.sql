@@ -173,6 +173,7 @@ begin
     values(p_workspace_id,p_user_id,p_job_id,abs(v_reservation.amount),'refund',
       coalesce(nullif(trim(p_reason),''),'Automatic refund for failed job'),p_idempotency_key)
     returning * into v_entry;
+  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
   return v_entry;
 end
 $$;
