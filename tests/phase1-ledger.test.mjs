@@ -84,7 +84,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     assert.equal(videoPlan.deferCurrent,false);
     assert.equal(Number(videoPlan.partEndSeconds),1190);
     assert.equal(Number(videoPlan.pendingParts),2);
-    assert.ok(Math.abs(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved)-1190/60)<0.001);
+    const reservedMinutes=Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved);
+    assert.ok(Math.abs(reservedMinutes-1190/60)<0.001,'reserved minutes were '+reservedMinutes);
     await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,3000,'Asia/Kolkata','[1190,2390]'::jsonb)",
       [workspace,project,user,videoJob,asset]);
     assert.ok(Math.abs(Number((await db.query("select minutes_reserved from public.video_usage_daily where workspace_id=$1 and user_id=$2 and usage_date=(now() at time zone 'Asia/Kolkata')::date",[workspace,user])).rows[0].minutes_reserved)-1190/60)<0.001);
