@@ -26,7 +26,7 @@ Status terms below are conservative. A code change is not called complete until 
 | Daily video-minute limits | Blocked | Schema for daily usage and pending parts exists, but the limit reservation, midnight-in-user-timezone accounting, and FFmpeg boundary-aware splitting are not wired end-to-end. Long videos must not be considered supported until this is done. |
 | Pending page/scheduler | Partial | Added a Pending page in Studio, authenticated list/approve/decline/reschedule API, 48-hour expiry worker, and idempotent job-start/job-finish/expiry notifications. Due-part scheduler and actual part render pipeline remain, so approved pending parts do not yet run end-to-end. |
 | Plans/entitlements | Partial | Server-owned workspace entitlements define Free/Pro/Studio defaults; FFmpeg export paths now cap resolution and burn the Free watermark, and publishing API/worker check auto-publish/scheduling entitlements. Daily-minute enforcement, regeneration/cover limits, brand-kit limits, and priority-queue enforcement remain. Pro is set to 180 minutes/day as a provisional value requiring approval. No payment provider/purchase flow was added. |
-| Gemini rotation | Partial | Worker chat planning rotates across the primary key and optional keys 2–5, retries transient failures, applies cooldowns, and records health by environment label only. Other direct Gemini worker paths still use the primary key; durable cooldown recovery across worker restarts is not complete. |
+| Gemini rotation | Partial | Shared Gemini generation calls use the primary key and optional keys 1–5 / `GEMINI_API_KEYS`, retry transient failures, apply cooldowns, and persist health counters by environment label. Gemini file uploads and direct generation endpoints that bypass the shared helper still need coverage; durable cooldown recovery across worker restarts is not complete. |
 | Rate limiting | Partial | Upstash-backed per-user/per-IP helper wired into email/OAuth authentication attempts, import tickets, source fetch, AI chat, Drive import, publishing, admin diagnostics, and job-status polling. Other endpoints still need coverage. Protected paths return 503 if Redis configuration is absent or unavailable. |
 | Security | Partial | Server errors are sanitized in the updated workflow/ingestion paths; private credentials stay in environment variables and Gemini health stores labels only. Full per-endpoint authorization, signed-media URL review, encrypted OAuth token migration, and table-by-table anonymous-policy review remain. |
 | Admin diagnostics | Partial | Admin-only diagnostics API and credit adjustment API added; existing hidden admin page already exists but the new diagnostics endpoint is not yet integrated into its UI. Publish failure IDs and normalized categories are now stored; broader upload/export failure correlation remains. |
@@ -42,7 +42,8 @@ Both must be configured in Vercel server environments. Without them, rate-limite
 
 ### Gemini key rotation (worker environment only)
 - Existing: `GEMINI_API_KEY`
-- Optional additional keys: `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`, `GEMINI_API_KEY_5`
+- Optional additional keys: `GEMINI_API_KEY_1`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`, `GEMINI_API_KEY_5`, or comma-separated `GEMINI_API_KEYS`.
+- Shared Gemini text-generation calls now use a common multi-key failover helper and persist key health counters/cooldowns by non-secret label. File upload/other provider API operations still require separate failover coverage; cooldown state is in-memory for scheduling plus persisted diagnostics, not yet restored from DB on worker restart.
 - Existing: `GEMINI_MODEL`
 
 Never use `NEXT_PUBLIC_*` for Gemini keys. Do not paste secrets into GitHub or this report.
