@@ -16,6 +16,8 @@ export async function POST(request) {
     if (sourceId) {
       source = checked(await admin.from("project_sources").select("*").eq("id",sourceId).eq("project_id",projectId).maybeSingle());
       if (!source) throw problem("Source not found.",404);
+      if (source.source_url && source.metadata?.rights_confirmed !== true)
+        throw problem("Confirm that you own or have rights to this content before importing a URL.",403);
     }
     if (!asset && !source) throw problem("Attach a video first.");
     if (asset?.status === "uploading") throw problem("Finish uploading this video before sending.",409);
@@ -27,7 +29,7 @@ export async function POST(request) {
     const payload = {operation:transcript ? "ai_chat_plan" : "chat_ingest",workspaceId,projectId,
       mediaAssetId:asset?.id || null,sourceId:source?.id || null,
       sourceType:asset ? "upload" : source.source_type,url:asset ? null : source.source_url,
-      sessionId,requestId,clipId:clipId || null,prompt,requestedBy:user.id};
+      rightsConfirmed:Boolean(source?.metadata?.rights_confirmed),sessionId,requestId,clipId:clipId || null,prompt,requestedBy:user.id};
     const job = checked(await admin.rpc("submit_ai_chat_job",{p_id:requestId,p_session:sessionId,
       p_workspace:workspaceId,p_user:user.id,p_project:projectId,p_asset:asset?.id || null,p_prompt:prompt,p_payload:payload}));
     const warning = await wakeWorker({...payload,jobId:job.id},token);
