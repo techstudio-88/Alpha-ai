@@ -8,7 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,setGeminiHealthReporter} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,uploadGeminiFileWithRotation,setGeminiHealthReporter} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
@@ -39,7 +39,11 @@ function cmd(command,args){return new Promise((resolve,reject)=>{
 })}
 const geminiUploads=new Map();
 async function cachedGeminiUpload(ai,filePath,mimeType="video/mp4"){
-  if(!geminiUploads.has(filePath))geminiUploads.set(filePath,{ai,promise:ai.files.upload({file:filePath,config:{mimeType}})});
+  if(!geminiUploads.has(filePath)){
+    const entry={ai,promise:null};
+    entry.promise=uploadGeminiFileWithRotation(filePath,mimeType).then(uploaded=>{entry.ai=uploaded.ai;return uploaded.file});
+    geminiUploads.set(filePath,entry);
+  }
   return geminiUploads.get(filePath).promise;
 }
 async function cleanupGeminiFiles(dir){
