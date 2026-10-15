@@ -46,6 +46,8 @@ Live migration history contains these Phase 1 versions:
 - `20261015111118` — `20261015_phase_1_brand_kit_limits`
 - `20261015110930` — `20261015_phase_1_priority_queue`
 - `20261015111118` — `20261015_phase_1_brand_kit_limits`
+- `20261015110930` — `20261015_phase_1_priority_queue`
+- `20261015111118` — `20261015_phase_1_brand_kit_limits`
 
 The feature-limit idempotency fix was applied to production and now reactivates a refunded reservation only if the daily cap still permits it. The RLS update-policy fix was applied and live-verified: all five affected policies now include `WITH CHECK`. The Studio-priority queue RPC and database-enforced brand-kit cap were also applied and are present in production migration history.
 
@@ -57,6 +59,8 @@ Migration files in the branch:
 - `supabase/migrations/20261015_phase_1_plan_entitlements.sql`
 - `supabase/migrations/20261015_phase_1_feature_limits_idempotency.sql`
 - `supabase/migrations/20261015_phase_1_rls_update_checks.sql`
+- `supabase/migrations/20261015_phase_1_priority_queue.sql`
+- `supabase/migrations/20261015_phase_1_brand_kit_limits.sql`
 - `supabase/migrations/20261015_phase_1_priority_queue.sql`
 - `supabase/migrations/20261015_phase_1_brand_kit_limits.sql`
 
