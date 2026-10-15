@@ -47,8 +47,14 @@ export async function generateGeminiWithRotation({primaryKey,model,contents,conf
   const keys=configuredGeminiKeys(primaryKey);
   if(!keys.length) throw new Error("Gemini is not configured on the media worker.");
   const now=Date.now();
-  const ready=keys.filter(key=>(geminiKeyHealth.get(key)?.cooldownUntil||0)<=now);
-  const candidates=ready.length?ready:keys.filter(key=>(geminiKeyHealth.get(key)?.cooldownUntil||0)<=Math.min(...keys.map(k=>geminiKeyHealth.get(k)?.cooldownUntil||0)));
+  const candidates=keys.filter(key=>(geminiKeyHealth.get(key)?.cooldownUntil||0)<=now);
+  if(!candidates.length) {
+    const failure=new Error("AI processing is temporarily unavailable. The job should remain queued for automatic retry.");
+    failure.retryableProviderUnavailable=true;
+    failure.providerStatus="cooldown";
+    failure.retryAfterMs=Math.max(1000,Math.min(...keys.map(k=>geminiKeyHealth.get(k)?.cooldownUntil||now+1000))-now);
+    throw failure;
+  }
   let last;
   for(const key of candidates) {
     const state=geminiKeyHealth.get(key)||{successes:0,failures:0,rateLimits:0,cooldownUntil:0};
