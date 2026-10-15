@@ -45,6 +45,13 @@ create index if not exists processing_jobs_dead_letter_idx
   on public.processing_jobs(dead_lettered_at desc)
   where dead_lettered_at is not null;
 
+-- Idempotent in-app notifications for durable job and pending-part lifecycle events.
+alter table public.notifications
+  add column if not exists event_type text,
+  add column if not exists dedupe_key text;
+create unique index if not exists notifications_dedupe_key_uidx
+  on public.notifications(dedupe_key) where dedupe_key is not null;
+
 -- AI credits are separate from video-minute allowances and the existing token_ledger.
 create table if not exists public.credit_ledger (
   id uuid primary key default gen_random_uuid(),
