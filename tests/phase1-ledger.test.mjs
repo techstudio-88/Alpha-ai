@@ -11,7 +11,7 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
       create role anon; create role authenticated; create role service_role;
       create schema auth;
       create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
-      create table auth.users(id uuid primary key);
+      create table auth.users(id uuid primary key,email text);\n      create table public.control_center_members(id uuid primary key default gen_random_uuid(),email text,role text,active boolean default true);
       create table public.workspaces(id uuid primary key);
       create table public.workspace_members(workspace_id uuid,user_id uuid);
       create table public.projects(id uuid primary key,workspace_id uuid);
