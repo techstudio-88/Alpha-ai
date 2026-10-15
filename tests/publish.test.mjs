@@ -13,6 +13,7 @@ function fixture(resume=false){
       if(params.last_attempt_at&&params.last_attempt_at!==`eq.${job.last_attempt_at}`)return [];
       job={...job,...body};return [{...job}];
     }
+    if(table==='workspace_entitlements')return [{plan:'pro',auto_publish:true,scheduling_enabled:true}];
     if(table==='publish_connections')return [{id:'connection',access_token:'fixture-token',expires_at:'2099-01-01T00:00:00Z'}];
     if(table==='clips')return [{id:'clip',project_id:'project',title:'Fixture clip'}];
     if(table==='projects')return [{id:'project'}];
