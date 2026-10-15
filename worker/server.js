@@ -8,7 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,setGeminiHealthReporter} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
@@ -20,7 +20,8 @@ const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_A
 const authStore=new AsyncLocalStorage();
 const jobDirs=new Map();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
-async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
+async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const prefer=table==="gemini_key_health"&&method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation";const r=await fetch(u,{method,headers:{...headers,Prefer:prefer},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
+setGeminiHealthReporter(async health=>{try{await db("gemini_key_health",{method:"POST",params:{on_conflict:"key_label"},body:{key_label:health.keyLabel,is_available:health.isAvailable,cooldown_until:health.cooldownUntil,last_status:health.lastStatus,last_error_id:null,success_count:health.successCount,failure_count:health.failureCount,rate_limit_count:health.rateLimitCount,last_used_at:health.lastUsedAt,updated_at:new Date().toISOString()}})}catch{console.warn("gemini_key_health_write_failed")}});
 function cmd(command,args){return new Promise((resolve,reject)=>{
   let settled=false;
   const executable=command==="ffmpeg"?process.env.FFMPEG_PATH||command:command==="ffprobe"?process.env.FFPROBE_PATH||command:command;
