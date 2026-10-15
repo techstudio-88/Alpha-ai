@@ -802,7 +802,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       const captionFile=captions?writeCaptionSrt(clipDir,segments,start,end):null;
       if(captions&&!captionFile)throw new Error("Captions were requested, but no timed transcript is available for this clip.");
       let reframeKeyframes=null;
-      if(preferences.autoReframe!==false&&preferences.aspect!=="16:9"&&GEMINI_API_KEY){
+      if(preferences.autoReframe!==false&&preferences.aspect!=="16:9"&&hasGeminiKeys()){
         const analysisPath=path.join(clipDir,clip.id+'-analysis.mp4');
         await renderClip(input,analysisPath,start,end);
         try{reframeKeyframes=await analyzeReframeWithGemini(analysisPath,end-start)}catch{console.warn('Speaker framing unavailable; preserving centered fallback for this clip.')}
