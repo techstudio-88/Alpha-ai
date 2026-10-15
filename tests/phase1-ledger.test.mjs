@@ -16,6 +16,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
       create table public.workspace_members(workspace_id uuid,user_id uuid);
       create table public.projects(id uuid primary key,workspace_id uuid);
       create table public.media_assets(id uuid primary key,workspace_id uuid,project_id uuid,status text);
+      create table public.brand_kits(id uuid primary key default gen_random_uuid(),workspace_id uuid,name text,config jsonb);
+      create table public.brand_kit_profiles(id uuid primary key default gen_random_uuid(),workspace_id uuid,name text);
       create table public.processing_jobs(
         id uuid primary key,workspace_id uuid not null,project_id uuid,job_type text not null,
         status text,progress integer,payload jsonb,error text,created_at timestamptz default now(),
@@ -53,6 +55,8 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.exec(featureIdempotencyMigration);
     const priorityQueueMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_priority_queue.sql",import.meta.url),"utf8");
     await db.exec(priorityQueueMigration);
+    const brandLimitMigration=await readFile(new URL("../supabase/migrations/20261015_phase_1_brand_kit_limits.sql",import.meta.url),"utf8");
+    await db.exec(brandLimitMigration);
     const user=randomUUID(),workspace=randomUUID(),project=randomUUID(),asset=randomUUID();
     await db.query("insert into auth.users(id) values($1)",[user]);
     await db.query("insert into public.workspaces(id) values($1)",[workspace]);
@@ -60,6 +64,9 @@ test("Phase 1 ledger migration reserves once, refunds once, and atomically charg
     await db.query("insert into public.projects(id,workspace_id) values($1,$2)",[project,workspace]);
     await db.query("insert into public.media_assets(id,workspace_id,project_id,status) values($1,$2,$3,'uploaded')",[asset,workspace,project]);
     await db.query("insert into public.usage_credits(workspace_id,user_id,credits) values($1,$2,10)",[workspace,user]);
+    await db.query("insert into public.brand_kits(workspace_id,name,config) values($1,'First kit','{}'::jsonb)",[workspace]);
+    await assert.rejects(db.query("insert into public.brand_kit_profiles(workspace_id,name) values($1,'Second kit')",[workspace]),/BRAND_KIT_LIMIT_REACHED/);
+    await db.query("delete from public.brand_kits where workspace_id=$1",[workspace]);
 
     const otherWorkspace=randomUUID(),otherProject=randomUUID();
     await db.query("insert into public.workspaces(id) values($1)",[otherWorkspace]);
