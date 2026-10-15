@@ -14,7 +14,8 @@ async function callWorker(worker,ticket,payload){
   for(let attempt=0;attempt<4;attempt++){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);
     try{
-      const response=await fetch(worker.replace(/\\/$/,"")+"/process",{
+      const workerBase=worker.endsWith("/")?worker.slice(0,-1):worker;
+      const response=await fetch(workerBase+"/process",{
         method:"POST",
         headers:{"content-type":"application/json","x-import-ticket":ticket},
         body:JSON.stringify(payload),signal:controller.signal,cache:"no-store"
