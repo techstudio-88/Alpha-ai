@@ -427,6 +427,7 @@ begin
     end if;
     if v_job.status in ('queued','processing') then
       perform public.reserve_job_credits(p_workspace,p_id,p_user,v_cost,'AI chat job accepted','job:'||p_id::text||':reserve');
+      select * into v_job from public.processing_jobs where id=p_id;
     end if;
     return to_jsonb(v_job);
   end if;
