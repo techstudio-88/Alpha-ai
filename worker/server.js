@@ -384,6 +384,17 @@ async function notifyOnce(workspaceId,userId,title,message,eventType,dedupeKey){
     await db("notifications",{method:"POST",body:{workspace_id:workspaceId,user_id:userId,title,message,event_type:eventType,dedupe_key:dedupeKey}});
   }catch{}
 }
+async function detectSilenceBoundaries(file){
+  return new Promise(resolve=>{
+    let stderr="",settled=false;
+    const child=spawn(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-nostats","-i",file,"-vn","-af","silencedetect=noise=-35dB:d=0.45","-f","null","-"],{stdio:["ignore","ignore","pipe"]});
+    const finish=values=>{if(settled)return;settled=true;clearTimeout(timer);resolve(values)};
+    const timer=setTimeout(()=>{child.kill("SIGKILL");finish([])},120000);
+    child.stderr.on("data",chunk=>{stderr=(stderr+chunk.toString()).slice(-2*1024*1024)});
+    child.on("error",()=>finish([]));
+    child.on("close",()=>finish([...stderr.matchAll(/silence_end:\s*([0-9]+(?:\.[0-9]+)?)/g)].map(match=>Number(match[1])).filter(value=>Number.isFinite(value)&&value>=0)));
+  });
+}
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
@@ -482,6 +493,23 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   }
   const sourceDuration=duration;
   p={...p,mediaAssetId:asset.id,url:null,driveAccessToken:undefined,googlePhotosAccessToken:undefined,driveCredential:undefined,photosCredential:undefined};
+  if(!p.videoQuotaPlanned&&p.operation!=="render_edit"&&p.operation!=="ai_chat_plan"){
+    const silenceBoundaries=sourceDuration>300?await detectSilenceBoundaries(input):[];
+    const planned=await db("rpc/plan_video_processing_parts",{method:"POST",body:{
+      p_workspace_id:p.workspaceId,p_project_id:p.projectId,p_user_id:p.requestedBy,p_job_id:p.jobId,
+      p_media_asset_id:asset.id,p_duration_seconds:sourceDuration,p_timezone:p.timezone||"Asia/Kolkata",
+      p_silence_boundaries:silenceBoundaries
+    }});
+    const plan=planned&&typeof planned==="object"?planned:{};
+    p={...p,videoQuotaPlanned:true,videoQuotaPlan:plan,partStartSeconds:Number(plan.partStartSeconds)||0,
+      partEndSeconds:Number(plan.partEndSeconds)||sourceDuration,partNumber:Number(plan.partNumber)||1,
+      sourceDurationSeconds:sourceDuration};
+    if(plan.deferCurrent){
+      await patchJob(p.jobId,{payload:p});
+      await notifyOnce(p.workspaceId,p.requestedBy,"Video part scheduled","Your daily video-minute allowance is used. Part 1 is scheduled for "+String(plan.scheduledFor||"the next available day")+".","video_part_scheduled","job:"+p.jobId+":part-1-scheduled");
+      return;
+    }
+  }
   const partStart=Number(p.partStartSeconds),partEnd=Number(p.partEndSeconds);
   if(Number.isFinite(partStart)&&Number.isFinite(partEnd)&&partStart>=0&&partEnd>partStart&&partEnd<=sourceDuration+0.5&&partEnd-partStart<sourceDuration-0.25){
     const segmentPath=path.join(dir,"scheduled-part.mp4");
@@ -929,29 +957,10 @@ async function processApprovedPendingParts(){
     const now=new Date().toISOString();
     const parts=await db("pending_processing_parts",{params:{
       status:"eq.approved",scheduled_for:"lte."+now,
-      select:"id,workspace_id,project_id,user_id,media_asset_id,parent_job_id,part_number,start_seconds,end_seconds,timezone,scheduled_for",
-      order:"scheduled_for.asc",limit:"5"
+      select:"id",order:"scheduled_for.asc",limit:"10"
     }});
     for(const part of parts||[]){
-      const key="pending-part:"+part.id;
-      let job=(await db("processing_jobs",{params:{workspace_id:"eq."+part.workspace_id,idempotency_key:"eq."+key,select:"id,status",limit:"1"}}))[0];
-      if(!job){
-        const inserted=await db("processing_jobs",{method:"POST",params:{on_conflict:"workspace_id,idempotency_key"},
-          body:{workspace_id:part.workspace_id,project_id:part.project_id,job_type:"process_media",status:"queued",progress:0,
-            idempotency_key:key,next_retry_at:new Date(Date.now()+120000).toISOString(),
-            payload:{workspaceId:part.workspace_id,projectId:part.project_id,requestedBy:part.user_id,
-              mediaAssetId:part.media_asset_id,sourceType:"upload",operation:"process_video_part",
-              partNumber:part.part_number,parentJobId:part.parent_job_id,partStartSeconds:Number(part.start_seconds),
-              partEndSeconds:Number(part.end_seconds),scheduledPartId:part.id}}});
-        job=inserted?.[0]||null;
-        if(!job)job=(await db("processing_jobs",{params:{workspace_id:"eq."+part.workspace_id,idempotency_key:"eq."+key,select:"id,status",limit:"1"}}))[0];
-      }
-      if(!job?.id)continue;
-      const changed=await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+part.id,status:"eq.approved"},
-        body:{status:"queued",job_id:job.id,updated_at:now}});
-      if(!changed?.length)continue;
-      await db("processing_jobs",{method:"PATCH",params:{id:"eq."+job.id,workspace_id:"eq."+part.workspace_id},
-        body:{status:"queued",next_retry_at:null,updated_at:now}});
+      await db("rpc/claim_due_pending_part",{method:"POST",body:{p_part_id:part.id}});
     }
   }catch{console.warn("pending_part_scheduler_scan_failed")}
 }
