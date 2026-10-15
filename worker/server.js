@@ -371,6 +371,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
   if(!project)throw new Error("Processing project does not belong to this workspace.");
   if(!p.requestedBy)p.requestedBy=project.owner_id;
+  if(p.url&&!p.rightsConfirmed)throw new Error("URL rights confirmation is required before import.");
   if(p.mediaAssetId&&!(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing video context mismatch.");
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
   if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
