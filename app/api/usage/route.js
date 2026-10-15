@@ -15,7 +15,8 @@ export async function GET(request){
     const postedSpend=(ledger||[]).filter(row=>row.entry_type==='spend'&&row.status==='posted').reduce((sum,row)=>sum+Math.abs(Number(row.amount||0)),0);
     const daily=Number(allowance?.daily_tokens??100),spent=Math.max(Number(allowance?.tokens_spent||0),postedSpend),bonus=postedRewards;
     const timezone=(()=>{const candidate=String(user.user_metadata?.timezone||'Asia/Kolkata');try{new Intl.DateTimeFormat('en-US',{timeZone:candidate});return candidate}catch{return 'Asia/Kolkata'}})();
-    const videoDate=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const dateParts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(part=>[part.type,part.value]));
+    const videoDate=dateParts.year+'-'+dateParts.month+'-'+dateParts.day;
     const entitlement=checked(await admin.from('workspace_entitlements').select('plan,daily_video_minutes,fair_use_unlimited').eq('workspace_id',workspaceId).maybeSingle());
     const videoUsage=checked(await admin.from('video_usage_daily').select('minutes_reserved,minutes_completed,usage_date,timezone').eq('workspace_id',workspaceId).eq('user_id',user.id).eq('usage_date',videoDate).maybeSingle());
     const videoLimit=Number(entitlement?.daily_video_minutes??20),videoReserved=Number(videoUsage?.minutes_reserved||0),videoCompleted=Number(videoUsage?.minutes_completed||0),videoUnlimited=Boolean(entitlement?.fair_use_unlimited);
