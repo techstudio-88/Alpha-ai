@@ -903,6 +903,7 @@ app.post("/assistant",async(req,res)=>{
   try{
     if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
     if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    await restoreWorkerGeminiCooldowns();
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
