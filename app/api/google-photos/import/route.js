@@ -1,6 +1,7 @@
 import{createClient}from"@supabase/supabase-js";
 import {encryptCredential} from '../../../../lib/credential-cipher.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
+import {enforceApiRateLimit} from '../../../../lib/workflow-server';
 export const runtime="nodejs";
 export async function POST(request){
  try{
@@ -12,6 +13,9 @@ export async function POST(request){
   const supabase=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:auth}}});
   const{data:{user},error}=await supabase.auth.getUser(auth.slice(7));if(error||!user||user.id!==userId)return Response.json({error:"Invalid session."},{status:401});
   const{data:isMember,error:memberError}=await supabase.rpc("is_workspace_member",{wid:workspaceId});if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
+  const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;if(!serviceKey)return Response.json({error:"Supabase server credentials are not configured."},{status:503});
+  const limiter=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+  await enforceApiRateLimit(limiter,user.id,"/api/google-photos/import",10,60);
   const mediaFile=item.mediaFile; if(!String(mediaFile.mimeType||"").startsWith("video/"))return Response.json({error:"Selected Google Photos item is not a video."},{status:400});
    const sourceUrl=String(mediaFile.baseUrl);const externalId=String(item.id);
    const sourceHost=new URL(sourceUrl);if(sourceHost.protocol!=='https:'||!sourceHost.hostname.endsWith('.googleusercontent.com')||sourceHost.username||sourceHost.password||sourceHost.port)return Response.json({error:'Unsupported Google Photos source.'},{status:400});
@@ -24,5 +28,5 @@ export async function POST(request){
    const wr=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","x-worker-secret":secret},body:JSON.stringify({workspaceId,projectId:project.data.id,jobId:job.data.id,requestedBy:user.id}),signal:AbortSignal.timeout(10000)}).catch(()=>null);
    const wd=await wr?.json().catch(()=>({}));if(wr&&[401,403].includes(wr.status))throw new Error(wd.error||"Media worker authorization failed.");
   return Response.json({ok:true,projectId:project.data.id,jobId:job.data.id,file:mediaFile});
- }catch(e){console.error("google-photos-import",e);return Response.json({error:e?.message||"Google Photos import failed."},{status:500})}
+ }catch(e){console.error("google-photos-import",e);return Response.json({error:e?.message||"Google Photos import failed."},{status:e?.status||500,headers:e?.retryAfter?{"Retry-After":String(e.retryAfter)}:undefined})}
 }
