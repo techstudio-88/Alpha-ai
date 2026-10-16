@@ -85,7 +85,7 @@ export default function BrowserTranscriber({ workspace }) {
         if(updated.error)throw updated.error;
       }
       if(payload.sourceId){
-        const updated=await supabase.from("project_sources").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
+        const updated=await supabase.from("project_sources").update({status:"processed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
         if(updated.error)throw updated.error;
       }
       await touchJob(job.id,{
