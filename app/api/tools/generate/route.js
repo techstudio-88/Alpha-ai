@@ -1,4 +1,4 @@
-import {randomUUID,createHash} from "node:crypto";
+import {randomUUID} from "node:crypto";
 import {createClient} from "@supabase/supabase-js";
 import {authorizeWorkflow,enforceApiRateLimit,reserveWorkspaceFeatureUsage,finishWorkspaceFeatureUsage,problem,workflowError} from "../../../../lib/workflow-server";
 
