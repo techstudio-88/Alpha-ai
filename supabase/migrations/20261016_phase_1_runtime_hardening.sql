@@ -54,6 +54,10 @@ begin
     v_window_start + make_interval(secs => p_window_seconds) - clock_timestamp()
   )))::integer);
 
+  if v_count = 1 and mod(abs(hashtext(p_key_hash || p_route)::bigint),100)=0 then
+    delete from public.api_rate_limits where window_start < clock_timestamp() - interval '24 hours';
+  end if;
+
   return jsonb_build_object(
     'allowed', v_count <= p_limit,
     'count', v_count,
