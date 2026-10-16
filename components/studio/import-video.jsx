@@ -71,6 +71,8 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
   async function start(input){
     setBusy(true);setError('');setProgress(0);
     let project;
+    let localAudio=null;
+    let workerConfigured=false;
     try{
       if(demo){notify('This is a sample workspace. Sign in to import your own footage.');return}
       const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);
@@ -87,11 +89,13 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
         setFile(remoteFile);
         return await start(remoteFile);
       }
-      if(!isFile&&parsed.sourceType!=='direct_url'){
-        const statusResponse=await fetch('/api/worker/status',{cache:'no-store'});
-        const workerStatus=await statusResponse.json().catch(()=>({}));
-        if(!statusResponse.ok||!workerStatus.configured)throw new Error('This provider link needs a configured media worker. For a free local import, use a direct HTTPS video file URL that permits browser CORS, or upload the video from your device.');
-      }
+      const statusResponse=await fetch('/api/worker/status',{cache:'no-store'}).catch(()=>null);
+      const workerStatus=await statusResponse?.json().catch(()=>({}));
+      workerConfigured=Boolean(statusResponse?.ok&&workerStatus?.configured);
+      if(!isFile&&parsed.sourceType!=='direct_url'&&!workerConfigured)throw new Error('This provider link needs a configured media worker. For a free local import, use a direct HTTPS video file URL that permits browser CORS, or upload the video from your device.');
+      const localPolicy=getLocalExportPolicy({isMobile:window.matchMedia('(max-width: 760px)').matches,deviceMemory:Number(navigator.deviceMemory)||0,hardwareConcurrency:Number(navigator.hardwareConcurrency)||0});
+      const localCap=Math.min(localPolicy.maxBytes,LOCAL_IMPORT_CAP_BYTES);
+      if(isFile&&!workerConfigured&&input.size>localCap)throw new Error('No media worker is configured, so this upload will be processed locally. This device has a '+Math.floor(localCap/1048576)+' MB local-processing limit. Choose a smaller video to avoid freezing the browser.');
       if(isFile&&input.size>512*1024*1024)throw new Error('Choose a video under 512 MB. Larger-source support needs a higher worker and storage budget.');
       if(isFile&&!input.type.startsWith('video/')&&!/\.(mp4|mov|webm|mkv|m4v)$/i.test(input.name))throw new Error('Choose an MP4, MOV, WebM, MKV, or M4V video.');
       const name=isFile?input.name.replace(/\.[^.]+$/,''):parsed.sourceType==='youtube'?'YouTube recording':'Imported recording';
@@ -108,15 +112,20 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
         });
         unwrap(await supabase.from('media_assets').update({status:'uploaded'}).eq('id',asset.id));
         unwrap(await supabase.from('videos').insert({project_id:project.id,media_asset_id:asset.id,title:name,status:'ready'}));
+        if(!workerConfigured){
+          setProgress(90);
+          localAudio=await prepareLocalAudioChunks(input,workspace.id,project.id,value=>setProgress(90+Math.round(value*8)));
+        }
       }
-      const source=unwrap(await supabase.from('project_sources').insert({workspace_id:workspace.id,project_id:project.id,source_type:isFile?'upload':parsed.sourceType,source_url:parsed?.url||null,file_name:isFile?input.name:null,status:'queued'}).select().single());
-      const payload={workspaceId:workspace.id,projectId:project.id,sourceId:source.id,mediaAssetId:asset?.id||null,requestedBy:user.id,sourceType:isFile?'upload':parsed.sourceType,url:parsed?.url||null,preferencesRequired:true};
-      // Hold the durable job until the creator answers (or skips) the optional processing brief.
-      // The worker only claims queued jobs, so this cannot start processing behind the chat screen.
-      const job=unwrap(await supabase.from('processing_jobs').insert({workspace_id:workspace.id,project_id:project.id,job_type:'ingest',status:'awaiting_preferences',progress:0,payload}).select().single());
-      notify('Source uploaded. Let’s tailor the cut before processing.');
+      const source=unwrap(await supabase.from('project_sources').insert({workspace_id:workspace.id,project_id:project.id,source_type:isFile?'upload':parsed.sourceType,source_url:parsed?.url||null,file_name:isFile?input.name:null,status:localAudio?'processing':'queued'}).select().single());
+      let transcript=null;
+      if(localAudio)transcript=unwrap(await supabase.from('transcripts').insert({media_asset_id:asset.id,status:'processing',provider:'browser-whisper-local'}).select().single());
+      const payload={workspaceId:workspace.id,projectId:project.id,sourceId:source.id,mediaAssetId:asset?.id||null,requestedBy:user.id,sourceType:isFile?'upload':parsed.sourceType,url:parsed?.url||null,preferencesRequired:!localAudio,...(localAudio?{localOnly:true,localAnalysis:'heuristic',durationSeconds:localAudio.duration,transcriptId:transcript.id,transcribeChunk:0,transcriptionChunks:localAudio.chunks}: {})};
+      // Local mode uses browser FFmpeg + Whisper and never queues work to an absent server.
+      const job=unwrap(await supabase.from('processing_jobs').insert({workspace_id:workspace.id,project_id:project.id,job_type:'ingest',status:localAudio?'awaiting_transcription':'awaiting_preferences',progress:localAudio?8:0,current_stage:localAudio?'transcription':null,payload}).select().single());
+      notify(localAudio?'Upload saved. Transcribing on this device with the free browser model.':'Source uploaded. Let’s tailor the cut before processing.');
       await supabase.from('projects').update({status:'processing'}).eq('id',project.id);
-      setProgress(100);refresh();onOpenChange(false);navigate('chat',{project:project.id,job:job.id,afterUpload:'1'});
+      setProgress(100);refresh();onOpenChange(false);navigate('chat',{project:project.id,job:job.id,afterUpload:localAudio?undefined:'1'});
     }catch(err){setError(err.message);if(project)await supabase.from('projects').update({status:'upload_failed'}).eq('id',project.id)}finally{setBusy(false)}
   }
   const imported=result=>{refresh();onOpenChange(false);notify('Source added. Processing is queued.');navigate('chat',{project:result.projectId,job:result.jobId})};
