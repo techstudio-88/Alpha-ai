@@ -116,3 +116,42 @@ test("failed and cancelled job credit refunds are idempotent", async () => {
     await db.close();
   }
 });
+
+test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create schema auth;
+      create schema private;
+      create role anon;
+      create role authenticated;
+      create role service_role;
+      create table auth.users(id uuid primary key,email text);
+      create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+      create table public.workspaces(id uuid primary key,name text,owner_id uuid,created_at timestamptz default now());
+      create table public.workspace_members(workspace_id uuid,user_id uuid,role text,created_at timestamptz default now());
+      create table public.projects(id uuid primary key,workspace_id uuid,owner_id uuid,name text,created_at timestamptz default now());
+      create table public.media_assets(id uuid primary key,project_id uuid,workspace_id uuid,storage_path text,duration_seconds numeric,created_at timestamptz default now());
+      create table public.processing_jobs(
+        id uuid primary key,workspace_id uuid,project_id uuid,job_type text not null default 'process_media',
+        status text not null default 'queued',progress integer not null default 0,payload jsonb not null default '{}'::jsonb,
+        error text,created_at timestamptz default now(),updated_at timestamptz default now()
+      );
+      create table public.ai_chat_sessions(id uuid primary key,workspace_id uuid,user_id uuid,title text,project_id uuid,media_asset_id uuid,updated_at timestamptz default now());
+      create table public.ai_chat_messages(id uuid primary key,session_id uuid,workspace_id uuid,user_id uuid,role text,content text,metadata jsonb default '{}'::jsonb);
+      create table public.control_center_members(email text,active boolean default true);
+      create function private.issue_processing_ticket(p_workspace_id uuid,p_project_id uuid,p_source_id uuid,p_job_id uuid,p_media_asset_id uuid)
+        returns table(ticket text,expires_at timestamptz) language sql as $$ select null::text,now() $$;
+    `);
+    const sql = await readFile(new URL("../supabase/migrations/20261015_phase_1_backend_foundation.sql", import.meta.url), "utf8");
+    await db.exec(sql);
+    const tables = (await db.query("select table_name from information_schema.tables where table_schema='public' and table_name=any($1)",[[
+      "usage_credits","credit_ledger","pending_processing_parts","video_usage_daily","workspace_entitlements","workspace_feature_usage","gemini_key_health","api_rate_limits"
+    ]])).rows.map(row=>row.table_name).sort();
+    assert.equal(tables.length,8);
+    assert.ok((await db.query("select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='reserve_job_credits'")).rows[0].n===1);
+    assert.ok((await db.query("select relrowsecurity from pg_class where oid='public.credit_ledger'::regclass")).rows[0].relrowsecurity);
+  } finally {
+    await db.close();
+  }
+});
