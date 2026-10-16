@@ -1,5 +1,5 @@
 import{createClient}from"@supabase/supabase-js";
-import {enforceApiRateLimit} from "../../../lib/workflow-server";
+import {enforceWorkspaceApiRateLimit} from "../../../lib/workflow-server";
 export const runtime="nodejs";
 export async function POST(request){
   try{
