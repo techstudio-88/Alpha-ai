@@ -119,6 +119,8 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
         if(!workerConfigured){
           setProgress(90);
           localAudio=await prepareLocalAudioChunks(input,workspace.id,project.id,value=>setProgress(90+Math.round(value*8)));
+          unwrap(await supabase.from('media_assets').update({duration_seconds:localAudio.duration}).eq('id',asset.id));
+          unwrap(await supabase.from('videos').update({duration_seconds:localAudio.duration,status:'ready'}).eq('media_asset_id',asset.id));
         }
       }
       const source=unwrap(await supabase.from('project_sources').insert({workspace_id:workspace.id,project_id:project.id,source_type:isFile?'upload':parsed.sourceType,source_url:parsed?.url||null,file_name:isFile?input.name:null,status:localAudio?'downloaded':'queued'}).select().single());
