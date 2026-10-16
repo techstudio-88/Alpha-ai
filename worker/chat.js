@@ -63,8 +63,10 @@ USER REQUEST: ${prompt}`;
   return {summary:last.summary,clips};
 }
 
-export async function generateChatPlan(p,{db,patchJob,key,model}) {
-  if (!key) throw new Error("GEMINI_API_KEY is not configured on the Render media worker.");
+export async function generateChatPlan(p,{db,patchJob,key,keys,model}) {
+  const keyPool = [...new Set((Array.isArray(keys) ? keys : [key]).filter((value) => typeof value === "string" && value.trim()))];
+  if (!keyPool.length) throw new Error("GEMINI_API_KEY is not configured on the media worker.");
+  let nextKeyIndex = 0;
   const asset=(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"*"}}))[0];
   if(!asset) throw new Error("Chat source video is unavailable.");
   const transcript=(await db("transcripts",{params:{media_asset_id:"eq."+asset.id,status:"eq.completed",select:"id",order:"created_at.desc",limit:1}}))[0];
