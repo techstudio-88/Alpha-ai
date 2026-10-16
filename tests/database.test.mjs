@@ -11,6 +11,7 @@ test("chat transactions enforce workspace scope and persist exactly one plan/ren
     await db.exec(`create role anon; create role authenticated; create role service_role;
       create schema auth; create schema private;
       create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as 'select null::uuid';
       create table workspaces(id uuid primary key);
       create table workspace_members(workspace_id uuid,user_id uuid);
       create table projects(id uuid primary key,workspace_id uuid);
