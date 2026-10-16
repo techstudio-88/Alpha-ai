@@ -22,7 +22,7 @@ async function guard(request){
  return{user,admin,role:member?.role||"owner",allowlisted:allow.includes(email),allow};
 }
 const csvEscape=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
-const safeErrorText=value=>String(value??"").replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\\s]+/gi,"key=[redacted]").slice(0,1000);
+const safeErrorText=value=>String(value??"").replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\s]+/gi,"key=[redacted]").slice(0,1000);
 const safeJobPayload=payload=>{
  const scrub=value=>{
   if(Array.isArray(value))return value.map(scrub);
