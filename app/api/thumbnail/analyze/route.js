@@ -1,10 +1,20 @@
 import {randomUUID} from "node:crypto";
+import {lookup} from "node:dns/promises";
+import {isIP} from "node:net";
 import {createClient} from "@supabase/supabase-js";
 import {enforceWorkspaceApiRateLimit,reserveWorkspaceFeatureUsage,finishWorkspaceFeatureUsage,problem,workflowError} from "../../../../lib/workflow-server";
 
 export const runtime="nodejs";
 const admin=()=>createClient(process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,{auth:{persistSession:false}});
 const publicClient=()=>createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,{auth:{persistSession:false}});
+function isPrivateAddress(address){
+  const value=String(address||"").toLowerCase().replace(/^::ffff:/,"");
+  if(isIP(value)===4){
+    const octets=value.split(".").map(Number);
+    return octets[0]===0||octets[0]===10||octets[0]===127||octets[0]===169&&octets[1]===254||octets[0]===172&&octets[1]>=16&&octets[1]<=31||octets[0]===192&&octets[1]===168||octets[0]===100&&octets[1]>=64&&octets[1]<=127||octets[0]>=224||octets[0]===198&&(octets[1]===18||octets[1]===19);
+  }
+  return value==="::"||value==="::1"||value.startsWith("fc")||value.startsWith("fd")||value.startsWith("fe80:")||value.startsWith("ff");
+}
 
 export async function POST(req){
   let client=null,usageId=null;
@@ -28,11 +38,15 @@ export async function POST(req){
 
     const imageUrl=String(body.image_url||"");
     if(!imageUrl)throw problem("image_url required",400);
-    const target=new URL(imageUrl);
+    let target;
+    try{target=new URL(imageUrl)}catch{throw problem("Invalid thumbnail URL.",400)}
     const host=target.hostname.toLowerCase();
-    if(target.protocol!=="https:"||host==="localhost"||host.endsWith(".localhost")||/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)||host==="::1"||host==="[::1]"){
-      throw problem("Only public HTTPS thumbnail URLs are supported.",400);
-    }
+    if(target.protocol!=="https:"||host==="localhost"||host.endsWith(".localhost"))throw problem("Only public HTTPS thumbnail URLs are supported.",400);
+    try{
+      const literal=host.replace(/^\[|\]$/g,"");
+      const addresses=isIP(literal)?[{address:literal}]:await lookup(literal,{all:true,verbatim:true});
+      if(!addresses.length||addresses.some(item=>isPrivateAddress(item.address)))throw problem("Thumbnail URL must resolve only to public IP addresses.",400);
+    }catch(error){if(error?.status)throw error;throw problem("Thumbnail URL could not be resolved safely.",400)}
     const imageResponse=await fetch(target,{signal:AbortSignal.timeout(10000),redirect:"error"});
     if(!imageResponse.ok)throw problem("Thumbnail could not be fetched.",400);
     const contentLength=Number(imageResponse.headers.get("content-length")||0);
