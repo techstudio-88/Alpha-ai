@@ -1,7 +1,7 @@
 import{createClient}from"@supabase/supabase-js";
 import {encryptCredential} from '../../../../lib/credential-cipher.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
-import {enforceApiRateLimit} from '../../../../lib/workflow-server';
+import {enforceWorkspaceApiRateLimit} from '../../../../lib/workflow-server';
 export const runtime="nodejs";
 export async function POST(request){
  try{
