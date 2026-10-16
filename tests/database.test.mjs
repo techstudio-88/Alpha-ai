@@ -34,6 +34,10 @@ test("chat transactions enforce workspace scope and persist exactly one plan/ren
     await submit();await submit();
     assert.equal((await db.query("select credits from usage_credits where workspace_id=$1 and user_id=$2",[w,user])).rows[0].credits,0,"Accepted AI-chat jobs reserve exactly one credit");
     assert.equal((await db.query("select count(*)::int as n from credit_ledger where job_id=$1 and transaction_type='reserve'",[job])).rows[0].n,1,"Replaying an accepted job must not reserve a second credit");
+    const zeroSession=randomUUID(),zeroJob=randomUUID();
+    await assert.rejects(db.query("select submit_ai_chat_job($1,$2,$3,$4,$5,$6,$7,$8)",[zeroJob,zeroSession,w,user,project,asset,"No balance",{...payload,sessionId:zeroSession}]),/INSUFFICIENT_CREDITS/);
+    assert.equal((await db.query("select count(*)::int as n from processing_jobs where id=$1",[zeroJob])).rows[0].n,0,"A job with no credit balance must not be accepted");
+    assert.equal((await db.query("select count(*)::int as n from ai_chat_messages where session_id=$1",[zeroSession])).rows[0].n,0,"Failed credit reservation must roll back the chat message");
     assert.equal((await db.query("select * from claim_processing_job()")).rows.length,0,"An incomplete upload must not be processed");
     await db.query("update media_assets set status='uploaded' where id=$1",[asset]);
     assert.equal((await db.query("select * from claim_processing_job()")).rows[0].id,job);
