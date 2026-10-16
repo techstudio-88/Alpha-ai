@@ -67,3 +67,71 @@ revoke all on function public.consume_api_rate_limit(text, text, integer, intege
   from public, anon, authenticated;
 grant execute on function public.consume_api_rate_limit(text, text, integer, integer)
   to service_role;
+
+-- Failed and explicitly cancelled jobs may return a prior reservation once only.
+create or replace function public.refund_failed_job_credits(
+  p_workspace_id uuid,
+  p_job_id uuid,
+  p_user_id uuid,
+  p_reason text,
+  p_idempotency_key text
+) returns public.credit_ledger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_job public.processing_jobs;
+  v_reservation public.credit_ledger;
+  v_balance public.usage_credits;
+  v_entry public.credit_ledger;
+begin
+  if p_workspace_id is null or p_job_id is null or p_user_id is null
+     or coalesce(length(trim(p_idempotency_key)),0)<8 then
+    raise exception using errcode='22023', message='Invalid credit refund request';
+  end if;
+
+  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
+  if found then
+    if v_entry.workspace_id<>p_workspace_id or v_entry.user_id<>p_user_id
+       or v_entry.job_id<>p_job_id or v_entry.transaction_type<>'refund' then
+      raise exception using errcode='23505', message='Credit refund idempotency key conflict';
+    end if;
+    return v_entry;
+  end if;
+
+  select * into v_job from public.processing_jobs
+    where id=p_job_id and workspace_id=p_workspace_id for update;
+  if not found then raise exception using errcode='23503', message='Job not found'; end if;
+  if v_job.status not in ('failed','dead_letter','cancelled') then
+    raise exception using errcode='23514', message='Only failed or cancelled jobs can be refunded';
+  end if;
+
+  select * into v_reservation from public.credit_ledger
+    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id and transaction_type='reserve'
+    for update;
+  if not found then return null; end if;
+
+  select * into v_entry from public.credit_ledger
+    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id and transaction_type='refund';
+  if found then return v_entry; end if;
+
+  select * into v_balance from public.usage_credits
+    where workspace_id=p_workspace_id and user_id=p_user_id for update;
+  if not found then raise exception using errcode='23503', message='Credit balance not found'; end if;
+
+  update public.usage_credits set credits=credits+abs(v_reservation.amount),updated_at=now()
+    where id=v_balance.id;
+  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
+    values(p_workspace_id,p_user_id,p_job_id,abs(v_reservation.amount),'refund',
+      coalesce(nullif(trim(p_reason),''),'Automatic refund for failed or cancelled job'),p_idempotency_key)
+    returning * into v_entry;
+  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
+  return v_entry;
+end
+$function$;
+
+revoke all on function public.refund_failed_job_credits(uuid, uuid, uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function public.refund_failed_job_credits(uuid, uuid, uuid, text, text)
+  to service_role;
