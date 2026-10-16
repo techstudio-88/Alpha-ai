@@ -121,7 +121,7 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
           localAudio=await prepareLocalAudioChunks(input,workspace.id,project.id,value=>setProgress(90+Math.round(value*8)));
         }
       }
-      const source=unwrap(await supabase.from('project_sources').insert({workspace_id:workspace.id,project_id:project.id,source_type:isFile?'upload':parsed.sourceType,source_url:parsed?.url||null,file_name:isFile?input.name:null,status:localAudio?'processing':'queued'}).select().single());
+      const source=unwrap(await supabase.from('project_sources').insert({workspace_id:workspace.id,project_id:project.id,source_type:isFile?'upload':parsed.sourceType,source_url:parsed?.url||null,file_name:isFile?input.name:null,status:localAudio?'downloaded':'queued'}).select().single());
       let transcript=null;
       if(localAudio)transcript=unwrap(await supabase.from('transcripts').insert({media_asset_id:asset.id,status:'processing',provider:'browser-whisper-local'}).select().single());
       const payload={workspaceId:workspace.id,projectId:project.id,sourceId:source.id,mediaAssetId:asset?.id||null,requestedBy:user.id,sourceType:isFile?'upload':parsed.sourceType,url:parsed?.url||null,preferencesRequired:!localAudio,...(localAudio?{localOnly:true,localAnalysis:'heuristic',durationSeconds:localAudio.duration,transcriptId:transcript.id,transcribeChunk:0,transcriptionChunks:localAudio.chunks}: {})};
