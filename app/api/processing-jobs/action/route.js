@@ -9,11 +9,14 @@ export async function POST(request){
     if(!job)throw problem('Job not found.',404);
     const allowed=action==='retry'?['failed','cancelled']:['queued','processing','awaiting_transcription','transcribing'];
     if(!allowed.includes(job.status))throw problem('This job cannot be changed in its current state.',409);
-    const patch=action==='cancel'?{status:'cancelled',lease_until:null,cancel_requested_at:new Date().toISOString()}:{status:'queued',error:null,attempt_count:0,lease_until:null,next_retry_at:null,dead_lettered_at:null,error_id:null,failure_type:null,payload:{...job.payload,retryCount:0,videoQuotaPlanned:false,videoQuotaPlan:null,partStartSeconds:null,partEndSeconds:null,partNumber:null,usageDate:null}};
+    const isPartJob=Boolean(job.payload?.scheduledPartId);
+    const retryPayload=isPartJob?{...job.payload,retryCount:0,videoQuotaPlanned:true}:{...job.payload,retryCount:0,videoQuotaPlanned:false,videoQuotaPlan:null,partStartSeconds:null,partEndSeconds:null,partNumber:null,usageDate:null};
+    const patch=action==='cancel'?{status:'cancelled',lease_until:null,cancel_requested_at:new Date().toISOString()}:{status:'queued',error:null,attempt_count:0,lease_until:null,next_retry_at:null,dead_lettered_at:null,error_id:null,failure_type:null,payload:retryPayload};
     const changed=checked(await admin.from('processing_jobs').update(patch).eq('id',job.id).eq('workspace_id',workspaceId).eq('status',job.status).select('id'));
     if(!changed.length)throw problem('The job changed. Refresh before retrying.',409);
     let accountingWarning=null;
     if(action==='cancel'){
+      if(job.payload?.scheduledPartId)await admin.from('pending_processing_parts').update({status:'cancelled',decided_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.payload.scheduledPartId);
       const usageResult=await admin.rpc('finish_video_usage_for_job',{p_job_id:job.id,p_succeeded:false});
       if(usageResult.error)accountingWarning='Cancellation succeeded, but reserved video minutes need reconciliation.';
       const requester=job.payload?.requestedBy;
