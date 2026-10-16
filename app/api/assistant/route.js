@@ -21,7 +21,8 @@ export async function POST(request){
     const context=JSON.stringify({selectedClip:selection,transcript:transcript.map(w=>w.word).join(' ').slice(0,4500),previousConversation:history,
       projects:projects.slice(0,12).map(p=>({...p,name:String(p.name).slice(0,100)})),clips:clips.slice(0,10).map(c=>({...c,title:String(c.title).slice(0,100)})),
       task:'Provide advice or draft copy. Editing actions are previewed and applied in the clip editor; never claim changes or publishing have been performed.'}).slice(0,12000);
-    const worker=(process.env.MEDIA_WORKER_URL||'https://alpha-ai-media-worker.onrender.com').replace(/\/$/,'');
+    const worker=String(process.env.MEDIA_WORKER_URL||'').replace(/\/$/,'');
+    if(!worker)throw problem('The AI assistant needs a configured media worker. Local trim and local export remain available; AI analysis is not configured.',503);
     const response=await fetch(worker+'/assistant',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,context}),signal:AbortSignal.timeout(20000)});
     if(!response.ok)throw problem('The assistant is temporarily unavailable. Try again after the media worker wakes.',503);
     const result=await response.json();
