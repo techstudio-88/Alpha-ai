@@ -2,6 +2,7 @@
 import {useState} from 'react';
 import * as tus from 'tus-js-client';
 import {sourceUrl} from '../../lib/video-workflow.mjs';
+import {readResponseWithinLimit} from '../../lib/local-processing.mjs';
 import {supabase} from '../../lib/supabase';
 import GoogleDriveBrowser from '../GoogleDriveBrowser';
 import GooglePhotosPicker from '../GooglePhotosPicker';
@@ -17,8 +18,26 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
     try{
       if(demo){notify('This is a sample workspace. Sign in to import your own footage.');return}
       const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);
+      if(!isFile&&parsed.sourceType==='direct_url'){
+        const response=await fetch(parsed.url,{mode:'cors',credentials:'omit',cache:'no-store'});
+        const bytes=await readResponseWithinLimit(response,200*1024*1024);
+        const remoteUrl=new URL(parsed.url);
+        const leaf=decodeURIComponent(remoteUrl.pathname.split('/').filter(Boolean).pop()||'remote-video.mp4').replace(/[^a-z\d._-]/gi,'-').slice(-120);
+        const declared=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+        const ext=/\.(mp4|mov|webm|mkv|m4v)$/i.exec(leaf)?.[1]?.toLowerCase();
+        if(!declared.startsWith('video/')&&!ext)throw new Error('The link did not return a recognizable video file.');
+        const mime=declared.startsWith('video/')?declared:({mp4:'video/mp4',m4v:'video/x-m4v',mov:'video/quicktime',webm:'video/webm',mkv:'video/x-matroska'}[ext]||'video/mp4');
+        const remoteFile=new File([bytes],leaf||'remote-video.mp4',{type:mime});
+        setFile(remoteFile);
+        return await start(remoteFile);
+      }
+      if(!isFile&&parsed.sourceType!=='direct_url'){
+        const statusResponse=await fetch('/api/worker/status',{cache:'no-store'});
+        const workerStatus=await statusResponse.json().catch(()=>({}));
+        if(!statusResponse.ok||!workerStatus.configured)throw new Error('This provider link needs a configured media worker. For a free local import, use a direct HTTPS video file URL that permits browser CORS, or upload the video from your device.');
+      }
       if(isFile&&input.size>512*1024*1024)throw new Error('Choose a video under 512 MB. Larger-source support needs a higher worker and storage budget.');
-      if(isFile&&!input.type.startsWith('video/')&&!/\.(mp4|mov|webm|mkv)$/i.test(input.name))throw new Error('Choose an MP4, MOV, WebM, or MKV video.');
+      if(isFile&&!input.type.startsWith('video/')&&!/\.(mp4|mov|webm|mkv|m4v)$/i.test(input.name))throw new Error('Choose an MP4, MOV, WebM, MKV, or M4V video.');
       const name=isFile?input.name.replace(/\.[^.]+$/,''):parsed.sourceType==='youtube'?'YouTube recording':'Imported recording';
       project=unwrap(await supabase.from('projects').insert({workspace_id:workspace.id,owner_id:user.id,name,status:isFile?'uploading':'processing'}).select().single());
       let asset=null;
