@@ -894,10 +894,16 @@ app.post("/assistant",async(req,res)=>{
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
-    const ai=createGeminiClient();
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
+    const imageBase64=String(req.body?.imageBase64||"");
+    const mimeType=String(req.body?.mimeType||"image/jpeg");
+    if(imageBase64.length>1600000)return res.status(413).json({error:"Image is too large for analysis."});
+    if(imageBase64&&!["image/jpeg","image/png","image/webp"].includes(mimeType))return res.status(400).json({error:"Unsupported image type."});
+    const parts=[{text:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt}];
+    if(imageBase64)parts.push({inlineData:{mimeType,data:imageBase64}});
+    const config=req.body?.responseMimeType==="application/json"?{responseMimeType:"application/json"}:{};
+    const result=await generateGeminiWithRetry(createGeminiClient(),GEMINI_MODEL,[{role:"user",parts}],config,3);
     return res.json({ok:true,text:String(result.text||"").trim()});
-  }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
+  }catch(e){console.error("assistant",e);return res.status(Number(e?.status)||500).json({error:e.message||"Assistant failed."})}
 });
 const activeJobs=new Set();
 let recoveryInFlight=false;
