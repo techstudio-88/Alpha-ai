@@ -377,9 +377,9 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
   if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
   if(p.sessionId&&!(await db("ai_chat_sessions",{params:{id:"eq."+p.sessionId,workspace_id:"eq."+p.workspaceId,user_id:"eq."+p.requestedBy,select:"id"}})).length)throw new Error("Processing chat context mismatch.");
-  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL}); return; }
+  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,keyRing:GEMINI_KEY_RING,model:GEMINI_MODEL}); return; }
   if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
-    await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});
+    await runChatPlan(p,{db,patchJob,keyRing:GEMINI_KEY_RING,model:GEMINI_MODEL});
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
   }
   await patchJob(p.jobId,{progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
@@ -483,7 +483,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     let aiEdit=null;
     if(p.aiPrompt?.trim()&&p.aiEditStatus!=="applied"){
       await patchJob(p.jobId,{progress:25,payload:{...p,aiEditStatus:"analyzing"}});
-      const plan=await generateChatPlan({...p,prompt:p.aiPrompt,selection:{start_seconds:start,end_seconds:end,...p}},{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});
+      const plan=await generateChatPlan({...p,prompt:p.aiPrompt,selection:{start_seconds:start,end_seconds:end,...p}},{db,patchJob,keyRing:GEMINI_KEY_RING,model:GEMINI_MODEL});
       aiEdit=plan.clips[0];p={...p,...aiEdit,aiEditStatus:"applied",aiEditReason:aiEdit.reason};
       start=aiEdit.startSeconds;end=aiEdit.endSeconds;
     }
@@ -634,7 +634,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:textRows.map(s=>s.text).join(" "),status:"completed",provider:"gemini"}});
   }
   const allRows=await allPages((offset,limit)=>db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc,id.asc",offset,limit}}));
-  if(p.operation==='chat_ingest'){await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});await db('projects',{method:'PATCH',params:{id:'eq.'+p.projectId},body:{status:'ready'}});return}
+  if(p.operation==='chat_ingest'){await runChatPlan(p,{db,patchJob,keyRing:GEMINI_KEY_RING,model:GEMINI_MODEL});await db('projects',{method:'PATCH',params:{id:'eq.'+p.projectId},body:{status:'ready'}});return}
   await setStage(p,"transcription","completed",100);
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
