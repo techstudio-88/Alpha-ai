@@ -349,7 +349,7 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
      const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),prompt]),{responseMimeType:"application/json"});
     const rows=JSON.parse(result.text||"[]");if(!Array.isArray(rows))return;
     await db("speaker_segments",{method:"DELETE",params:{project_id:"eq."+projectId}}).catch(()=>{});
-    const clean=rows.map(x=>({project_id:projectId,speaker_label:String(x.speaker_label||"Speaker 1").slice(0,80),start_ms:Math.max(0,Math.round((Number(x.start_seconds)||0)*1000)),end_ms:Math.min(Math.round(duration*1000),Math.round((Number(x.end_seconds)||0)*1000)),confidence:Number(x.confidence)||null,metadata:{source:"gemini"}})).filter(x=>x.end_ms>x.start_ms);
+    const clean=rows.map(x=>({project_id:projectId,speaker_label:String(x.speaker_label||"Speaker 1").slice(0,80),start_ms:Math.max(0,Math.round((offsetSeconds+(Number(x.start_seconds)||0))*1000)),end_ms:Math.min(Math.round((offsetSeconds+duration)*1000),Math.round((offsetSeconds+(Number(x.end_seconds)||0))*1000)),confidence:Number(x.confidence)||null,metadata:{source:"gemini"}})).filter(x=>x.end_ms>x.start_ms);
     if(clean.length)await db("speaker_segments",{method:"POST",body:clean});
     // Map diarization intervals back onto transcript segments so the transcript is speaker-aware.
     try{
@@ -662,7 +662,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
   const safeDuration=Math.max(0,Number(duration)||0);
   if(!safeDuration)throw new Error("Source video duration could not be determined.");
-  await setStage(p,"speaker_detection","running",0);await detectSpeakersWithGemini(input,workDurationSeconds,p.projectId);await setStage(p,"speaker_detection","completed",100);
+  await setStage(p,"speaker_detection","running",0);await detectSpeakersWithGemini(input,workDurationSeconds,p.projectId,workStartSeconds);await setStage(p,"speaker_detection","completed",100);
   await setStage(p,"topic_segmentation","running",0);if(workStartSeconds<=0.01)await db("video_topics",{method:"DELETE",params:{project_id:"eq."+p.projectId}}).catch(()=>{});
   const topicWindows=[];
   for(let start=workStartSeconds;start<workEndSeconds;start+=300){const end=Math.min(workEndSeconds,start+300);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
@@ -866,6 +866,9 @@ async function resumeQueuedJobs(){
   try{
     if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
     if(activeJobs.size)return;
+    const nowIso=new Date().toISOString();
+    const dueParts=await db("pending_processing_parts",{params:{status:"eq.approved",scheduled_for:"lte."+nowIso,select:"id",order:"scheduled_for.asc",limit:"1"}}).catch(()=>[]);
+    if(dueParts?.[0]?.id)await db("rpc/claim_due_pending_part",{method:"POST",body:{p_part_id:dueParts[0].id}}).catch(e=>console.warn("pending video part scheduler:",e.message));
     const rpcUrl=SUPA+"/rest/v1/rpc/claim_processing_job";const rpcResponse=await fetch(rpcUrl,{method:"POST",headers:baseAuth,body:JSON.stringify({p_worker:"media-worker"})});const claimed=rpcResponse.ok?await rpcResponse.json().catch(()=>[]):null;
     const row=Array.isArray(claimed)?claimed[0]:null;
     if(!row?.id){console.log("job recovery found no claimable job");return}
