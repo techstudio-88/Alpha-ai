@@ -34,6 +34,13 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
       );
       create table public.video_usage_daily(user_id uuid);
       create table public.workspace_feature_usage(user_id uuid);
+      create table public.workspace_entitlements(workspace_id uuid primary key,brand_kit_limit integer default 1,scheduling_enabled boolean default false,auto_publish boolean default false);
+      create table public.brand_kits(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.brand_kit_profiles(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.clip_schedules(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz not null);
+      create table public.scheduled_posts(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz);
+      create table public.content_plans(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz);
+      create table public.publish_jobs(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz,metadata jsonb not null default '{}'::jsonb);
       create role anon;
       create role authenticated;
       create role service_role;
@@ -96,6 +103,13 @@ test("failed and cancelled job credit refunds are idempotent", async () => {
       create table public.pending_processing_parts(job_id uuid,media_asset_id uuid,project_id uuid,user_id uuid,workspace_id uuid);
       create table public.video_usage_daily(user_id uuid);
       create table public.workspace_feature_usage(user_id uuid);
+      create table public.workspace_entitlements(workspace_id uuid primary key,brand_kit_limit integer default 1,scheduling_enabled boolean default false,auto_publish boolean default false);
+      create table public.brand_kits(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.brand_kit_profiles(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.clip_schedules(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz not null);
+      create table public.scheduled_posts(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz);
+      create table public.content_plans(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz);
+      create table public.publish_jobs(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz,metadata jsonb not null default '{}'::jsonb);
       create role anon;
       create role authenticated;
       create role service_role;
