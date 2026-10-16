@@ -236,15 +236,15 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,1,"Terminal refund after resume is idempotent");
 
     const reserveFeature=async requestId=>(await db.query("select public.reserve_workspace_feature_usage($1,$2,$3,$4,$5) as result",[workspace,user,"title_regeneration","Asia/Kolkata",requestId])).rows[0].result;
-    const title1=await reserveFeature("title-1");
-    const title1Replay=await reserveFeature("title-1");
+    const title1=await reserveFeature("title-request-1");
+    const title1Replay=await reserveFeature("title-request-1");
     assert.equal(title1.allowed,true);
     assert.equal(title1Replay.duplicate,true,"Feature retries must not consume a second daily slot");
-    assert.equal((await reserveFeature("title-2")).allowed,true);
-    assert.equal((await reserveFeature("title-3")).allowed,true);
-    assert.equal((await reserveFeature("title-4")).allowed,false,"Free workspaces get three title regenerations per day");
+    assert.equal((await reserveFeature("title-request-2")).allowed,true);
+    assert.equal((await reserveFeature("title-request-3")).allowed,true);
+    assert.equal((await reserveFeature("title-request-4")).allowed,false,"Free workspaces get three title regenerations per day");
     await db.query("select public.finish_workspace_feature_usage($1,false)",[title1.usageId]);
-    assert.equal((await reserveFeature("title-4")).allowed,true,"Refunded feature reservations must release the slot");
+    assert.equal((await reserveFeature("title-request-4")).allowed,true,"Refunded feature reservations must release the slot");
     assert.equal((await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-1') as result",[workspace,user])).rows[0].result.allowed,true);
     assert.equal((await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-2') as result",[workspace,user])).rows[0].result.allowed,false,"Free workspaces get one cover rotation per day");
 
