@@ -251,15 +251,15 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
 
     await db.query("update public.workspace_entitlements set plan='pro' where workspace_id=$1",[workspace]);
     let entitlement=(await db.query("select daily_video_minutes,title_regenerations,auto_publish,scheduling_enabled,brand_kit_limit from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
-    assert.equal(entitlement.daily_video_minutes,180);
-    assert.equal(entitlement.title_regenerations,30);
+    assert.equal(Number(entitlement.daily_video_minutes),180);
+    assert.equal(Number(entitlement.title_regenerations),30);
     assert.equal(entitlement.auto_publish,true);
     assert.equal(entitlement.scheduling_enabled,false);
     await db.query("update public.workspace_entitlements set plan='studio' where workspace_id=$1",[workspace]);
     entitlement=(await db.query("select daily_video_minutes,scheduling_enabled,brand_kit_limit,fair_use_unlimited from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
-    assert.equal(entitlement.daily_video_minutes,999999);
+    assert.equal(Number(entitlement.daily_video_minutes),999999);
     assert.equal(entitlement.scheduling_enabled,true);
-    assert.equal(entitlement.brand_kit_limit,10);
+    assert.equal(Number(entitlement.brand_kit_limit),10);
     assert.equal(entitlement.fair_use_unlimited,true);
   } finally {
     await db.close();
