@@ -109,6 +109,13 @@ export default function BrowserTranscriber({ workspace }) {
         const updated=await supabase.from("project_sources").update({status:"processed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
         if(updated.error)throw updated.error;
       }
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(session?.access_token){
+          const stageResponse=await fetch("/api/local-processing/stages",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+session.access_token},body:JSON.stringify({workspaceId:workspace.id,jobId:job.id,action:"complete"})});
+          if(!stageResponse.ok)console.warn("Local stage status could not be finalized.");
+        }
+      }catch(error){console.warn("Local stage status could not be finalized:",error?.message||"")}
       await touchJob(job.id,{
         status:"completed",progress:100,current_stage:"local_analysis_complete",error:null,
         payload:finalPayload,lease_until:null
