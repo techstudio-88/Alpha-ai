@@ -51,6 +51,9 @@ test("local export arguments include aspect, effects, speed, transitions and cap
   assert.match(joined, /setpts=PTS\/1\.25/);
   assert.match(joined, /subtitles=captions\.srt/);
   assert.match(joined, /afade=t=in/);
+  assert.ok(args.includes("8")); // 10 seconds at 1.25× exports 8 seconds
+  const slowArgs = createLocalExportArguments(0, 10, { speed: 0.5 });
+  assert.ok(slowArgs.includes("20")); // 10 seconds at 0.5× exports 20 seconds
   assert.equal(args.at(-1), "output.mp4");
   assert.throws(() => createLocalExportArguments(0, 1, { speed: 3 }), /between 0\.5× and 2×/);
 });
