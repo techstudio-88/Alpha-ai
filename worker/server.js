@@ -408,7 +408,7 @@ async function detectSpeakersWithGemini(filePath,duration,projectId,offsetSecond
     }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
   }catch(e){console.warn("speaker detection fallback:",e.message)}
 }
-async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
+async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:"processing",updated_at:new Date().toISOString()}}).catch(()=>{});
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
   if(!project)throw new Error("Processing project does not belong to this workspace.");
