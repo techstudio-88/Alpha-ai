@@ -274,7 +274,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip:incom
       const blob=new Blob([output],{type:"video/mp4"});
       const downloadUrl=URL.createObjectURL(blob);
       const anchor=document.createElement("a");
-      const baseName=String(asset?.name||"alpha-clip").replace(/\\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-").slice(0,80)||"alpha-clip";
+      const baseName=String(asset?.name||"alpha-clip").replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-").slice(0,80)||"alpha-clip";
       anchor.href=downloadUrl;anchor.download=baseName+"-trim.mp4";
       document.body.appendChild(anchor);anchor.click();anchor.remove();
       window.setTimeout(()=>URL.revokeObjectURL(downloadUrl),60000);
