@@ -214,6 +214,32 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     await assert.rejects(db.query("select public.submit_ai_chat_job($1,$2,$3,$4,$5,$6,$7,$8)",[zeroJob,zeroSession,workspace,user,project,asset,"No balance",{...chatPayload,sessionId:zeroSession}]),/credit/i);
     assert.equal((await db.query("select count(*)::int as n from public.processing_jobs where id=$1",[zeroJob])).rows[0].n,0,"A zero-balance job must not be accepted");
     assert.equal((await db.query("select count(*)::int as n from public.ai_chat_messages where session_id=$1",[zeroSession])).rows[0].n,0,"A failed reservation must roll back the chat message");
+
+    const reserveFeature=async requestId=>(await db.query("select public.reserve_workspace_feature_usage($1,$2,$3,$4,$5) as result",[workspace,user,"title_regeneration","Asia/Kolkata",requestId])).rows[0].result;
+    const title1=await reserveFeature("title-1");
+    const title1Replay=await reserveFeature("title-1");
+    assert.equal(title1.allowed,true);
+    assert.equal(title1Replay.duplicate,true,"Feature retries must not consume a second daily slot");
+    assert.equal((await reserveFeature("title-2")).allowed,true);
+    assert.equal((await reserveFeature("title-3")).allowed,true);
+    assert.equal((await reserveFeature("title-4")).allowed,false,"Free workspaces get three title regenerations per day");
+    await db.query("select public.finish_workspace_feature_usage($1,false)",[title1.usageId]);
+    assert.equal((await reserveFeature("title-4")).allowed,true,"Refunded feature reservations must release the slot");
+    assert.equal((await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-1') as result",[workspace,user])).rows[0].result.allowed,true);
+    assert.equal((await db.query("select public.reserve_workspace_feature_usage($1,$2,'cover_rotation','Asia/Kolkata','cover-2') as result",[workspace,user])).rows[0].result.allowed,false,"Free workspaces get one cover rotation per day");
+
+    await db.query("update public.workspace_entitlements set plan='pro' where workspace_id=$1",[workspace]);
+    let entitlement=(await db.query("select daily_video_minutes,title_regenerations,auto_publish,scheduling_enabled,brand_kit_limit from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
+    assert.equal(entitlement.daily_video_minutes,180);
+    assert.equal(entitlement.title_regenerations,30);
+    assert.equal(entitlement.auto_publish,true);
+    assert.equal(entitlement.scheduling_enabled,false);
+    await db.query("update public.workspace_entitlements set plan='studio' where workspace_id=$1",[workspace]);
+    entitlement=(await db.query("select daily_video_minutes,scheduling_enabled,brand_kit_limit,fair_use_unlimited from public.workspace_entitlements where workspace_id=$1",[workspace])).rows[0];
+    assert.equal(entitlement.daily_video_minutes,999999);
+    assert.equal(entitlement.scheduling_enabled,true);
+    assert.equal(entitlement.brand_kit_limit,10);
+    assert.equal(entitlement.fair_use_unlimited,true);
   } finally {
     await db.close();
   }
