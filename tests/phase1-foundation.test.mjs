@@ -45,7 +45,7 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
       create role authenticated;
       create role service_role;
     `);
-    const sql = await readFile(new URL("../supabase/migrations/20261016113000_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+    const sql = await readFile(new URL("../supabase/migrations/20261016114631_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
     await db.exec(sql);
     const key = "a".repeat(64);
     const invoke = () => db.query(
@@ -81,7 +81,7 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
 });
 
 test("rate limiting hashes identities and never stores raw user or API keys", async () => {
-  const sql = await readFile(new URL("../supabase/migrations/20261016113000_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+  const sql = await readFile(new URL("../supabase/migrations/20261016114631_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
   assert.match(sql, /p_key_hash text/);
   assert.match(sql, /'\^\[a-f0-9\]\{64\}\$'/);
   assert.match(sql, /revoke all on function public\.consume_api_rate_limit[\s\S]*from public, anon, authenticated/i);
@@ -125,7 +125,7 @@ test("failed and cancelled job credit refunds are idempotent", async () => {
       create role authenticated;
       create role service_role;
     `);
-    const sql = await readFile(new URL("../supabase/migrations/20261016113000_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+    const sql = await readFile(new URL("../supabase/migrations/20261016114631_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
     await db.exec(sql);
     const workspace="11111111-1111-4111-8111-111111111111";
     const user="22222222-2222-4222-8222-222222222222";
@@ -178,7 +178,7 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
       create table public.content_plans(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz);
       create table public.publish_jobs(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz,metadata jsonb not null default '{}'::jsonb);
     `);
-    const runtimeSql = await readFile(new URL("../supabase/migrations/20261016113000_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+    const runtimeSql = await readFile(new URL("../supabase/migrations/20261016114631_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
     await db.exec(runtimeSql);
     const tables = (await db.query("select table_name from information_schema.tables where table_schema='public' and table_name=any($1)",[[
       "usage_credits","credit_ledger","pending_processing_parts","video_usage_daily","workspace_entitlements","workspace_feature_usage","gemini_key_health","api_rate_limits"
