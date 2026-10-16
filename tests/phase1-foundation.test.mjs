@@ -69,6 +69,7 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
     await db.query("insert into public.workspace_entitlements(workspace_id,brand_kit_limit,scheduling_enabled,auto_publish) values($1,1,false,false)",[workspace]);
     await db.query("insert into public.brand_kits(workspace_id) values($1)",[workspace]);
     await assert.rejects(db.query("insert into public.brand_kits(workspace_id) values($1)",[workspace]),/BRAND_KIT_LIMIT_REACHED/);
+    await assert.rejects(db.query("insert into public.brand_kit_profiles(workspace_id) values($1)",[workspace]),/BRAND_KIT_LIMIT_REACHED/);
     await assert.rejects(db.query("insert into public.clip_schedules(workspace_id,scheduled_for) values($1,now()+interval '1 day')",[workspace]),/SCHEDULING_NOT_INCLUDED_IN_PLAN/);
     await assert.rejects(db.query("insert into public.publish_jobs(workspace_id,scheduled_for,metadata) values($1,now(),$2::jsonb)",[workspace,JSON.stringify({auto_publish:true})]),/AUTO_PUBLISH_NOT_INCLUDED_IN_PLAN/);
     await db.query("update public.workspace_entitlements set scheduling_enabled=true,auto_publish=true where workspace_id=$1",[workspace]);
