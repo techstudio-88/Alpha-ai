@@ -937,6 +937,10 @@ AS $function$
 $function$;
 
 
+-- Harden SECURITY DEFINER wrappers: all referenced relations/functions are schema-qualified.
+alter function public.issue_processing_ticket(uuid,uuid,uuid,uuid,uuid) set search_path = '';
+alter function public.validate_processing_ticket(text) set search_path = '';
+
 -- Workspace entitlement defaults are created automatically for new workspaces.
 drop trigger if exists seed_workspace_entitlements_after_workspace_insert on public.workspaces;
 create trigger seed_workspace_entitlements_after_workspace_insert after insert on public.workspaces
