@@ -186,53 +186,38 @@ revoke all on function public.release_job_credits_for_provider_pause(uuid,uuid,u
 grant execute on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) to service_role;
 
 -- Enforce brand-kit caps and scheduling/publishing entitlements at the database boundary.
-create or replace function public.enforce_brand_kit_limit()
+create or replace function public.enforce_workspace_brand_kit_limit()
 returns trigger
 language plpgsql
 security definer
 set search_path to ''
 as $function$
-declare
-  v_limit integer;
-  v_count integer;
-  v_check boolean := false;
+declare v_limit integer; v_count integer;
 begin
-  if tg_op = 'INSERT' then
-    v_check := true;
-  else
-    v_check := new.workspace_id is distinct from old.workspace_id;
+  if new.workspace_id is null then
+    raise exception using errcode='23502',message='Brand kit workspace is required';
   end if;
-  if not v_check then return new; end if;
-
-  select e.brand_kit_limit into v_limit
-    from public.workspace_entitlements e
-    where e.workspace_id = new.workspace_id
-    for update;
-  if not found then
-    raise exception using errcode='23503', message='WORKSPACE_ENTITLEMENT_NOT_FOUND';
-  end if;
-
-  if tg_table_name = 'brand_kits' then
-    select count(*) into v_count from public.brand_kits b
-      where b.workspace_id = new.workspace_id and b.id <> new.id;
-  else
-    select count(*) into v_count from public.brand_kit_profiles b
-      where b.workspace_id = new.workspace_id and b.id <> new.id;
-  end if;
-
-  if v_count >= greatest(1,coalesce(v_limit,1)) then
-    raise exception using errcode='P0001', message='BRAND_KIT_LIMIT_REACHED';
-  end if;
+  if tg_op='UPDATE' and new.workspace_id is not distinct from old.workspace_id then return new; end if;
+  select coalesce(e.brand_kit_limit,1) into v_limit
+    from public.workspace_entitlements e where e.workspace_id=new.workspace_id for update;
+  if not found then raise exception using errcode='23503',message='Workspace entitlement not found'; end if;
+  select
+    (select count(*) from public.brand_kits b where b.workspace_id=new.workspace_id and (tg_table_name<>'brand_kits' or b.id is distinct from new.id))+
+    (select count(*) from public.brand_kit_profiles p where p.workspace_id=new.workspace_id and (tg_table_name<>'brand_kit_profiles' or p.id is distinct from new.id))
+    into v_count;
+  if v_count>=v_limit then raise exception using errcode='P0001',message='BRAND_KIT_LIMIT_REACHED'; end if;
   return new;
 end
 $function$;
 
 drop trigger if exists enforce_brand_kit_limit on public.brand_kits;
-create trigger enforce_brand_kit_limit before insert or update of workspace_id on public.brand_kits
-for each row execute function public.enforce_brand_kit_limit();
 drop trigger if exists enforce_brand_kit_profile_limit on public.brand_kit_profiles;
-create trigger enforce_brand_kit_profile_limit before insert or update of workspace_id on public.brand_kit_profiles
-for each row execute function public.enforce_brand_kit_limit();
+drop trigger if exists brand_kits_entitlement_limit on public.brand_kits;
+create trigger brand_kits_entitlement_limit before insert or update of workspace_id on public.brand_kits
+for each row execute function public.enforce_workspace_brand_kit_limit();
+drop trigger if exists brand_kit_profiles_entitlement_limit on public.brand_kit_profiles;
+create trigger brand_kit_profiles_entitlement_limit before insert or update of workspace_id on public.brand_kit_profiles
+for each row execute function public.enforce_workspace_brand_kit_limit();
 
 create or replace function public.enforce_scheduling_entitlement()
 returns trigger
@@ -298,9 +283,9 @@ drop trigger if exists enforce_publish_entitlements on public.publish_jobs;
 create trigger enforce_publish_entitlements before insert or update of workspace_id,scheduled_for,metadata on public.publish_jobs
 for each row execute function public.enforce_publish_entitlements();
 
-revoke all on function public.enforce_brand_kit_limit() from public,anon,authenticated;
+revoke all on function public.enforce_workspace_brand_kit_limit() from public,anon,authenticated;
 revoke all on function public.enforce_scheduling_entitlement() from public,anon,authenticated;
 revoke all on function public.enforce_publish_entitlements() from public,anon,authenticated;
-grant execute on function public.enforce_brand_kit_limit() to service_role;
+grant execute on function public.enforce_workspace_brand_kit_limit() to service_role;
 grant execute on function public.enforce_scheduling_entitlement() to service_role;
 grant execute on function public.enforce_publish_entitlements() to service_role;
