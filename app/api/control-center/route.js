@@ -17,7 +17,7 @@ async function guard(request){
  const allow=(process.env.ALPHA_CONTROL_ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
  const{data:member}=await admin.from("control_center_members").select("id,role,active").eq("email",email).eq("active",true).maybeSingle();
  if(!allow.includes(email)&&!member)throw Object.assign(new Error("Control center access denied."),{status:403});
- await enforceApiRateLimit(admin,user.id,"/api/control-center",60,60);
+ await enforceApiRateLimit(admin,"user:"+user.id,"/api/control-center",60,60,request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null);
  await admin.from("control_center_members").update({last_seen_at:new Date().toISOString()}).eq("email",email).eq("active",true);
  return{user,admin,role:member?.role||"owner",allowlisted:allow.includes(email),allow};
 }
