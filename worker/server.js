@@ -16,7 +16,8 @@ import {runPublishQueue} from './publish.js';
 import {aiFailure} from '../lib/ai-failures.mjs';
 import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
-const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
+const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_KEY_RING=createGeminiKeyRing(),GEMINI_KEYS=GEMINI_KEY_RING.keys,GEMINI_API_KEY=GEMINI_KEY_RING.current()?.key||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
+const nextGeminiApiKey=()=>GEMINI_KEY_RING.next()?.key||"";
 const authStore=new AsyncLocalStorage();
 const jobDirs=new Map();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
@@ -98,7 +99,7 @@ export async function renderEditedClip(input,out,start,end,opts={}){
 }
 async function analyzeVideoWithGemini(filePath,sourceDuration){
   if(!GEMINI_API_KEY)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
   let file=await cachedGeminiUpload(ai,filePath);
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini video analysis failed: "+String(file?.state||"unknown"));
@@ -123,7 +124,7 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
 }
 async function analyzeReframeWithGemini(filePath,sourceDuration){
   if(!GEMINI_API_KEY||sourceDuration<=0)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
   const file=await cachedGeminiUpload(ai,filePath);
   let active=file;
   for(let i=0;i<60&&active?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));active=await ai.files.get({name:active.name})}
@@ -150,7 +151,7 @@ function reframeExpr(keyframes,axis){
 }
 async function analyzeTranscriptWithGemini(segments,sourceDuration){
   if(!GEMINI_API_KEY||!Array.isArray(segments)||!segments.length)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
   const schema={type:"object",properties:{candidates:{type:"array",items:{type:"object",properties:{
     start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},
     hook_score:{type:"number"},emotional_intensity:{type:"number"},information_density:{type:"number"},
@@ -288,10 +289,10 @@ function dedupeClipCandidates(candidates){
   }
   return kept;
 }
-async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await ai.models.generateContent({model:GEMINI_MODEL,contents:prompt,config:{responseMimeType:"application/json",responseSchema:schema}});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch(e){console.warn("repurpose generation failed",clipId,e.message)}}
+async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await ai.models.generateContent({model:GEMINI_MODEL,contents:prompt,config:{responseMimeType:"application/json",responseSchema:schema}});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch(e){console.warn("repurpose generation failed",clipId,e.message)}}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
   if(!GEMINI_API_KEY||!instruction?.trim())return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
   let file=await cachedGeminiUpload(ai,filePath);
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini edit analysis failed: "+String(file?.state||"unknown"));
@@ -339,7 +340,7 @@ async function downloadRemote(url,out,type="direct_url",opts={}){
 async function detectSpeakersWithGemini(filePath,duration,projectId){
   if(!GEMINI_API_KEY)return;
   try{
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
     let file=await cachedGeminiUpload(ai,filePath);
     for(let i=0;i<60&&file.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
     if(file.state!=="ACTIVE")throw new Error("Speaker analysis media is unavailable.");
@@ -375,9 +376,9 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
   if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
   if(p.sessionId&&!(await db("ai_chat_sessions",{params:{id:"eq."+p.sessionId,workspace_id:"eq."+p.workspaceId,user_id:"eq."+p.requestedBy,select:"id"}})).length)throw new Error("Processing chat context mismatch.");
-  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); return; }
+  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL}); return; }
   if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
-    await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+    await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
   }
   await patchJob(p.jobId,{progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
@@ -481,7 +482,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     let aiEdit=null;
     if(p.aiPrompt?.trim()&&p.aiEditStatus!=="applied"){
       await patchJob(p.jobId,{progress:25,payload:{...p,aiEditStatus:"analyzing"}});
-      const plan=await generateChatPlan({...p,prompt:p.aiPrompt,selection:{start_seconds:start,end_seconds:end,...p}},{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+      const plan=await generateChatPlan({...p,prompt:p.aiPrompt,selection:{start_seconds:start,end_seconds:end,...p}},{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});
       aiEdit=plan.clips[0];p={...p,...aiEdit,aiEditStatus:"applied",aiEditReason:aiEdit.reason};
       start=aiEdit.startSeconds;end=aiEdit.endSeconds;
     }
@@ -606,7 +607,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     return;
   }
   if(!browserTranscription){
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
     for(let i=nextChunk;i<chunkCount;i++){
       const start=i*chunkSeconds,length=Math.min(chunkSeconds,duration-start),chunkAudio=path.join(dir,"server-chunk-"+i+".wav");
       await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
@@ -632,7 +633,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("transcripts",{method:"PATCH",params:{id:"eq."+transcript.id},body:{text:textRows.map(s=>s.text).join(" "),status:"completed",provider:"gemini"}});
   }
   const allRows=await allPages((offset,limit)=>db("transcript_segments",{params:{transcript_id:"eq."+transcript.id,select:"start_ms,end_ms,text",order:"start_ms.asc,id.asc",offset,limit}}));
-  if(p.operation==='chat_ingest'){await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});await db('projects',{method:'PATCH',params:{id:'eq.'+p.projectId},body:{status:'ready'}});return}
+  if(p.operation==='chat_ingest'){await runChatPlan(p,{db,patchJob,keys:GEMINI_KEYS.map(entry=>entry.key),model:GEMINI_MODEL});await db('projects',{method:'PATCH',params:{id:'eq.'+p.projectId},body:{status:'ready'}});return}
   await setStage(p,"transcription","completed",100);
   const segments=(allRows||[]).map(s=>({start:Number(s.start_ms)/1000,end:Number(s.end_ms)/1000,text:s.text||""}));
   await patchJob(p.jobId,{progress:62,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount}});
@@ -715,7 +716,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(e=>console.warn("video usage finalization failed:",e.message));await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
@@ -724,10 +725,10 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const retryCount=Number(p.retryCount||0)+1;
   const terminal=Boolean(p.sessionId)&&p.operation!=='render_edit'||retryCount>=5;
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
-  await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
+  await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});if(terminal){await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});if(p.requestedBy)await db("rpc/refund_failed_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_reason:"Automatic refund after terminal job failure",p_idempotency_key:"job:"+p.jobId+":refund"}}).catch(e=>console.warn("credit refund needs review:",e.message));}
   if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
    if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
+app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections","gemini-key-rotation"],geminiKeyCount:GEMINI_KEYS.length});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
@@ -790,7 +791,7 @@ app.post('/editor/plan',async(req,res)=>{
     const {words,draft,duration}=req.body||{};
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt||prompt.length>3000||!Array.isArray(words)||!words.length||words.length>1800||!draft)return res.status(400).json({error:'Choose a word-timed clip and a valid editing request.'});
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY,httpOptions:{timeout:20000}});
+    const ai=new GoogleGenAI({apiKey:nextGeminiApiKey(),httpOptions:{timeout:20000}});
     const plan=await planTranscript({words,duration:Number(duration),prompt,history:[],clip:{...draft,start_seconds:draft.start,end_seconds:draft.end},
       onProgress:async()=>{},generate:async(contents,responseSchema)=>{
         const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,contents,{responseMimeType:'application/json',responseJsonSchema:responseSchema});
@@ -806,7 +807,7 @@ app.post("/assistant/plan",async(req,res)=>{
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const transcript=String(req.body?.transcript||"").slice(0,60000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
     const instruction=`You are Alpha.ai's professional short-form video editor. Return ONLY valid JSON.
 Schema: {"summary":"string","clips":[{"a":0,"b":0,"title":"string","score":0,"reason":"string","aspect":"9:16","captionStyle":"pop","captionColor":"#00f2fe","hook":"string","zooms":[],"cuts":[],"transitions":"cut","broll":[],"overlays":[]}]}
 The transcript is an indexed list where each token is "index:word". Choose 3-6 clips, normally 20-60 seconds, starting with a hook and ending on a complete thought. a/b MUST be transcript word indexes. score is 0-100. Use aspect 9:16, 1:1 or 16:9; captionStyle pop/bold/minimal/none; transitions cut/fade/flash. cuts are [[fromWordIndex,toWordIndex]]. zooms are word indexes. broll is [{"at":wordIndex,"idea":"string"}]. overlays is [{"text":"string","at":wordIndex,"dur":2}].
@@ -828,7 +829,7 @@ app.post("/assistant",async(req,res)=>{
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+    const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
     const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
     return res.json({ok:true,text:String(result.text||"").trim()});
   }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
