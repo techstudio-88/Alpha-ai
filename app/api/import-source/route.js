@@ -1,5 +1,5 @@
 import{createClient}from"@supabase/supabase-js";
-import {enforceApiRateLimit} from "../../../lib/workflow-server";
+import {enforceWorkspaceApiRateLimit} from "../../../lib/workflow-server";
 export const runtime="nodejs";
 export const maxDuration=50;
 const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
