@@ -1,4 +1,5 @@
 import{createClient}from"@supabase/supabase-js";
+import {enforceApiRateLimit} from "../../../lib/workflow-server";
 export const runtime="nodejs";
 const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -15,11 +16,13 @@ async function guard(request){
  const admin=adminClient(),email=(user.email||"").toLowerCase();
  const allow=(process.env.ALPHA_CONTROL_ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
  const{data:member}=await admin.from("control_center_members").select("id,role,active").eq("email",email).eq("active",true).maybeSingle();
- if(!allow.includes(email)&&!member)throw new Error("Control center access denied.");
+ if(!allow.includes(email)&&!member)throw Object.assign(new Error("Control center access denied."),{status:403});
+ await enforceApiRateLimit(admin,user.id,"/api/control-center",60,60);
  await admin.from("control_center_members").update({last_seen_at:new Date().toISOString()}).eq("email",email).eq("active",true);
  return{user,admin,role:member?.role||"owner",allowlisted:allow.includes(email),allow};
 }
 const csvEscape=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+const safeJobPayload=payload=>Object.fromEntries(Object.entries(payload||{}).filter(([key])=>!/token|secret|password|api.?key|authorization|credential|signed.?url/i.test(key)));
 async function writeAudit(admin,user,action,meta={},workspaceId=null,entityId=null){
  await admin.from("audit_logs").insert({user_id:user.id,workspace_id:workspaceId,action,entity_type:"control_center",entity_id:entityId,metadata:meta});
 }
@@ -54,25 +57,32 @@ export async function GET(request){
    admin.from("profiles").select("id,full_name,avatar_url,created_at,updated_at"),
    admin.from("workspaces").select("id,name,owner_id,created_at"),
    admin.from("projects").select("id,workspace_id,owner_id,name,status,created_at,updated_at").order("created_at",{ascending:false}).limit(500),
-   admin.from("processing_jobs").select("id,workspace_id,project_id,status,progress,error,created_at,updated_at,current_stage,attempt_count,heartbeat_at,payload").order("created_at",{ascending:false}).limit(500),
+   admin.from("processing_jobs").select("id,workspace_id,project_id,status,progress,error,error_id,failure_type,created_at,updated_at,current_stage,attempt_count,heartbeat_at,lease_until,next_retry_at,dead_lettered_at,reserved_credits,video_minutes_reserved,video_usage_date,payload").order("created_at",{ascending:false}).limit(500),
    admin.from("user_activity_events").select("id,user_id,workspace_id,action,entity_type,entity_id,metadata,user_agent,ip_hash,created_at").order("created_at",{ascending:false}).limit(500),
    admin.from("user_privacy_consents").select("id,user_id,consent_type,policy_version,granted,source,metadata,created_at").order("created_at",{ascending:false}).limit(500),
    admin.from("control_center_members").select("id,email,role,active,invited_at,last_seen_at,created_at").order("created_at",{ascending:false}),
    admin.from("notifications").select("id,workspace_id,user_id,title,message,read_at,created_at").order("created_at",{ascending:false}).limit(300),
    admin.from("audit_logs").select("id,workspace_id,user_id,action,entity_type,entity_id,metadata,created_at").order("created_at",{ascending:false}).limit(500),
-   admin.from("workspace_members").select("workspace_id,user_id,role,created_at").order("created_at",{ascending:false}).limit(1000)
+   admin.from("workspace_members").select("workspace_id,user_id,role,created_at").order("created_at",{ascending:false}).limit(1000),
+   admin.from("credit_ledger").select("id,workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key,metadata,created_at").order("created_at",{ascending:false}).limit(200),
+   admin.from("gemini_key_health").select("key_label,is_available,cooldown_until,last_status,last_error_id,success_count,failure_count,rate_limit_count,last_used_at,updated_at").order("updated_at",{ascending:false}).limit(20),
+   admin.from("api_rate_limits").select("route,window_start,request_count").order("window_start",{ascending:false}).limit(200)
   ]);
   const p=new Map((profiles||[]).map(x=>[x.id,x])),w=new Map((workspaces||[]).map(x=>[x.id,x])),uMap=new Map((users||[]).map(x=>[x.id,x]));
   const u=(users||[]).map(x=>({id:x.id,email:x.email||"",phone:x.phone||"",created_at:x.created_at,last_sign_in_at:x.last_sign_in_at,confirmed_at:x.confirmed_at,app_metadata:x.app_metadata||{},user_metadata:x.user_metadata||{},profile:p.get(x.id)||null,workspaces:(workspaces||[]).filter(y=>y.owner_id===x.id).map(y=>({id:y.id,name:y.name,created_at:y.created_at}))}));
   const eventsNamed=(events||[]).map(x=>({...x,user_email:uMap.get(x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
   const auditNamed=(audit||[]).map(x=>({...x,user_email:uMap.get(x.user_id)?.email||"",workspace_name:w.get(x.workspace_id)?.name||""}));
   const workspaceRows=(workspaces||[]).map(x=>({...x,owner_email:uMap.get(x.owner_id)?.email||"",project_count:(projects||[]).filter(p=>p.workspace_id===x.id).length,member_count:(workspaceMembers||[]).filter(m=>m.workspace_id===x.id).length}));
-  const jobsNamed=(jobs||[]).map(x=>({...x,workspace_name:w.get(x.workspace_id)?.name||"",project_name:(projects||[]).find(p=>p.id===x.project_id)?.name||"",requested_by_email:uMap.get(x.payload?.requestedBy||x.payload?.requested_by)?.email||""}));
+  const jobsNamed=(jobs||[]).map(x=>({...x,payload:safeJobPayload(x.payload),workspace_name:w.get(x.workspace_id)?.name||"",project_name:(projects||[]).find(p=>p.id===x.project_id)?.name||"",requested_by_email:uMap.get(x.payload?.requestedBy||x.payload?.requested_by)?.email||""}));
   const flags=await scanFlags(admin,users||[],jobs||[],events||[],audit||[]);
-  const activeJobs=(jobs||[]).filter(x=>["queued","processing"].includes(x.status)).length,failedJobs=(jobs||[]).filter(x=>x.status==="failed").length;
+  const activeJobs=(jobs||[]).filter(x=>["queued","processing","awaiting_transcription","transcribing"].includes(x.status)).length,failedJobs=(jobs||[]).filter(x=>x.status==="failed").length;
+  const staleJobs=(jobs||[]).filter(x=>x.status==="processing"&&(!x.heartbeat_at||Date.now()-new Date(x.heartbeat_at).getTime()>10*60*1000));
+  const deadLetterJobs=(jobs||[]).filter(x=>x.status==="dead_letter"||x.dead_lettered_at);
+  const completedDurations=(jobs||[]).filter(x=>x.status==="completed"&&x.created_at&&x.updated_at).map(x=>Math.max(0,(new Date(x.updated_at).getTime()-new Date(x.created_at).getTime())/1000));
+  const averageJobDurationSeconds=completedDurations.length?Math.round(completedDurations.reduce((sum,n)=>sum+n,0)/completedDurations.length):null;
   const drift=allow.filter(email=>!(members||[]).some(m=>m.active&&m.email.toLowerCase()===email));
-  return Response.json({ok:true,role,allowlisted,users:u,workspaces:workspaceRows,projects:projects||[],jobs:jobsNamed,events:eventsNamed,consents:consents||[],members:members||[],notifications:notifications||[],audit:auditNamed,flags,stats:{activeJobs,failedJobs,activeAdmins:(members||[]).filter(x=>x.active).length,totalWorkspaces:(workspaces||[]).length,totalUsers:(users||[]).length},configDrift:drift,currentAdmin:user.email||""});
- }catch(e){return Response.json({error:e.message||"Control center request failed."},{status:/access denied|Authentication/.test(e.message||"")?403:500})}
+  return Response.json({ok:true,role,allowlisted,users:u,workspaces:workspaceRows,projects:projects||[],jobs:jobsNamed,events:eventsNamed,consents:consents||[],members:members||[],notifications:notifications||[],audit:auditNamed,flags,diagnostics:{geminiKeyHealth:geminiKeys||[],creditTransactions:creditLedger||[],rateLimits:(rateLimits||[]).map(({route,window_start,request_count})=>({route,window_start,request_count})),staleJobs:staleJobs.map(x=>({id:x.id,status:x.status,current_stage:x.current_stage,heartbeat_at:x.heartbeat_at,error_id:x.error_id})),deadLetterJobs:deadLetterJobs.map(x=>({id:x.id,status:x.status,error_id:x.error_id,failure_type:x.failure_type,dead_lettered_at:x.dead_lettered_at})),recentFailures:(jobs||[]).filter(x=>x.status==="failed"||x.status==="dead_letter").slice(0,50).map(x=>({id:x.id,status:x.status,error:x.error,error_id:x.error_id,failure_type:x.failure_type,created_at:x.created_at,updated_at:x.updated_at})),averageJobDurationSeconds},stats:{activeJobs,failedJobs,queuedJobs:(jobs||[]).filter(x=>x.status==="queued").length,processingJobs:(jobs||[]).filter(x=>x.status==="processing").length,deadLetteredJobs:deadLetterJobs.length,staleJobs:staleJobs.length,creditLedgerEntries:(creditLedger||[]).length,geminiKeysUnavailable:(geminiKeys||[]).filter(x=>!x.is_available).length,rateLimitedRoutes:(rateLimits||[]).filter(x=>x.request_count>0).length,activeAdmins:(members||[]).filter(x=>x.active).length,totalWorkspaces:(workspaces||[]).length,totalUsers:(users||[]).length},configDrift:drift,currentAdmin:user.email||""});
+ }catch(e){return Response.json({error:e.message||"Control center request failed."},{status:e.status||(/access denied|Authentication/.test(e.message||"")?403:500),headers:e.retryAfter?{"Retry-After":String(e.retryAfter)}:undefined})}
 }
 export async function POST(request){
  try{
@@ -120,5 +130,5 @@ export async function POST(request){
    await writeAudit(admin,user,"workspace_read_only_preview",{workspace_name:w.name},workspaceId);return Response.json({ok:true});
   }
   return Response.json({error:"Unknown control-center action."},{status:400});
- }catch(e){return Response.json({error:e.message||"Control center action failed."},{status:500})}
+ }catch(e){return Response.json({error:e.message||"Control center action failed."},{status:e.status||500,headers:e.retryAfter?{"Retry-After":String(e.retryAfter)}:undefined})}
 }
