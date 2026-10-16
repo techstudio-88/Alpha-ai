@@ -20,6 +20,8 @@ import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_KEY_RING=createGeminiKeyRing(),GEMINI_KEYS=GEMINI_KEY_RING.keys,GEMINI_API_KEY=GEMINI_KEY_RING.current()?.key||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const nextGeminiApiKey=()=>GEMINI_KEY_RING.next()?.key||"";
+const safeErrorMessage=error=>String(error?.message||error||"Unknown error").replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\\s]+/gi,"key=[redacted]").replace(/Bearer\\s+[A-Za-z0-9._-]+/gi,"Bearer [redacted]").slice(0,1000);
+
 const authStore=new AsyncLocalStorage();
 const jobDirs=new Map();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
@@ -213,7 +215,7 @@ async function analyzeTranscriptWithGemini(segments,sourceDuration){
         const end=Math.max(start,Math.min(windowEnd,sourceDuration,Number(x.end_seconds)||start));
         if(end-start>=Math.min(2,sourceDuration))all.push({...x,start_seconds:start,end_seconds:end});
       }
-    }catch(error){console.warn("Gemini transcript window failed:",windowStart,error.message)}
+    }catch(error){console.warn("Gemini transcript window failed:",windowStart,safeErrorMessage(error))}
   }
   return all.length?dedupeClipCandidates(all):[];
 }
@@ -327,7 +329,7 @@ function dedupeClipCandidates(candidates){
   }
   return kept;
 }
-async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=createGeminiClient();const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema},3);const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch(e){console.warn("repurpose generation failed",clipId,e.message)}}
+async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=createGeminiClient();const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema},3);const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch(e){console.warn("repurpose generation failed",clipId,safeErrorMessage(e))}}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
   if(!GEMINI_API_KEY||!instruction?.trim())return null;
   const ai=createGeminiClient();
@@ -402,8 +404,8 @@ async function detectSpeakersWithGemini(filePath,duration,projectId,offsetSecond
         const linked=clean.map(s=>{const mid=(s.start_ms+s.end_ms)/2;const hit=(ts||[]).find(t=>mid>=Number(t.start_ms)&&mid<=Number(t.end_ms));return {...s,transcript_segment_id:hit?.id||null}});
         if(linked.length)await db("speaker_segments",{method:"POST",body:linked});
       }
-    }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
-  }catch(e){console.warn("speaker detection fallback:",e.message)}
+    }catch(e){console.warn("speaker transcript mapping failed:",safeErrorMessage(e))}
+  }catch(e){console.warn("speaker detection fallback:",safeErrorMessage(e))}
 }
 async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:"processing",updated_at:new Date().toISOString()}}).catch(()=>{});
@@ -704,14 +706,14 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   const topicWindows=[];
   for(let start=workStartSeconds;start<workEndSeconds;start+=300){const end=Math.min(workEndSeconds,start+300);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
-  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const result=await generateGeminiWithRetry(createGeminiClient(),GEMINI_MODEL,prompt,{responseMimeType:"application/json"},3);const named=JSON.parse(String(result.text||"[]"));if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}
+  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const result=await generateGeminiWithRetry(createGeminiClient(),GEMINI_MODEL,prompt,{responseMimeType:"application/json"},3);const named=JSON.parse(String(result.text||"[]"));if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",safeErrorMessage(e))}}
   if(topicRows.length)await db("video_topics",{method:"POST",body:topicRows.map(t=>({workspace_id:p.workspaceId,project_id:t.project_id,video_id:null,title:t.name,summary:t.metadata?.source==="gemini"?"AI-segmented video topic":"Deterministic video topic",start_ms:Math.round(Number(t.metadata?.start_seconds||0)*1000),end_ms:Math.round(Number(t.metadata?.end_seconds||0)*1000),keywords:[],confidence:Number(t.score||50)/100}))}).catch(e=>console.warn("topic save failed:",e.message));
   await setStage(p,"topic_segmentation","completed",100);
   let candidates=null;
   if(GEMINI_API_KEY){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
     try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("Gemini transcript clip candidates",p.jobId,candidates?.length||0)}
-    catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
+    catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",safeErrorMessage(e))}
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
@@ -780,7 +782,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
-  console.error("job",p.jobId,e);
+  console.error("job",p.jobId,safeErrorMessage(e));
   const message=String(e?.message||"Processing failed.");
   const retry=classifyWorkerFailure(message,Number(p.retryCount||0),{sessionBound:Boolean(p.sessionId),operation:p.operation});
   const {providerUnavailable,retryCount,terminal,nextRetryAt}=retry;
@@ -885,7 +887,7 @@ ${transcript}`;
     if(!match)throw new Error("Gemini returned no clip plan JSON.");
     let plan;try{plan=JSON.parse(match[0])}catch{throw new Error("Gemini returned invalid clip plan JSON.");}
     return res.json({ok:true,plan});
-  }catch(e){console.error("assistant/plan",e);return res.status(500).json({error:e.message||"Clip planning failed."})}
+  }catch(e){const errorId=randomUUID();const message=safeErrorMessage(e);const providerFailure=/429|401|403|503|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|API key|temporar|timeout|network/i.test(message);console.error("assistant/plan",errorId,message);return res.status(providerFailure?503:Number(e?.status)||500).json({error:providerFailure?"AI provider temporarily unavailable.":message,error_id:errorId,failure_type:providerFailure?"provider_unavailable":"processing"})}
 });
 app.post("/assistant",async(req,res)=>{
   try{
@@ -903,7 +905,7 @@ app.post("/assistant",async(req,res)=>{
     const config=req.body?.responseMimeType==="application/json"?{responseMimeType:"application/json"}:{};
     const result=await generateGeminiWithRetry(createGeminiClient(),GEMINI_MODEL,[{role:"user",parts}],config,3);
     return res.json({ok:true,text:String(result.text||"").trim()});
-  }catch(e){console.error("assistant",e);return res.status(Number(e?.status)||500).json({error:e.message||"Assistant failed."})}
+  }catch(e){const errorId=randomUUID();const message=safeErrorMessage(e);const providerFailure=/429|401|403|503|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|API key|temporar|timeout|network/i.test(message);console.error("assistant",errorId,message);return res.status(providerFailure?503:Number(e?.status)||500).json({error:providerFailure?"AI provider temporarily unavailable.":message,error_id:errorId,failure_type:providerFailure?"provider_unavailable":"processing"})}
 });
 const activeJobs=new Set();
 let recoveryInFlight=false;
