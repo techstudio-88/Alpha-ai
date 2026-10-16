@@ -27,6 +27,9 @@ export default function ProjectChat(){
     hydrated.current=job.id;setAnswers({...saved,...job.payload?.preferences});setPreferences(normalizePreferences({...saved,...job.payload?.preferences}));
     if(job.status==='awaiting_preferences')setQuestionOpen(true);
   },[job?.id,job?.status]);
+  useEffect(()=>{
+    if(job?.status==='completed')clips.retry();
+  },[job?.id,job?.status,clips.retry]);
    const readyClips=(clips.data||[]).filter(c=>demo||c.ai_spec?.source==='local-transcript-analysis'||c.clip_versions?.some(v=>v.render_status==='ready'&&v.storage_path));
   const hasSpeech=job?.payload?.transcriptId?true:asset?.metadata?.has_audio===false?false:null;
   const questions=relevantQuestions({duration:asset?.duration_seconds,hasSpeech,speakers:Number(asset?.metadata?.speaker_count)||0,answered:answers,phase});
