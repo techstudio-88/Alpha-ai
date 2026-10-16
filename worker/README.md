@@ -50,3 +50,14 @@ sessions are saved encrypted for restart/retry recovery. A refresh failure marks
 channel expired. Never deploy the encrypted-credential frontend against an old worker.
 Live Google OAuth, Gemini transcription accuracy, Storage limits, and actual YouTube
 uploads require separate account-level acceptance testing.
+
+
+## Gemini key rotation
+
+Set `GEMINI_API_KEY` as the primary key and optionally `GEMINI_API_KEY_2` through
+`GEMINI_API_KEY_5`. The worker rotates across configured keys, retries transient
+failures, and cools down keys that return quota/rate-limit errors. Keys are read only
+from the worker environment; never put them in Vercel `NEXT_PUBLIC_*` variables or
+the database. In-memory cooldown state resets when the worker restarts. Durable
+per-key health reporting and automatic scheduler resumption still require the Phase 1
+worker/diagnostics follow-up.

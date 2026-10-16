@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles} from 'lucide-react';
+import {Bell,CalendarDays,Clapperboard,Clock,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
@@ -14,14 +14,14 @@ import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
 import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
 import {MotionToggle} from './motion';
-import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen} from './management-screens';
+import {PublishScreen,PendingScreen,InsightsScreen,BrandScreen,SettingsScreen} from './management-screens';
 import {PricingCards} from './marketing';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
 const AssistantScreen=dynamic(()=>import('./assistant-screen'),{loading:()=> <ScreenSkeleton/>});
 
-export const NAV=[['home','Home',Home],['projects','Projects',Folder],['chat','Video chat',WandSparkles],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
+export const NAV=[['home','Home',Home],['projects','Projects',Folder],['chat','Video chat',WandSparkles],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['pending','Pending',Clock],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
 const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand'};
 
 export default function StudioApp() {
@@ -130,6 +130,7 @@ function StudioWorkspace() {
   else if(view==='editor')screen=<EditorScreen/>;
   else if(view==='assistant')screen=<AssistantScreen/>;
   else if(view==='publish')screen=<PublishScreen/>;
+   else if(view==='pending')screen=<PendingScreen/>;
   else if(view==='insights')screen=<InsightsScreen/>;
   else if(view==='brand')screen=<BrandScreen/>;
   else if(view==='settings')screen=<SettingsScreen/>;

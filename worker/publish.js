@@ -1,8 +1,9 @@
 import {encryptCredential,decryptCredential} from '../lib/credential-cipher.mjs';
+import {randomUUID} from 'node:crypto';
 
 const isSealed=value=>String(value||'').startsWith('v1.');
 const credential=(value,secret)=>isSealed(value)?decryptCredential(value,secret):value;
-const fail=message=>new Error(message);
+const fail=message=>Object.assign(new Error(message),{safe:true});
 
 // Compare-and-set claims prevent two workers from uploading the same queued job.
 // A retained resumable session also handles a lost final YouTube response.
@@ -19,6 +20,10 @@ export async function runPublishQueue({db,supabaseUrl,headers,secret,fetcher=fet
     let job=claimed[0];
     const heartbeat=setInterval(()=>db('publish_jobs',{method:'PATCH',params:{id:'eq.'+job.id,status:'eq.processing'},body:{last_attempt_at:new Date().toISOString()}}).catch(()=>{}),20000);
     try{
+      const entitlements=(await db('workspace_entitlements',{params:{workspace_id:'eq.'+job.workspace_id,select:'plan,auto_publish,scheduling_enabled',limit:'1'}}))[0]||{plan:'free',auto_publish:false,scheduling_enabled:false};
+      const isScheduled=new Date(job.scheduled_for||0).getTime()>Date.now()+60_000;
+      if(job.metadata?.auto_publish===true&&!entitlements.auto_publish)throw fail('Automatic publishing requires Pro or Studio.');
+      if(isScheduled&&!entitlements.scheduling_enabled)throw fail('Scheduled publishing requires the Studio plan.');
       if(job.platform!=='youtube')throw fail('Only YouTube publishing is configured.');
       const connection=(await db('publish_connections',{params:{workspace_id:'eq.'+job.workspace_id,platform:'eq.youtube',status:'eq.connected',select:'*',limit:'1'}}))[0];
       if(!connection)throw fail('Connect your YouTube channel before publishing.');
@@ -73,7 +78,14 @@ export async function runPublishQueue({db,supabaseUrl,headers,secret,fetcher=fet
       if(!result.id)throw fail('YouTube did not return a video ID. Retry to check the saved session.');
       await db('publish_jobs',{method:'PATCH',params:{id:'eq.'+job.id,status:'eq.processing'},body:{status:'published',external_id:result.id,published_at:new Date().toISOString(),error:null,metadata:{...job.metadata,youtube_upload_session:null}}});
     }catch(error){
-      await db('publish_jobs',{method:'PATCH',params:{id:'eq.'+job.id,status:'eq.processing'},body:{status:'failed',error:error.message}}).catch(()=>{});
+      const errorId=randomUUID();
+      const failureType=/quota|rate.?limit|429/i.test(String(error?.message||''))?'provider_quota':
+        /YouTube|channel|authorization|publish/i.test(String(error?.message||''))?'publishing':'network';
+      const safeMessage=error?.safe?error.message:'Publishing failed unexpectedly. Contact support with the error ID.';
+      console.error('publish_failure',{errorId,failureType});
+      await db('publish_jobs',{method:'PATCH',params:{id:'eq.'+job.id,status:'eq.processing'},body:{
+        status:'failed',error:safeMessage,error_id:errorId,failure_type:failureType,next_retry_at:null
+      }}).catch(()=>{});
     }finally{clearInterval(heartbeat)}
     return; // One streamed upload at a time per worker.
   }

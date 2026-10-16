@@ -8,7 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
-import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
+import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry,uploadGeminiFileWithRotation,setGeminiHealthReporter,restoreGeminiKeyHealth} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
 import {decryptCredential} from '../lib/credential-cipher.mjs';
@@ -18,9 +18,13 @@ import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_API_KEY=process.env.GEMINI_API_KEY||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const authStore=new AsyncLocalStorage();
+const firstGeminiKey=()=>process.env.GEMINI_API_KEY||process.env.GEMINI_API_KEY_1||process.env.GEMINI_API_KEY_2||process.env.GEMINI_API_KEY_3||process.env.GEMINI_API_KEY_4||process.env.GEMINI_API_KEY_5||String(process.env.GEMINI_API_KEYS||"").split(",").map(value=>value.trim()).find(Boolean)||"";
+const hasGeminiKeys=()=>Boolean(firstGeminiKey());
+
 const jobDirs=new Map();
 const baseAuth={apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY),"Content-Type":"application/json"};
-async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const r=await fetch(u,{method,headers:{...headers,Prefer:"return=representation"},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok)throw new Error(table+" "+r.status+": "+t);return d}
+async function db(table,{method="GET",params={},body}={}){const u=new URL(SUPA+"/rest/v1/"+table);Object.entries(params).forEach(([k,v])=>{if(Array.isArray(v))v.forEach(item=>u.searchParams.append(k,item));else u.searchParams.set(k,v)});const scoped=authStore.getStore();const headers=scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped,"Content-Type":"application/json"}:baseAuth;const prefer=table==="gemini_key_health"&&method==="POST"?"resolution=merge-duplicates,return=representation":"return=representation";const r=await fetch(u,{method,headers:{...headers,Prefer:prefer},body:body?JSON.stringify(body):undefined});const t=await r.text();let d;try{d=JSON.parse(t)}catch{d=t}if(!r.ok){const error=new Error("Database operation failed");error.databaseFailure=true;error.status=r.status;error.table=table;throw error}return d}
+setGeminiHealthReporter(async health=>{try{await db("gemini_key_health",{method:"POST",params:{on_conflict:"key_label"},body:{key_label:health.keyLabel,is_available:health.isAvailable,cooldown_until:health.cooldownUntil,last_status:health.lastStatus,last_error_id:null,success_count:health.successCount,failure_count:health.failureCount,rate_limit_count:health.rateLimitCount,last_used_at:health.lastUsedAt,updated_at:new Date().toISOString()}})}catch{console.warn("gemini_key_health_write_failed")}});
 function cmd(command,args){return new Promise((resolve,reject)=>{
   let settled=false;
   const executable=command==="ffmpeg"?process.env.FFMPEG_PATH||command:command==="ffprobe"?process.env.FFPROBE_PATH||command:command;
@@ -37,9 +41,18 @@ function cmd(command,args){return new Promise((resolve,reject)=>{
   p.on("close",code=>code?finish(reject,new Error(err.slice(-7000)||command+" failed with exit code "+code)):finish(resolve,out));
 })}
 const geminiUploads=new Map();
+async function cachedGeminiUploadWithClient(filePath,mimeType="video/mp4"){
+  if(!geminiUploads.has(filePath)){
+    const entry={ai:null,promise:null};
+    entry.promise=uploadGeminiFileWithRotation(filePath,mimeType).then(uploaded=>{entry.ai=uploaded.ai;return uploaded.file});
+    geminiUploads.set(filePath,entry);
+  }
+  const entry=geminiUploads.get(filePath);
+  const file=await entry.promise;
+  return {file,ai:entry.ai};
+}
 async function cachedGeminiUpload(ai,filePath,mimeType="video/mp4"){
-  if(!geminiUploads.has(filePath))geminiUploads.set(filePath,{ai,promise:ai.files.upload({file:filePath,config:{mimeType}})});
-  return geminiUploads.get(filePath).promise;
+  return (await cachedGeminiUploadWithClient(filePath,mimeType)).file;
 }
 async function cleanupGeminiFiles(dir){
   for(const [filePath,entry] of geminiUploads){if(filePath.startsWith(dir+path.sep)){
@@ -73,11 +86,16 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   const speed=Math.max(.5,Math.min(2,Number(opts.speed)||1));
   const zoom=Math.max(.8,Math.min(1.4,Number(opts.zoom)||1));
   const aspect=["9:16","16:9","1:1"].includes(opts.aspect)?opts.aspect:"9:16";
-  const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
+  const maxResolution=[720,1080,2160,3840].includes(Number(opts.maxResolution))?Number(opts.maxResolution):1080;
+  const shortSide=maxResolution>=2160?2160:maxResolution;
+  const longSide=maxResolution>=2160?3840:maxResolution===1080?1920:1280;
+  const size=aspect==="16:9"?[longSide,shortSide]:aspect==="1:1"?[shortSide,shortSide]:[shortSide,longSide];
   const sw=Math.round(size[0]*Math.max(1,zoom)/2)*2,sh=Math.round(size[1]*Math.max(1,zoom)/2)*2;
   const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles='${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}'`:"";
   const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=0.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=0.18":opts.transition==="dip"?",fade=t=in:st=0:d=0.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=0.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const rawWatermark=String(opts.watermarkText||"");const watermarkText=rawWatermark==="[APP NAME]"?"[APP NAME]":rawWatermark.replace(/[^a-zA-Z0-9 _.-]/g,"").slice(0,40);
+  const watermarkFilter=watermarkText?",drawtext=font='DejaVu Sans':text='"+watermarkText.replace(/\\/g,"\\\\").replace(/:/g,"\\:").replace(/'/g,"\\'")+"':fontcolor=white@0.92:fontsize=24:box=1:boxcolor=black@0.35:boxborderw=10:x=w-tw-24:y=h-th-24":"";
+  const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}${watermarkFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   const args=["-y","-ss",String(Math.max(0,Number(start))),"-t",String(requested),"-i",input];
   if(opts.cutRanges?.length){
@@ -97,9 +115,10 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   if(!actual||Math.abs(actual-keptDuration/speed)>.75)throw new Error("Rendered edit duration does not match the requested range, cuts, and speed.");
 }
 async function analyzeVideoWithGemini(filePath,sourceDuration){
-  if(!GEMINI_API_KEY)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-  let file=await cachedGeminiUpload(ai,filePath);
+  if(!hasGeminiKeys())return null;
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  let file=uploaded.file;
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini video analysis failed: "+String(file?.state||"unknown"));
   const maxClip=Math.min(45,sourceDuration);
@@ -122,9 +141,10 @@ async function analyzeVideoWithGemini(filePath,sourceDuration){
   ).slice(0,8);
 }
 async function analyzeReframeWithGemini(filePath,sourceDuration){
-  if(!GEMINI_API_KEY||sourceDuration<=0)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-  const file=await cachedGeminiUpload(ai,filePath);
+  if(!hasGeminiKeys()||sourceDuration<=0)return null;
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  const file=uploaded.file;
   let active=file;
   for(let i=0;i<60&&active?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));active=await ai.files.get({name:active.name})}
   if(active?.state!=="ACTIVE")throw new Error("Reframe video analysis failed.");
@@ -149,8 +169,7 @@ function reframeExpr(keyframes,axis){
   return "if(lt(t,"+first.time_seconds.toFixed(3)+"),"+value(first)+","+expr+")";
 }
 async function analyzeTranscriptWithGemini(segments,sourceDuration){
-  if(!GEMINI_API_KEY||!Array.isArray(segments)||!segments.length)return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
+  if(!hasGeminiKeys()||!Array.isArray(segments)||!segments.length)return null;
   const schema={type:"object",properties:{candidates:{type:"array",items:{type:"object",properties:{
     start_seconds:{type:"number"},end_seconds:{type:"number"},title:{type:"string"},reason:{type:"string"},
     hook_score:{type:"number"},emotional_intensity:{type:"number"},information_density:{type:"number"},
@@ -167,14 +186,14 @@ async function analyzeTranscriptWithGemini(segments,sourceDuration){
     if(!transcript)continue;
     const prompt="You are Alpha.ai's long-form clip-selection engine. Analyze ONLY this timestamped transcript window. Find up to 3 genuinely strong short-form moments: hooks, surprising statements, useful insights, emotional peaks, punchlines, stories, Q&A, controversial claims, or CTAs. The FIRST 3 SECONDS of every selected clip must start on the strongest hook, question, claim, or curiosity line available; never begin with filler, greetings, or a sentence fragment. Prefer complete thoughts and clean sentence boundaries. Do not invent words or timestamps. Timestamps MUST stay inside this window and the source duration. Do not create filler clips. A candidate should normally be 15-45 seconds, but may be shorter when the thought is complete. Return scores 0-100 and classify the moment. Window: "+windowStart.toFixed(2)+" to "+windowEnd.toFixed(2)+" seconds. Source duration: "+sourceDuration.toFixed(2)+" seconds.\nTRANSCRIPT:\n"+transcript;
     try{
-      const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});
+      const result=await generateGeminiWithRetry(null,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});
       const parsed=JSON.parse(result.text||"{}");
       for(const x of Array.isArray(parsed.candidates)?parsed.candidates:[]){
         const start=Math.max(windowStart,Math.min(sourceDuration,Number(x.start_seconds)||windowStart));
         const end=Math.max(start,Math.min(windowEnd,sourceDuration,Number(x.end_seconds)||start));
         if(end-start>=Math.min(2,sourceDuration))all.push({...x,start_seconds:start,end_seconds:end});
       }
-    }catch(error){console.warn("Gemini transcript window failed:",windowStart,error.message)}
+    }catch{console.warn("gemini_transcript_window_failed")}
   }
   return all.length?dedupeClipCandidates(all):[];
 }
@@ -288,11 +307,12 @@ function dedupeClipCandidates(candidates){
   }
   return kept;
 }
-async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!GEMINI_API_KEY||!clipText?.trim())return;try{const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await ai.models.generateContent({model:GEMINI_MODEL,contents:prompt,config:{responseMimeType:"application/json",responseSchema:schema}});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch(e){console.warn("repurpose generation failed",clipId,e.message)}}
+async function generateRepurposeAssets(clipId,workspaceId,clipText,seedTitle){if(!hasGeminiKeys()||!clipText?.trim())return;try{const schema={type:"object",properties:{hook:{type:"string"},title:{type:"string"},caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},youtube_description:{type:"string"},instagram_caption:{type:"string"},tiktok_caption:{type:"string"},thumbnail_prompt:{type:"string"}},required:["hook","title","caption","hashtags","youtube_description","instagram_caption","tiktok_caption","thumbnail_prompt"]};const prompt="Create repurposing assets for a short-form video. Seed title: "+JSON.stringify(seedTitle||"")+"\nTranscript excerpt:\n"+clipText.slice(0,9000)+"\nReturn one strong hook, title, caption, 5-10 hashtags, platform-specific copy for YouTube/Instagram/TikTok, and a concrete thumbnail-generation/editing prompt. Do not invent facts absent from the transcript.";const out=await generateGeminiWithRetry(null,GEMINI_MODEL,prompt,{responseMimeType:"application/json",responseSchema:schema});const data=JSON.parse(out.text||"{}");await db("clip_repurpose_assets",{method:"POST",body:{workspace_id:workspaceId,clip_id:clipId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:String(data.youtube_description||"").slice(0,5000),instagram:String(data.instagram_caption||"").slice(0,3000),tiktok:String(data.tiktok_caption||"").slice(0,3000)},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL}}).catch(async()=>{await db("clip_repurpose_assets",{method:"PATCH",params:{clip_id:"eq."+clipId},body:{workspace_id:workspaceId,hook:String(data.hook||"").slice(0,500),title:String(data.title||seedTitle||"").slice(0,180),caption:String(data.caption||"").slice(0,3000),social_copy:{youtube:data.youtube_description||"",instagram:data.instagram_caption||"",tiktok:data.tiktok_caption||""},hashtags:Array.isArray(data.hashtags)?data.hashtags.slice(0,15):[],thumbnail_prompt:String(data.thumbnail_prompt||"").slice(0,2000),model_version:GEMINI_MODEL,updated_at:new Date().toISOString()}}).catch(()=>{})})}catch{const errorId=randomUUID();console.warn("repurpose_generation_failed",{errorId,category:"ai"})}}
 async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedStart,selectedEnd,instruction){
-  if(!GEMINI_API_KEY||!instruction?.trim())return null;
-  const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-  let file=await cachedGeminiUpload(ai,filePath);
+  if(!hasGeminiKeys()||!instruction?.trim())return null;
+  const uploaded=await cachedGeminiUploadWithClient(filePath);
+  const ai=uploaded.ai;
+  let file=uploaded.file;
   for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,5000));file=await ai.files.get({name:file.name})}
   if(file?.state!=="ACTIVE")throw new Error("Gemini edit analysis failed: "+String(file?.state||"unknown"));
   const lo=Math.max(0,Math.min(sourceDuration,Number(selectedStart)||0));
@@ -306,7 +326,7 @@ async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedSt
   return {start_seconds:start,end_seconds:end,title:String(parsed.title||"AI edited clip").slice(0,180),reason:String(parsed.reason||"").slice(0,500),action:String(parsed.action||"").slice(0,300)};
 }
 async function patchJob(id,body){const rows=await db("processing_jobs",{params:{id:"eq."+id,select:"status"}});if(rows[0]?.status==="cancelled")throw new Error("Job cancelled.");return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id,status:"neq.cancelled"},body})}
-async function setStage(job,stageKey,status,progress,error=null){try{await db("processing_stages",{method:"POST",body:{job_id:job.jobId,workspace_id:job.workspaceId,stage_key:stageKey,status,progress:Math.max(0,Math.min(100,Number(progress)||0)),attempt_count:Number(job.retryCount||0)+1,started_at:status==="running"?new Date().toISOString():null,completed_at:status==="completed"?new Date().toISOString():null,heartbeat_at:new Date().toISOString(),error,metadata:{}}}).catch(async()=>{await db("processing_stages",{method:"PATCH",params:{job_id:"eq."+job.jobId,stage_key:"eq."+stageKey},body:{status,progress:Math.max(0,Math.min(100,Number(progress)||0)),heartbeat_at:new Date().toISOString(),completed_at:status==="completed"?new Date().toISOString():null,error}})});await patchJob(job.jobId,{current_stage:stageKey})}catch(e){console.warn("stage checkpoint failed",stageKey,e.message)}}
+async function setStage(job,stageKey,status,progress,error=null){try{await db("processing_stages",{method:"POST",body:{job_id:job.jobId,workspace_id:job.workspaceId,stage_key:stageKey,status,progress:Math.max(0,Math.min(100,Number(progress)||0)),attempt_count:Number(job.retryCount||0)+1,started_at:status==="running"?new Date().toISOString():null,completed_at:status==="completed"?new Date().toISOString():null,heartbeat_at:new Date().toISOString(),error,metadata:{}}}).catch(async()=>{await db("processing_stages",{method:"PATCH",params:{job_id:"eq."+job.jobId,stage_key:"eq."+stageKey},body:{status,progress:Math.max(0,Math.min(100,Number(progress)||0)),heartbeat_at:new Date().toISOString(),completed_at:status==="completed"?new Date().toISOString():null,error}})});await patchJob(job.jobId,{current_stage:stageKey})}catch(e){console.warn("stage_checkpoint_failed",{stage:stageKey})}}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
 async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download stored source.");await pipeline(r.body,byteLimit(),fs.createWriteStream(out))}
 async function downloadRemote(url,out,type="direct_url",opts={}){
@@ -337,11 +357,12 @@ async function downloadRemote(url,out,type="direct_url",opts={}){
   if(lastError)throw lastError;
 }}
 async function detectSpeakersWithGemini(filePath,duration,projectId){
-  if(!GEMINI_API_KEY)return;
+  if(!hasGeminiKeys())return;
   try{
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-    let file=await cachedGeminiUpload(ai,filePath);
-    for(let i=0;i<60&&file.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
+    const uploaded=await cachedGeminiUploadWithClient(filePath);
+    const ai=uploaded.ai;
+    let file=uploaded.file;
+    for(let i=0;i<60&&file?.state==="PROCESSING";i++){await new Promise(r=>setTimeout(r,3000));file=await ai.files.get({name:file.name})}
     if(file.state!=="ACTIVE")throw new Error("Speaker analysis media is unavailable.");
     const prompt="Identify distinct speakers in this video and return ONLY JSON array objects with speaker_label,start_seconds,end_seconds,confidence. Use Speaker 1, Speaker 2 etc. Cover only intervals where a person is speaking. Do not invent speakers or timestamps. Duration is "+duration.toFixed(3)+" seconds.";
      const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),prompt]),{responseMimeType:"application/json"});
@@ -363,21 +384,46 @@ async function detectSpeakersWithGemini(filePath,duration,projectId){
         const linked=clean.map(s=>{const mid=(s.start_ms+s.end_ms)/2;const hit=(ts||[]).find(t=>mid>=Number(t.start_ms)&&mid<=Number(t.end_ms));return {...s,transcript_segment_id:hit?.id||null}});
         if(linked.length)await db("speaker_segments",{method:"POST",body:linked});
       }
-    }catch(e){console.warn("speaker transcript mapping failed:",e.message)}
-  }catch(e){console.warn("speaker detection fallback:",e.message)}
+    }catch{console.warn("speaker_transcript_mapping_failed")}
+  }catch{console.warn("speaker_detection_fallback")}
+}
+async function notifyOnce(workspaceId,userId,title,message,eventType,dedupeKey){
+  if(!workspaceId||!userId||!dedupeKey)return;
+  try{
+    const existing=await db("notifications",{params:{dedupe_key:"eq."+dedupeKey,select:"id",limit:"1"}});
+    if(existing?.length)return;
+    await db("notifications",{method:"POST",body:{workspace_id:workspaceId,user_id:userId,title,message,event_type:eventType,dedupe_key:dedupeKey}});
+  }catch{}
+}
+async function detectSilenceBoundaries(file){
+  return new Promise(resolve=>{
+    let stderr="",settled=false;
+    const child=spawn(process.env.FFMPEG_PATH||"ffmpeg",["-hide_banner","-nostats","-i",file,"-vn","-af","silencedetect=noise=-35dB:d=0.45","-f","null","-"],{stdio:["ignore","ignore","pipe"]});
+    const finish=values=>{if(settled)return;settled=true;clearTimeout(timer);resolve(values)};
+    const timer=setTimeout(()=>{child.kill("SIGKILL");finish([])},120000);
+    child.stderr.on("data",chunk=>{stderr=(stderr+chunk.toString()).slice(-2*1024*1024)});
+    child.on("error",()=>finish([]));
+    child.on("close",()=>finish([...stderr.matchAll(/silence_end:\s*([0-9]+(?:\.[0-9]+)?)/g)].map(match=>Number(match[1])).filter(value=>Number.isFinite(value)&&value>=0)));
+  });
 }
 async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alpha-")),audio=path.join(dir,"audio.wav");jobDirs.set(dir,p.jobId);let input=path.join(dir,"source.mp4");const heartbeat=setInterval(()=>patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()}).catch(()=>{}),30000);try{
   await patchJob(p.jobId,{status:"processing",error:null,heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
   const project=(await db("projects",{params:{id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"id,owner_id"}}))[0];
   if(!project)throw new Error("Processing project does not belong to this workspace.");
   if(!p.requestedBy)p.requestedBy=project.owner_id;
+  await notifyOnce(p.workspaceId,p.requestedBy,"Video processing started","Your accepted video job has started processing.","job_started","job:"+p.jobId+":started");
+  const entitlementRows=await db("workspace_entitlements",{params:{workspace_id:"eq."+p.workspaceId,select:"plan,max_resolution,watermark_text,daily_video_minutes,auto_publish,scheduling_enabled,brand_kit_limit,priority_queue,fair_use_unlimited,title_regenerations,cover_rotations",limit:"1"}});
+  p={...p,entitlements:entitlementRows?.[0]||{plan:"free",max_resolution:720,watermark_text:"[APP NAME]",daily_video_minutes:20,auto_publish:false,scheduling_enabled:false,brand_kit_limit:1,priority_queue:false,fair_use_unlimited:false,title_regenerations:3,cover_rotations:1}};
+  if(p.url&&!p.rightsConfirmed)throw new Error("URL rights confirmation is required before import.");
   if(p.mediaAssetId&&!(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing video context mismatch.");
   if(p.clipId&&!(await db("clips",{params:{id:"eq."+p.clipId,project_id:"eq."+p.projectId,media_asset_id:"eq."+p.mediaAssetId,select:"id"}})).length)throw new Error("Processing clip context mismatch.");
   if(p.sourceId&&!(await db("project_sources",{params:{id:"eq."+p.sourceId,project_id:"eq."+p.projectId,select:"id"}})).length)throw new Error("Processing source context mismatch.");
   if(p.sessionId&&!(await db("ai_chat_sessions",{params:{id:"eq."+p.sessionId,workspace_id:"eq."+p.workspaceId,user_id:"eq."+p.requestedBy,select:"id"}})).length)throw new Error("Processing chat context mismatch.");
-  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); return; }
+  if(p.operation==="ai_chat_plan") { await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL}); await notifyOnce(p.workspaceId,p.requestedBy,"AI job complete","Your AI editing plan is ready.","job_completed","job:"+p.jobId+":completed"); return; }
   if(p.operation==="chat_ingest" && p.mediaAssetId && p.transcriptionChunks?.length && Number(p.transcribeChunk)>=p.transcriptionChunks.length) {
     await runChatPlan(p,{db,patchJob,key:GEMINI_API_KEY,model:GEMINI_MODEL});
+    await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(()=>{});
+    await notifyOnce(p.workspaceId,p.requestedBy,"AI job complete","Your AI editing plan is ready.","job_completed","job:"+p.jobId+":completed");
     await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}}); return;
   }
   await patchJob(p.jobId,{progress:2,current_stage:"media_inspection"});await setStage(p,"media_inspection","running",0);
@@ -413,7 +459,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(fs.statSync(input).size>MAX_DOWNLOAD_BYTES)throw new Error('The source exceeds the worker download size limit.');
   const probe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
   const originalProbe=probe; const sourceBeforeNormalize=input; input=await normalizeIfVfr(input,originalProbe,dir); const normalizedProbe=input!==sourceBeforeNormalize?JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input])):originalProbe;
-  const stream=normalizedProbe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(normalizedProbe.format?.duration||0),streamDuration=Number(stream?.duration||0),duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0))),width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
+  const stream=normalizedProbe.streams.find(x=>x.codec_type==="video"),formatDuration=Number(normalizedProbe.format?.duration||0),streamDuration=Number(stream?.duration||0);let duration=Math.max(0,Math.min(...[formatDuration,streamDuration].filter(x=>Number.isFinite(x)&&x>0)));const width=Number(stream?.width||0),height=Number(stream?.height||0),fps=Number((stream?.r_frame_rate||"0/1").split("/")[0])/(Number((stream?.r_frame_rate||"0/1").split("/")[1])||1);
   if(!stream||!Number.isFinite(duration)||duration<=0)throw new Error("The source is not a readable video with a finite duration.");
   if(duration>3600)throw new Error("This worker accepts source videos up to 60 minutes.");
   if(!asset){
@@ -457,8 +503,63 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{duration_seconds:duration,status:"uploaded"}});
     await db("videos",{method:"PATCH",params:{media_asset_id:"eq."+asset.id},body:{duration_seconds:duration,width,height,fps,status:"ready"}}).catch(()=>{});
   }
+  const sourceDuration=duration;
   p={...p,mediaAssetId:asset.id,url:null,driveAccessToken:undefined,googlePhotosAccessToken:undefined,driveCredential:undefined,photosCredential:undefined};
-  await patchJob(p.jobId,{payload:p});
+  if(!p.videoQuotaPlanned&&p.operation!=="render_edit"&&p.operation!=="ai_chat_plan"){
+    const silenceBoundaries=sourceDuration>300?await detectSilenceBoundaries(input):[];
+    const planned=await db("rpc/plan_video_processing_parts",{method:"POST",body:{
+      p_workspace_id:p.workspaceId,p_project_id:p.projectId,p_user_id:p.requestedBy,p_job_id:p.jobId,
+      p_media_asset_id:asset.id,p_duration_seconds:sourceDuration,p_timezone:p.timezone||"Asia/Kolkata",
+      p_silence_boundaries:silenceBoundaries
+    }});
+    const plan=planned&&typeof planned==="object"?planned:{};
+    p={...p,videoQuotaPlanned:true,videoQuotaPlan:plan,partStartSeconds:Number(plan.partStartSeconds)||0,
+      partEndSeconds:Number(plan.partEndSeconds)||sourceDuration,partNumber:Number(plan.partNumber)||1,
+      sourceDurationSeconds:sourceDuration};
+    if(plan.deferCurrent){
+      await patchJob(p.jobId,{payload:p});
+      await notifyOnce(p.workspaceId,p.requestedBy,"Video part scheduled","Your daily video-minute allowance is used. Part 1 is scheduled for "+String(plan.scheduledFor||"the next available day")+".","video_part_scheduled","job:"+p.jobId+":part-1-scheduled");
+      return;
+    }
+  }
+  const partStart=Number(p.partStartSeconds),partEnd=Number(p.partEndSeconds);
+  if(Number.isFinite(partStart)&&Number.isFinite(partEnd)&&partStart>=0&&partEnd>partStart&&partEnd<=sourceDuration+0.5&&partEnd-partStart<sourceDuration-0.25){
+    const segmentPath=path.join(dir,"scheduled-part.mp4");
+    await patchJob(p.jobId,{progress:22,current_stage:"preparing_scheduled_part",payload:p});
+    await cmd("ffmpeg",["-y","-ss",String(partStart),"-i",input,"-t",String(partEnd-partStart),"-map","0:v:0","-map","0:a?","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-movflags","+faststart",segmentPath]);
+    input=segmentPath;
+    const partProbe=JSON.parse(await cmd("ffprobe",["-v","quiet","-print_format","json","-show_format","-show_streams",input]));
+    const partStream=partProbe.streams.find(x=>x.codec_type==="video");
+    const partDuration=Math.max(0,Math.min(Number(partProbe.format?.duration||0),Number(partStream?.duration||partProbe.format?.duration||0)));
+    if(!partStream||!Number.isFinite(partDuration)||partDuration<0.25)throw new Error("The scheduled video part could not be prepared.");
+    duration=partDuration;
+    const originalAsset=asset;
+    const partStoragePath=p.workspaceId+"/"+p.projectId+"/parts/"+p.jobId+".mp4";
+    const partSize=await upload(segmentPath,partStoragePath,"video/mp4");
+    let partAsset=(await db("media_assets",{params:{storage_path:"eq."+partStoragePath,project_id:"eq."+p.projectId,workspace_id:"eq."+p.workspaceId,select:"*",limit:"1"}}))[0]||null;
+    if(!partAsset){
+      const created=await db("media_assets",{method:"POST",body:{
+        workspace_id:p.workspaceId,project_id:p.projectId,owner_id:p.requestedBy,
+        name:String(originalAsset?.name||"Imported video").replace(/\.[^.]+$/,"")+" - Part "+String(p.partNumber||1),
+        storage_path:partStoragePath,mime_type:"video/mp4",size_bytes:partSize,duration_seconds:partDuration,status:"uploaded",
+        metadata:{derived_from_asset_id:originalAsset?.id||p.originalMediaAssetId||null,processing_job_id:p.jobId,
+          part_number:Number(p.partNumber)||1,source_start_seconds:partStart,source_end_seconds:partEnd}
+      }});
+      partAsset=created?.[0]||null;
+    }
+    if(!partAsset?.id)throw new Error("The processed video part could not be saved.");
+    const existingPartVideo=(await db("videos",{params:{media_asset_id:"eq."+partAsset.id,select:"id",limit:"1"}}))[0];
+    if(!existingPartVideo)await db("videos",{method:"POST",body:{project_id:p.projectId,media_asset_id:partAsset.id,
+      title:partAsset.name,duration_seconds:partDuration,width:Number(partStream.width||0),height:Number(partStream.height||0),
+      fps:Number((partStream.r_frame_rate||"0/1").split("/")[0])/(Number((partStream.r_frame_rate||"0/1").split("/")[1])||1),
+      status:"ready",metadata:{derived_from_asset_id:originalAsset?.id||p.originalMediaAssetId||null,part_number:Number(p.partNumber)||1}}});
+    p={...p,originalMediaAssetId:originalAsset?.id||p.originalMediaAssetId||null,mediaAssetId:partAsset.id,
+      partOffsetSeconds:partStart,partDurationSeconds:partDuration};
+    asset=partAsset;
+    await patchJob(p.jobId,{payload:p});
+  }else{
+    await patchJob(p.jobId,{payload:p});
+  }
   if(p.operation==="chat_ingest") {
     p.url=null;
     await db("ai_chat_sessions",{method:"PATCH",params:{id:"eq."+p.sessionId},body:{media_asset_id:asset.id,updated_at:new Date().toISOString()}});
@@ -473,7 +574,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     asset.metadata={...(asset.metadata||{}),thumbnail_storage_path:thumbnailPath};
     await db('media_assets',{method:'PATCH',params:{id:'eq.'+asset.id},body:{metadata:asset.metadata}});
   }catch{console.warn('Source thumbnail could not be generated.')}}
-  if(p.operation!=="render_edit"&&!asset.metadata?.proxy_storage_path){try{const proxyPath=path.join(dir,"proxy.mp4");await createProxy(input,proxyPath);const proxyStorage=p.workspaceId+"/"+p.projectId+"/proxy/"+asset.id+".mp4";await upload(proxyPath,proxyStorage);await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{metadata:{...(asset.metadata||{}),proxy_storage_path:proxyStorage,normalized_vfr:input!==sourceBeforeNormalize}}})}catch(error){console.warn("proxy generation unavailable:",error.message)}}
+  if(p.operation!=="render_edit"&&!asset.metadata?.proxy_storage_path){try{const proxyPath=path.join(dir,"proxy.mp4");await createProxy(input,proxyPath);const proxyStorage=p.workspaceId+"/"+p.projectId+"/proxy/"+asset.id+".mp4";await upload(proxyPath,proxyStorage);await db("media_assets",{method:"PATCH",params:{id:"eq."+asset.id},body:{metadata:{...(asset.metadata||{}),proxy_storage_path:proxyStorage,normalized_vfr:input!==sourceBeforeNormalize}}})}catch(error){console.warn("proxy_generation_unavailable")}}
 
   if(p.operation==="render_edit"){
     let start=Math.max(0,Math.min(duration,Number(p.startSeconds)||0));
@@ -535,8 +636,8 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       }
     }
     let reframeKeyframes=null;
-    if(p.reframe!==false&&p.aspect!=="16:9"&&GEMINI_API_KEY){
-      try{await patchJob(p.jobId,{progress:76,current_stage:"reframing",payload:{...p,aiEditStatus:"analyzing_reframe"}});const reframeInput=path.join(dir2,"reframe-input.mp4");await renderClip(input,reframeInput,start,end);reframeKeyframes=await analyzeReframeWithGemini(reframeInput,end-start);p={...p,reframeStatus:"ready",reframeKeyframes};await patchJob(p.jobId,{payload:p})}catch(error){p={...p,reframeStatus:"fallback",reframeError:error.message};await patchJob(p.jobId,{payload:p});console.warn("AI reframe unavailable; using centered crop:",error.message)}
+    if(p.reframe!==false&&p.aspect!=="16:9"&&hasGeminiKeys()){
+      try{await patchJob(p.jobId,{progress:76,current_stage:"reframing",payload:{...p,aiEditStatus:"analyzing_reframe"}});const reframeInput=path.join(dir2,"reframe-input.mp4");await renderClip(input,reframeInput,start,end);reframeKeyframes=await analyzeReframeWithGemini(reframeInput,end-start);p={...p,reframeStatus:"ready",reframeKeyframes};await patchJob(p.jobId,{payload:p})}catch(error){p={...p,reframeStatus:"fallback",reframeError:"AI reframe unavailable"};await patchJob(p.jobId,{payload:p});console.warn("ai_reframe_fallback")}
     }
     if(p.captions!==false&&!srtPath&&!assPath)throw new Error("Captions were requested, but no timed transcript is available.");
     const editData={source_start:start,source_end:end,duration_seconds:retainedRanges(start,end,p.cutRanges||[]).reduce((sum,range)=>sum+range.end-range.start,0)/Math.max(.5,Math.min(2,Number(p.speed)||1)),cutRanges:p.cutRanges||[],captionOverrides:p.captionOverrides||{},autoReframe:p.reframe!==false,editor:true,aspect:p.aspect||"9:16",speed:Number(p.speed)||1,zoom:Number(p.zoom)||1,effect:p.effect||"none",transition:p.transition||"cut",captions:p.captions!==false,captionStyle:p.captionStyle,captionColor:p.captionColor,ai_prompt:p.instruction||p.aiPrompt||"",ai_action:aiEdit?.action||"",ai_reason:aiEdit?.reason||p.reason||""};
@@ -545,13 +646,13 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     if(renderedVersion?.storage_path){
       await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:renderedVersion.storage_path,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180)}});
       await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:renderedVersion.version}});
-      console.log("editor render reused existing job version",p.jobId,clip.id,renderedVersion.version);
+      console.log("editor_render_reused_existing_version");
       return;
     }
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
     await setStage(p,"clip_render","running",0);await patchJob(p.jobId,{progress:80});
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges,maxResolution:p.entitlements?.max_resolution,watermarkText:p.entitlements?.plan==="free"?(p.entitlements?.watermark_text||"[APP NAME]"):null});
     await setStage(p,"clip_render","completed",100);await setStage(p,"export","running",0);await patchJob(p.jobId,{progress:92});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
@@ -559,7 +660,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
     await setStage(p,"export","completed",100);
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:storagePath,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180),ai_spec:{...(clip.ai_spec||{}),...editData},caption_config:{style:p.captionStyle||"pop",color:p.captionColor||"#ffffff"},reframe_config:{aspect:p.aspect||"9:16"}}});
     await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
-    console.log("editor render completed",p.jobId,clip.id);
+    console.log("editor_render_completed");
     return;
   }
   await patchJob(p.jobId,{progress:35});
@@ -578,7 +679,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const chunkSeconds=60;
   const chunkCount=Math.max(1,Math.ceil(duration/chunkSeconds));
   let nextChunk=Math.max(0,Number(p.transcribeChunk||0));
-  const browserTranscription=process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY;
+  const browserTranscription=process.env.TRANSCRIPTION_PROVIDER==="browser"||!hasGeminiKeys();
   let transcriptionChunks=Array.isArray(p.transcriptionChunks)?p.transcriptionChunks:[];
   if(browserTranscription&&nextChunk<chunkCount && transcriptionChunks.length<chunkCount){
     transcriptionChunks=[];
@@ -602,17 +703,19 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       current_stage:"transcription",
       payload:{...p,transcriptId:transcript.id,transcribeChunk:nextChunk,transcriptionChunks}
     });
-    console.log("browser transcription queued",p.jobId,"chunks",chunkCount,"next",nextChunk);
+    console.log("browser_transcription_queued",{chunks:chunkCount,nextChunk});
     return;
   }
   if(!browserTranscription){
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
     for(let i=nextChunk;i<chunkCount;i++){
       const start=i*chunkSeconds,length=Math.min(chunkSeconds,duration-start),chunkAudio=path.join(dir,"server-chunk-"+i+".wav");
       await cmd("ffmpeg",["-y","-ss",String(start),"-i",audio,"-t",String(length),"-c:a","pcm_s16le",chunkAudio]);
-      const file=await cachedGeminiUpload(ai,chunkAudio,"audio/wav");
-       const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),
-         "Transcribe only the spoken audio verbatim. Do not invent speech during silence. Return JSON {language:string,words:[{word:string,start:number,end:number}]} with word-level start/end in seconds relative to this "+length+" second audio chunk. Preserve the spoken language. No commentary"]),{responseMimeType:"application/json"});
+      const uploaded=await cachedGeminiUploadWithClient(chunkAudio,"audio/wav");
+      let file=uploaded.file;
+      for(let wait=0;wait<60&&file?.state==="PROCESSING";wait++){await new Promise(resolve=>setTimeout(resolve,1000));file=await uploaded.ai.files.get({name:file.name})}
+      if(file?.state!=="ACTIVE")throw new Error("Audio upload could not be prepared for transcription.");
+      const result=await generateGeminiWithRetry(uploaded.ai,GEMINI_MODEL,createUserContent([createPartFromUri(file.uri,file.mimeType),
+        "Transcribe only the spoken audio verbatim. Do not invent speech during silence. Return JSON {language:string,words:[{word:string,start:number,end:number}]} with word-level start/end in seconds relative to this "+length+" second audio chunk. Preserve the spoken language. No commentary"]),{responseMimeType:"application/json"});
       const parsed=JSON.parse(result.text||"{}");
       if(!Array.isArray(parsed.words))throw new Error("Audio transcription returned an invalid response.");
       const wordRows=parsed.words.map(w=>({transcript_id:transcript.id,word:String(w.word||"").trim(),start_ms:Math.round((start+Math.max(0,Number(w.start)))*1000),end_ms:Math.round((start+Math.min(length,Number(w.end)))*1000)})).filter(w=>w.word&&Number.isFinite(w.start_ms)&&Number.isFinite(w.end_ms)&&w.end_ms>w.start_ms);
@@ -643,19 +746,26 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const topicWindows=[];
   for(let start=0;start<safeDuration;start+=300){const end=Math.min(safeDuration,start+300);const text=segments.filter(s=>s.end>start&&s.start<end).map(s=>s.text).join(" ").trim();if(text)topicWindows.push({start,end,text:text.slice(0,4000)});}
   let topicRows=topicWindows.map((w,i)=>({project_id:p.projectId,name:"Topic "+(i+1),score:50,metadata:{start_seconds:w.start,end_seconds:w.end,source:"deterministic"}}));
-  if(GEMINI_API_KEY&&topicWindows.length){try{const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));const rr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(GEMINI_MODEL)+":generateContent?key="+encodeURIComponent(GEMINI_API_KEY),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:"application/json"}})});const jj=await rr.json().catch(()=>({}));const raw=jj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"[]";const named=JSON.parse(raw);if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}})}catch(e){console.warn("topic segmentation fallback:",e.message)}}
-  if(topicRows.length)await db("video_topics",{method:"POST",body:topicRows.map(t=>({workspace_id:p.workspaceId,project_id:t.project_id,video_id:null,title:t.name,summary:t.metadata?.source==="gemini"?"AI-segmented video topic":"Deterministic video topic",start_ms:Math.round(Number(t.metadata?.start_seconds||0)*1000),end_ms:Math.round(Number(t.metadata?.end_seconds||0)*1000),keywords:[],confidence:Number(t.score||50)/100}))}).catch(e=>console.warn("topic save failed:",e.message));
+  if(hasGeminiKeys()&&topicWindows.length){
+    try{
+      const prompt="Name these video sections. Return ONLY JSON array objects with index and name. Names must be factual, concise, 2-6 words. "+JSON.stringify(topicWindows.map((w,i)=>({index:i,start:w.start,end:w.end,text:w.text})));
+      const result=await generateGeminiWithRetry(null,GEMINI_MODEL,prompt,{responseMimeType:"application/json"});
+      const named=JSON.parse(result.text||"[]");
+      if(Array.isArray(named))topicRows=topicWindows.map((w,i)=>{const n=named.find(x=>Number(x.index)===i);return{project_id:p.projectId,name:String(n?.name||("Topic "+(i+1))).slice(0,160),score:75,metadata:{start_seconds:w.start,end_seconds:w.end,source:"gemini"}}});
+    }catch{console.warn("topic_segmentation_fallback",{errorId:randomUUID(),category:"ai_failure"})}
+  }
+  if(topicRows.length)await db("video_topics",{method:"POST",body:topicRows.map(t=>({workspace_id:p.workspaceId,project_id:t.project_id,video_id:null,title:t.name,summary:t.metadata?.source==="gemini"?"AI-segmented video topic":"Deterministic video topic",start_ms:Math.round(Number(t.metadata?.start_seconds||0)*1000),end_ms:Math.round(Number(t.metadata?.end_seconds||0)*1000),keywords:[],confidence:Number(t.score||50)/100}))}).catch(()=>console.warn("topic_save_failed"));
   await setStage(p,"topic_segmentation","completed",100);
   let candidates=null;
-  if(GEMINI_API_KEY){
+  if(hasGeminiKeys()){
     await patchJob(p.jobId,{progress:64,payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:"gemini"}});
-    try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("Gemini transcript clip candidates",p.jobId,candidates?.length||0)}
-    catch(e){console.warn("Gemini clip analysis failed; using deterministic fallback:",e.message)}
+    try{candidates=await analyzeTranscriptWithGemini(segments,safeDuration);console.log("gemini_transcript_candidates",{count:candidates?.length||0})}
+    catch{console.warn("gemini_clip_analysis_fallback")}
   }
   if(candidates?.length)candidates=dedupeClipCandidates(candidates);await setStage(p,"clip_scoring","completed",100);await setStage(p,"clip_render","running",0);
   if(!candidates?.length){
     candidates=sentenceMoments(segments,safeDuration);
-    console.log("Deterministic transcript clip candidates",p.jobId,candidates.length);
+    console.log("deterministic_transcript_candidates",{count:candidates.length});
   }
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
@@ -690,13 +800,13 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       const captionFile=captions?writeCaptionSrt(clipDir,segments,start,end):null;
       if(captions&&!captionFile)throw new Error("Captions were requested, but no timed transcript is available for this clip.");
       let reframeKeyframes=null;
-      if(preferences.autoReframe!==false&&preferences.aspect!=="16:9"&&GEMINI_API_KEY){
+      if(preferences.autoReframe!==false&&preferences.aspect!=="16:9"&&hasGeminiKeys()){
         const analysisPath=path.join(clipDir,clip.id+'-analysis.mp4');
         await renderClip(input,analysisPath,start,end);
         try{reframeKeyframes=await analyzeReframeWithGemini(analysisPath,end-start)}catch{console.warn('Speaker framing unavailable; preserving centered fallback for this clip.')}
       }
        const aspect=["9:16","1:1","16:9"].includes(preferences.aspect)?preferences.aspect:"9:16";
-       await renderEditedClip(input,rendered,start,end,{aspect,srtPath:captionFile,transition,reframeKeyframes});
+       await renderEditedClip(input,rendered,start,end,{aspect,srtPath:captionFile,transition,reframeKeyframes,maxResolution:p.entitlements?.max_resolution,watermarkText:p.entitlements?.plan==="free"?(p.entitlements?.watermark_text||"[APP NAME]"):null});
       const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v1.mp4";
       await upload(rendered,storagePath,"video/mp4");
        const editData={source_start:start,source_end:end,duration_seconds:end-start,aspect,captions,captionStyle,captionColor:"#ffffff",transition,effect:"none",hook:candidate.hook||"",broll:preferences.broll===true};
@@ -713,21 +823,50 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
       caption_config:{style:captionStyle,color:"#ffffff",enabled:captions},
       broll_config:preferences.broll===true?[{status:"suggested"}]:[]
     }});
-    await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
+    await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:hasGeminiKeys()?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed"});await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(()=>{});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"completed",updated_at:new Date().toISOString()}}).catch(()=>{});await notifyOnce(p.workspaceId,p.requestedBy,"Video processing complete","Your video processing job has completed.","job_completed","job:"+p.jobId+":completed");await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("processing_job_completed")
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
-  if(cancelled)return;
-  console.error("job",p.jobId,e);
-  // retryCount represents the attempt currently being processed. Direct /process calls start at 0, so a failure records attempt 1; recovery claims increment before calling processJob, so the same attempt is not double-counted.
+  if(cancelled){await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"cancelled",updated_at:new Date().toISOString()}}).catch(()=>{});return;}
+  const errorId=randomUUID();
+  const message=String(e?.message||"");
+  const failureType=e?.retryableProviderUnavailable||/gemini|ai provider|transcri|model/i.test(message)?"ai":
+    /unsupported.*format|format.*unsupported|codec.*unsupported/i.test(message)?"unsupported_format":
+    /download|source url|source fetch|http 4\d\d/i.test(message)?"download":
+    /network|timeout|timed out|ECONNRESET|ENOTFOUND|fetch failed/i.test(message)?"network":"internal";
   const retryCount=Number(p.retryCount||0)+1;
-  const terminal=Boolean(p.sessionId)&&p.operation!=='render_edit'||retryCount>=5;
+  const providerPaused=Boolean(e?.retryableProviderUnavailable);
+  const terminal=!providerPaused&&(Boolean(p.sessionId)&&p.operation!=="render_edit"||retryCount>=5);
+  const retryDelay=providerPaused?Math.max(60_000,Number(e?.retryAfterMs)||60_000):Math.min(15*60_000,15_000*Math.pow(2,Math.max(0,retryCount-1)));
+  const userMessage=providerPaused?"AI capacity is temporarily unavailable. Your job is paused and will retry automatically.":
+    failureType==="download"?"We couldn't download the source video. Check the link and try again.":
+    failureType==="unsupported_format"?"This video format is not supported.":
+    failureType==="network"?"A temporary network issue interrupted processing. We'll retry automatically.":
+    failureType==="ai"?"AI processing failed. Please retry; your credits will be refunded if the job cannot be completed.":
+    "Processing failed unexpectedly. Contact support with the error ID.";
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
-  await patchJob(p.jobId,{status:terminal?"failed":"queued",error:e.message,payload:{...checkpoint,retryCount}}).catch(()=>{});
-  if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
-   if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
-app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
+  const terminalStatus=terminal?(retryCount>=5?"dead_letter":"failed"):"queued";
+  await patchJob(p.jobId,{
+    status:terminalStatus,error:userMessage,error_id:errorId,failure_type:failureType,
+    next_retry_at:terminal?null:new Date(Date.now()+retryDelay).toISOString(),
+    dead_lettered_at:terminal&&retryCount>=5?new Date().toISOString():null,
+    payload:{...checkpoint,retryCount,lastFailureType:failureType}
+  }).catch(()=>{});
+  console.error("job_failure",{errorId,failureType,terminal,providerPaused});
+  if(terminal)await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});
+  if(terminal&&p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId,job_id:"eq."+p.jobId},body:{status:"failed",updated_at:new Date().toISOString()}}).catch(()=>{});
+  if(terminal)await notifyOnce(p.workspaceId,p.requestedBy,"Video processing failed","Your job could not be completed. Contact support with error ID "+errorId+".","job_failed","job:"+p.jobId+":failed");
+  if(terminal&&p.requestedBy&&p.workspaceId){
+    await db("rpc/refund_failed_job_credits",{method:"POST",body:{
+      p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,
+      p_reason:"Automatic refund after processing failure",p_idempotency_key:"job:"+p.jobId+":refund"
+    }}).catch(()=>{});
+  }
+  if(!terminal&&p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")
+    await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:"processing"}}).catch(()=>{});
+  if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
+app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!hasGeminiKeys()?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections"]});setImmediate(()=>resumeQueuedJobs());});
 async function authorize(req){
   if(SECRET&&req.get("x-worker-secret")===SECRET)return {id:req.body?.requestedBy||null,mode:"worker-secret",jobId:req.body?.jobId,workspaceId:req.body?.workspaceId,projectId:req.body?.projectId};
   const ticket=req.get("x-import-ticket")||"";
@@ -740,7 +879,7 @@ async function authorize(req){
         if(String(row.job_id)!==String(req.body?.jobId)||String(row.workspace_id)!==String(req.body?.workspaceId)||String(row.project_id)!==String(req.body?.projectId))return null;
         return {id:row.user_id,mode:"processing-ticket",jobId:row.job_id,workspaceId:row.workspace_id,projectId:row.project_id};
       }
-    }catch(e){console.warn("processing ticket validation failed:",e.message)}
+    }catch{console.warn("processing_ticket_validation_failed")}
   }
   const bearer=req.get("authorization")||"";
   if(!bearer.startsWith("Bearer ")||!PUBLIC_KEY)return null;
@@ -781,57 +920,88 @@ app.post("/process",async(req,res)=>{
     }
     res.status(202).json({accepted:true,queued:true,jobId:row.id});
     setImmediate(()=>resumeQueuedJobs());
-  }catch(e){console.error("authorize/process",e);res.status(500).json({error:e.message||"Worker authorization failed."})}
+  }catch{const errorId=randomUUID();console.error("worker_authorize_process_failure",{errorId});res.status(500).json({error:"The worker could not authorize this request. Retry or contact support with the error ID.",errorId})}
 });
 app.post('/editor/plan',async(req,res)=>{
   try{
     if(!SECRET||req.get('x-worker-secret')!==SECRET)return res.status(401).json({error:'Unauthorized'});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:'AI provider is not configured on the media worker.'});
+    if(!hasGeminiKeys())return res.status(503).json({error:'AI provider is not configured on the media worker.'});
     const {words,draft,duration}=req.body||{};
     const prompt=String(req.body?.prompt||'').trim();
     if(!prompt||prompt.length>3000||!Array.isArray(words)||!words.length||words.length>1800||!draft)return res.status(400).json({error:'Choose a word-timed clip and a valid editing request.'});
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY,httpOptions:{timeout:20000}});
+    
     const plan=await planTranscript({words,duration:Number(duration),prompt,history:[],clip:{...draft,start_seconds:draft.start,end_seconds:draft.end},
       onProgress:async()=>{},generate:async(contents,responseSchema)=>{
-        const result=await generateGeminiWithRetry(ai,GEMINI_MODEL,contents,{responseMimeType:'application/json',responseJsonSchema:responseSchema});
+        const result=await generateGeminiWithRetry(null,GEMINI_MODEL,contents,{responseMimeType:'application/json',responseJsonSchema:responseSchema});
         return JSON.parse(result.text);
       }});
     return res.json(plan);
-  }catch(error){if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.'});const failure=aiFailure(error);console.warn('editor plan failure',failure.code);return res.status(failure.status).json(failure)}
+  }catch(error){const errorId=randomUUID();if(error.unsupported)return res.status(400).json({error:'This instruction requires edits the planner does not support. Use the manual editor for additional changes.',errorId});const failure=aiFailure(error);console.warn('editor_plan_failure',{errorId,code:failure.code});return res.status(failure.status).json({error:failure.error,errorId})}
 });
 app.post("/assistant/plan",async(req,res)=>{
+  const errorId=randomUUID();
   try{
-    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized",errorId});
+    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker.",errorId});
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const transcript=String(req.body?.transcript||"").slice(0,60000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
     const instruction=`You are Alpha.ai's professional short-form video editor. Return ONLY valid JSON.
 Schema: {"summary":"string","clips":[{"a":0,"b":0,"title":"string","score":0,"reason":"string","aspect":"9:16","captionStyle":"pop","captionColor":"#00f2fe","hook":"string","zooms":[],"cuts":[],"transitions":"cut","broll":[],"overlays":[]}]}
 The transcript is an indexed list where each token is "index:word". Choose 3-6 clips, normally 20-60 seconds, starting with a hook and ending on a complete thought. a/b MUST be transcript word indexes. score is 0-100. Use aspect 9:16, 1:1 or 16:9; captionStyle pop/bold/minimal/none; transitions cut/fade/flash. cuts are [[fromWordIndex,toWordIndex]]. zooms are word indexes. broll is [{"at":wordIndex,"idea":"string"}]. overlays is [{"text":"string","at":wordIndex,"dur":2}].
 User request: ${prompt}
 Transcript:
 ${transcript}`;
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:instruction});
+    const result=await generateGeminiWithRetry(null,GEMINI_MODEL,instruction);
     const text=String(result.text||"").trim();
     const match=text.match(/\{[\s\S]*\}/);
     if(!match)throw new Error("Gemini returned no clip plan JSON.");
     let plan;try{plan=JSON.parse(match[0])}catch{throw new Error("Gemini returned invalid clip plan JSON.");}
     return res.json({ok:true,plan});
-  }catch(e){console.error("assistant/plan",e);return res.status(500).json({error:e.message||"Clip planning failed."})}
+  }catch(error){
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.warn("worker_assistant_plan_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    if(unavailable)return res.status(503).set("Retry-After",String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))))
+      .json({error:"AI providers are temporarily unavailable. Please retry shortly.",errorId});
+    return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId});
+  }
 });
 app.post("/assistant",async(req,res)=>{
   try{
     if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized"});
-    if(!GEMINI_API_KEY)return res.status(503).json({error:"AI provider is not configured on the media worker."});
+    if(!hasGeminiKeys())return res.status(503).json({error:"AI provider is not configured on the media worker."});
     const prompt=String(req.body?.prompt||"").trim();
     if(!prompt)return res.status(400).json({error:"Prompt is required."});
     const context=String(req.body?.context||"").slice(0,12000);
-    const ai=new GoogleGenAI({apiKey:GEMINI_API_KEY});
-    const result=await ai.models.generateContent({model:GEMINI_MODEL,contents:"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt});
+    const result=await generateGeminiWithRetry(null,GEMINI_MODEL,"You are Alpha.ai Assistant. Help the user with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n"+context+"\nUser request:\n"+prompt);
     return res.json({ok:true,text:String(result.text||"").trim()});
-  }catch(e){console.error("assistant",e);return res.status(500).json({error:e.message||"Assistant failed."})}
+  }catch(error){
+    const errorId=randomUUID();
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.warn("worker_assistant_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    if(unavailable)return res.status(503).set("Retry-After",String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))))
+      .json({error:"AI providers are temporarily unavailable. Please retry shortly.",errorId});
+    return res.status(500).json({error:"The assistant could not complete this request. Contact support with the error ID.",errorId});
+  }
+});
+app.post("/thumbnail/analyze",async(req,res)=>{
+  const errorId=randomUUID();
+  try{
+    if(!SECRET||req.get("x-worker-secret")!==SECRET)return res.status(401).json({error:"Unauthorized",errorId});
+    const imageBase64=String(req.body?.imageBase64||"");
+    const mimeType=String(req.body?.mimeType||"");
+    if(!["image/jpeg","image/png","image/webp","image/gif"].includes(mimeType)||!imageBase64||imageBase64.length>1400000)
+      return res.status(400).json({error:"Provide a supported image under 1 MB.",errorId});
+    const prompt="Analyze this creator thumbnail. Return JSON with overall_score,mobile_readability,clarity,curiosity,contrast,emotion,text_readability,topic_clarity,benchmark_percentile and an analysis object containing strengths,weaknesses,improvements. Scores are heuristic, not a verified market percentile.";
+    const result=await generateGeminiWithRetry(null,GEMINI_MODEL,[{role:"user",parts:[{text:prompt},{inlineData:{mimeType,data:imageBase64}}]}],{responseMimeType:"application/json"});
+    const analysis=JSON.parse(String(result.text||"{}"));
+    return res.json({ok:true,analysis});
+  }catch(error){
+    const unavailable=error?.retryableProviderUnavailable===true;
+    console.error("thumbnail_analysis_failure",{errorId,category:unavailable?"provider_unavailable":"ai_failure"});
+    return res.status(unavailable?503:500).set("Retry-After",unavailable?String(Math.max(1,Math.ceil(Number(error.retryAfterMs||60000)/1000))):"5")
+      .json({error:unavailable?"AI providers are temporarily unavailable. Your request was not charged; retry later.":"Thumbnail analysis failed. Contact support with the error ID.",errorId});
+  }
 });
 const activeJobs=new Set();
 let recoveryInFlight=false;
@@ -851,10 +1021,38 @@ async function resumeQueuedJobs(){
     if(retryCount>5){const previous=(await db('processing_jobs',{params:{id:'eq.'+row.id,select:'error'}}))[0];await patchJob(row.id,{status:"failed",error:"Automatic recovery stopped after 5 attempts. Last failure: "+(previous?.error||payload.lastFailure||'worker interrupted before saving an error'),lease_token:null,lease_until:null,payload:{...payload,retryCount}}).catch(()=>{});return}
     await patchJob(row.id,{payload:{...payload,retryCount},heartbeat_at:new Date().toISOString(),lease_until:new Date(Date.now()+120000).toISOString()});
     activeJobs.add(row.id);
-    console.log("resuming queued/stale job",row.id,row.status,row.progress,"attempt",retryCount);
-    processJob({...normalized,retryCount}).catch(e=>console.error("queued job",row.id,e)).finally(()=>activeJobs.delete(row.id));
-  }catch(e){console.warn("queued-job recovery failed:",e.message)}
+    console.log("resuming_queued_job",{status:row.status,progress:row.progress,attempt:retryCount});
+    processJob({...normalized,retryCount}).catch(()=>console.error("queued_job_runner_failure")).finally(()=>activeJobs.delete(row.id));
+  }catch{console.warn("queued_job_recovery_failed")}
   finally{recoveryInFlight=false}
+}
+async function processApprovedPendingParts(){
+  if(!KEY)return;
+  try{
+    const now=new Date().toISOString();
+    const parts=await db("pending_processing_parts",{params:{
+      status:"eq.approved",scheduled_for:"lte."+now,
+      select:"id",order:"scheduled_for.asc",limit:"10"
+    }});
+    for(const part of parts||[]){
+      await db("rpc/claim_due_pending_part",{method:"POST",body:{p_part_id:part.id}});
+    }
+  }catch{console.warn("pending_part_scheduler_scan_failed")}
+}
+async function expirePendingParts(){
+  if(!KEY)return;
+  try{
+    const now=new Date().toISOString();
+    const due=await db("pending_processing_parts",{params:{status:"eq.pending",expires_at:"lte."+now,
+      select:"id,workspace_id,user_id,part_number",order:"expires_at.asc",limit:"50"}});
+    for(const part of due||[]){
+      const updated=await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+part.id,status:"eq.pending",expires_at:"lte."+now},
+        body:{status:"expired",updated_at:now}});
+      if(updated?.length)await notifyOnce(part.workspace_id,part.user_id,"Pending video part expired",
+        "Part "+part.part_number+" expired because it was not approved within 48 hours.",
+        "pending_part_expired","pending-part:"+part.id+":expired");
+    }
+  }catch{console.warn("pending_part_expiry_scan_failed")}
 }
 async function processPublishJobs(){
   if(!KEY)return;
@@ -863,9 +1061,16 @@ async function processPublishJobs(){
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   console.log("Supabase server-side key configured:",!!KEY);
-  setInterval(processPublishJobs,30000);
-  setTimeout(processPublishJobs,10000);
-  setTimeout(resumeQueuedJobs,5000);
-  setInterval(resumeQueuedJobs,15000);
-  app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+  const restoreGeminiHealth=async()=>{try{const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until,last_status,success_count,failure_count,rate_limit_count,last_used_at"}});restoreGeminiKeyHealth(rows)}catch{console.warn("gemini_key_health_restore_unavailable")}};
+  void restoreGeminiHealth().finally(()=>{
+    setInterval(processPublishJobs,30000);
+    setTimeout(processPublishJobs,10000);
+    setTimeout(expirePendingParts,10000);
+    setInterval(expirePendingParts,60000);
+    setTimeout(processApprovedPendingParts,12000);
+    setInterval(processApprovedPendingParts,15000);
+    setTimeout(resumeQueuedJobs,5000);
+    setInterval(resumeQueuedJobs,15000);
+    app.listen(PORT,()=>console.log("Alpha.ai media worker listening on "+PORT));
+  });
 }

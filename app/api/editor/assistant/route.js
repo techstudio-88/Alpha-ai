@@ -1,5 +1,6 @@
 import {authorizeWorkflow,checked,mediaContext,problem,workflowError} from '../../../../lib/workflow-server';
-import {allPages} from '../../../../lib/video-workflow.mjs';
+import {allPages,UUID} from '../../../../lib/video-workflow.mjs';
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from '../../../../lib/rate-limit';
 import {normalizeEditorDraft,planEditorCommand} from '../../../../lib/editor-assistant.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
 import {aiFailure} from '../../../../lib/ai-failures.mjs';
@@ -8,7 +9,11 @@ export const maxDuration=30;
 export async function POST(request){
   try{
     const body=await request.json();
-    const {admin}=await authorizeWorkflow(request,body.workspaceId);
+    const {admin,user}=await authorizeWorkflow(request,body.workspaceId);
+    const plan=await resolveWorkspacePlan(admin,body.workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:'ai_call',userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
+    if(body.clipId&&!UUID.test(body.clipId))throw problem('A valid clip is required.');
     const {asset}=await mediaContext(admin,body.workspaceId,body.projectId,body.mediaAssetId);
     const prompt=String(body.prompt||'').trim();
     if(!prompt||prompt.length>3000)throw problem('Describe the change in 1–3,000 characters.');

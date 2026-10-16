@@ -1,5 +1,6 @@
 import {authorizeWorkflow,checked,problem,workflowError} from "../../../../../lib/workflow-server";
 import {sourceUrl,UUID} from "../../../../../lib/video-workflow.mjs";
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from "../../../../../lib/rate-limit";
 export const runtime = "nodejs";
 
 export async function POST(request) {
@@ -8,6 +9,10 @@ export async function POST(request) {
     const {workspaceId,sessionId} = body;
     if (!UUID.test(sessionId || "")) throw problem("A valid chat is required.");
     const {admin,user} = await authorizeWorkflow(request,workspaceId);
+    if(body.url&&!body.rightsConfirmed)throw problem("Confirm that you own or have rights to this content before importing a URL.",403);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:body.url?"link_fetch":"upload_start",userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     const existing = checked(await admin.from("ai_chat_sessions").select("id,workspace_id,user_id").eq("id",sessionId).maybeSingle());
     if (existing && (existing.workspace_id !== workspaceId || existing.user_id !== user.id)) throw problem("Chat access denied.",403);
     const name = String(body.name || "Linked video").slice(0,180);

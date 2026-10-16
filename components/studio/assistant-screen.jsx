@@ -7,6 +7,7 @@ import {Button,ErrorState,ScreenSkeleton,Select,formatTime} from './ui';
 import {Heading} from './project-screens';
 
 const DEFAULT_BRIEF={captions:true,captionStyle:'pop',broll:false,transition:'cut'};
+function formatSchedule(value,timezone='Asia/Kolkata'){try{return new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short',timeZone:timezone}).format(new Date(value))}catch{return 'Scheduled time pending'}}
 
 function OptionButton({active,children,onClick,disabled}){
   return <button type="button" className={`brief-option ${active?'active':''}`} aria-pressed={active} onClick={onClick} disabled={disabled}>
@@ -31,13 +32,18 @@ export default function AssistantScreen(){
   const {workspace,demo,clipId,projectId,jobId,afterUpload,navigate,notify}=useStudio();
   const clips=useRows('clips','*,projects!inner(workspace_id)');
   const jobs=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,payload',{projectId,poll:Boolean(jobId)});
+  const pendingParts=useRows('pending_processing_parts','id,parent_job_id,part_number,start_seconds,end_seconds,usage_date,timezone,scheduled_for,status',{projectId,poll:Boolean(jobId)});
   const [selected,setSelected]=useState(clipId||'workspace'),[prompt,setPrompt]=useState(''),[messages,setMessages]=useState([]);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[editRequest,setEditRequest]=useState('');
   const [preferences,setPreferences]=useState(DEFAULT_BRIEF),[briefBusy,setBriefBusy]=useState(false);
+  const [quotaAction,setQuotaAction]=useState(''),[dismissedQuotaPlanJob,setDismissedQuotaPlanJob]=useState('');
   const request=useRef(null),log=useRef(null);
   const clip=(clips.data||[]).find(c=>c.id===selected);
   const activeJob=(jobs.data||[]).find(job=>job.id===jobId)||(jobs.data||[])[0];
   const needsBrief=Boolean(afterUpload&&jobId&&activeJob?.status==='awaiting_preferences');
+  const quotaPlan=activeJob?.payload?.videoQuotaPlan;
+  const showQuotaPlan=Boolean(quotaPlan?.split&&Number(quotaPlan.pendingParts)>0&&dismissedQuotaPlanJob!==activeJob?.id);
+  const scheduledParts=(pendingParts.data||[]).filter(part=>part.parent_job_id===activeJob?.id&&part.status==='pending');
 
   useEffect(()=>{request.current?.abort();setBusy(false);setError('');setEditRequest('');setMessages([]);return()=>request.current?.abort()},[workspace.id,selected]);
   useEffect(()=>{if(needsBrief)setMessages([{role:'assistant',content:'Your video is uploaded and safe. Before I start processing, tell me what matters for this cut. You can use the defaults and change everything later in Editor.'}])},[needsBrief]);
@@ -52,6 +58,15 @@ export default function AssistantScreen(){
       else notify('Processing started. Alpha is finding the strongest complete moments.');
       navigate('project',{project:projectId});
     }catch(err){setError(err.message)}finally{setBriefBusy(false)}
+  }
+  async function decidePendingPart(partId,action){
+    setQuotaAction(partId+':'+action);
+    try{
+      await studioApi('/api/pending-parts',{body:{workspaceId:workspace.id,partId,action}});
+      pendingParts.retry();
+      notify(action==='approve'?'Part approved. It will start at its scheduled time.':'Part declined.');
+    }catch(err){notify(err.message||'Could not update the pending part.')}
+    finally{setQuotaAction('')}
   }
   function applyBriefFromText(content){
     const lower=content.toLowerCase();
@@ -86,6 +101,20 @@ export default function AssistantScreen(){
   if(jobs.loading&&afterUpload&&!activeJob)return <><Heading title="Your video is ready for direction" description="One optional conversation before Alpha starts the pipeline."/><ScreenSkeleton/></>;
   return <><Heading title={needsBrief?'Your video is ready for direction':'AI assistant'} description={needsBrief?'Tell Alpha what to preserve. It will not apply effects or B-roll without your say.':'Bring a clip, a question, or a plan. Get context-aware guidance and take edits into the editor.'}/>
     {needsBrief&&<ProcessingBrief preferences={preferences} setPreferences={setPreferences} onStart={startProcessing} busy={briefBusy}/>}
+    {showQuotaPlan&&<section className="panel" role="dialog" aria-label="Daily video processing schedule">
+      <div className="assistant-chat-heading"><WandSparkles size={18}/><h2>Your video processing schedule</h2><Button size="sm" variant="ghost" onClick={()=>setDismissedQuotaPlanJob(activeJob.id)}>Dismiss</Button></div>
+      <p className="text-sm text-muted">This source is longer than the remaining daily video-minute allowance. The original is stored once; each part is processed separately. Unapproved parts expire after 48 hours.</p>
+      <div className="brief-question"><div><b>Part 1 · {Math.max(1,Math.round((Number(quotaPlan.partEndSeconds)-Number(quotaPlan.partStartSeconds))/60))} min</b><span>{quotaPlan.deferCurrent?'Scheduled for '+formatSchedule(quotaPlan.scheduledFor,quotaPlan.timezone):'Starting now'}</span></div></div>
+      {pendingParts.loading&&scheduledParts.length===0&&<p className="text-sm text-muted">Preparing the later-part schedule…</p>}
+      {scheduledParts.map(part=><div key={part.id} className="brief-question">
+        <div><b>Part {part.part_number} · {Math.max(1,Math.round((Number(part.end_seconds)-Number(part.start_seconds))/60))} min</b><span>{formatSchedule(part.scheduled_for,part.timezone)} · Awaiting your approval</span></div>
+        <div className="brief-options">
+          <Button size="sm" variant="primary" disabled={Boolean(quotaAction)} busy={quotaAction===part.id+':approve'} onClick={()=>decidePendingPart(part.id,'approve')}>Approve</Button>
+          <Button size="sm" variant="ghost" disabled={Boolean(quotaAction)} busy={quotaAction===part.id+':decline'} onClick={()=>decidePendingPart(part.id,'decline')}>Decline</Button>
+        </div>
+      </div>)}
+      <p className="text-xs text-muted">You can also reschedule approved parts from the Pending page.</p>
+    </section>}
     <div className="workspace-assistant-grid">
       <section className="panel workspace-assistant-context"><span className="assistant-label"><Clapperboard size={16}/>{needsBrief?'PROCESSING CONTEXT':'YOUR CONTEXT'}</span>
         {clips.error?<ErrorState message={clips.error} onRetry={clips.retry}/>:<Select label="Assistant context" value={selected} onValueChange={setSelected} disabled={clips.loading} options={[{value:'workspace',label:'Entire workspace'},...(clips.data||[]).map(c=>({value:c.id,label:c.title||'Untitled clip'}))]}/>}

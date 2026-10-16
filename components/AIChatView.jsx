@@ -3,6 +3,7 @@ import {useCallback,useEffect,useRef,useState} from "react";
 import {ArrowUp,CalendarClock,ChevronRight,FileVideo,History,Link,LoaderCircle,MessageSquare,Paperclip,Plus,RefreshCw,Scissors,Sparkles,X} from "lucide-react";
 import {Upload} from "tus-js-client";
 import {allPages} from "../lib/video-workflow.mjs";
+import {Modal} from "./studio/ui";
 
 const activeStatuses=["queued","processing","awaiting_transcription","transcribing"];
 const time=value=>{const n=Math.max(0,Number(value)||0);return `${Math.floor(n/60)}:${String(Math.floor(n%60)).padStart(2,"0")}`};
@@ -46,8 +47,9 @@ function ClipResult({clip,job,supabase,onEdit,onRetry}){
 
 export default function AIChatView({workspace,supabase,onNavigate}){
   const [sessions,setSessions]=useState([]),[sessionId,setSessionId]=useState(""),[messages,setMessages]=useState([]),[assets,setAssets]=useState([]),[assetId,setAssetId]=useState(""),[source,setSource]=useState(null),[clips,setClips]=useState([]),[jobs,setJobs]=useState([]);
-  const [input,setInput]=useState(""),[url,setUrl]=useState(""),[showLink,setShowLink]=useState(false),[showHistory,setShowHistory]=useState(false),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[uploadProgress,setUploadProgress]=useState(null),[paused,setPaused]=useState(false);
-  const [dragging,setDragging]=useState(false);
+  const [input,setInput]=useState(""),[url,setUrl]=useState(""),[rightsConfirmed,setRightsConfirmed]=useState(false),[showLink,setShowLink]=useState(false),[showHistory,setShowHistory]=useState(false),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[uploadProgress,setUploadProgress]=useState(null),[paused,setPaused]=useState(false);
+  const [dragging,setDragging]=useState(false),[quotaNotice,setQuotaNotice]=useState([]);
+  const seenPendingParts=useRef(new Set());
   const textarea=useRef(null),bottom=useRef(null),uploader=useRef(null),requestId=useRef(null),refreshRef=useRef(null),stopUpload=useRef(null);
   const asset=assets.find(a=>a.id===assetId);
   const pending=jobs.some(j=>activeStatuses.includes(j.status));
@@ -66,11 +68,19 @@ export default function AIChatView({workspace,supabase,onNavigate}){
       if(running)return;running=true;
       try{
         const session=check(await supabase.auth.getSession())?.session;
-        const [history,media]=await Promise.all([
+        const [history,media,pendingResult]=await Promise.all([
           supabase.from("ai_chat_sessions").select("*").eq("workspace_id",workspace.id).eq("user_id",session?.user.id).order("updated_at",{ascending:false}).limit(100),
-          supabase.from("media_assets").select("id,name,status,project_id,duration_seconds,storage_path,projects!inner(workspace_id)").eq("projects.workspace_id",workspace.id).order("created_at",{ascending:false}).limit(150)
+          supabase.from("media_assets").select("id,name,status,project_id,duration_seconds,storage_path,projects!inner(workspace_id)").eq("projects.workspace_id",workspace.id).order("created_at",{ascending:false}).limit(150),
+          supabase.from("pending_processing_parts").select("id,part_number,start_seconds,end_seconds,usage_date,timezone,scheduled_for,expires_at,status")
+            .eq("workspace_id",workspace.id).eq("status","pending").order("part_number",{ascending:true}).limit(20)
         ]);
         const h=check(history),a=check(media);
+        if(!pendingResult.error){
+          const parts=pendingResult.data||[];
+          const unseen=parts.filter(part=>!seenPendingParts.current.has(part.id));
+          parts.forEach(part=>seenPendingParts.current.add(part.id));
+          if(unseen.length)setQuotaNotice(unseen);
+        }
         let m=[],j=[],c=[];
         if(sessionId){
           m=await allPages(async(offset,size)=>check(await supabase.from("ai_chat_messages").select("*").eq("session_id",sessionId).eq("workspace_id",workspace.id).order("created_at").order("id").range(offset,offset+size-1)));
@@ -97,7 +107,8 @@ export default function AIChatView({workspace,supabase,onNavigate}){
     setBusy(true);setError("");setNotice("");
     const sid=sessionId||crypto.randomUUID();
     try{
-      const data=await api("/api/ai/chat/source",{workspaceId:workspace.id,sessionId:sid,...(file?{name:file.name,size:file.size,mimeType:file.type}:{url,name:"Linked video"})});
+      if(!file&&!rightsConfirmed)throw new Error("Confirm that you own or have rights to this content before importing the URL.");
+      const data=await api("/api/ai/chat/source",{workspaceId:workspace.id,sessionId:sid,...(file?{name:file.name,size:file.size,mimeType:file.type}:{url,name:"Linked video",rightsConfirmed:true})});
       if(!sessionId)chooseSession(sid);
       setSource(data.source);setEditing(null);setAssetId(data.asset?.id||"");
       if(file){
@@ -121,7 +132,7 @@ export default function AIChatView({workspace,supabase,onNavigate}){
           role:"system",content:`${file.name} uploaded. Send your instructions to transcribe and create clips.`,metadata:{mediaAssetId:data.asset.id}}));
         setAssets(v=>v.map(a=>a.id===data.asset.id?{...a,status:"uploaded"}:a));
       }
-      setNotice(file?"Upload complete. Describe the clips you want below.":"URL attached. Describe what to make; the worker will download and analyze the video.");setShowLink(false);setUrl("");
+      setNotice(file?"Upload complete. Describe the clips you want below.":"URL attached. Describe what to make; the worker will download and analyze the video.");setShowLink(false);setUrl("");setRightsConfirmed(false);
       await refreshRef.current?.();
     }catch(e){setError(e.message)}finally{setBusy(false);setUploadProgress(null);setPaused(false);uploader.current=null;stopUpload.current=null}
   }
@@ -164,11 +175,17 @@ export default function AIChatView({workspace,supabase,onNavigate}){
         {uploadProgress!==null&&<div className="chatJob"><div><b>{paused?"Upload paused":"Uploading video"}</b><span>{uploadProgress}%</span></div><progress max="100" value={uploadProgress}/><button className="btn small" onClick={()=>{if(paused)uploader.current?.start();else uploader.current?.abort();setPaused(!paused)}}>{paused?"Resume":"Pause"}</button></div>}
         {editing&&<div className="chatEditing"><Scissors size={14}/><span>Editing: {editing.title} · {time(editing.start_seconds)}–{time(editing.end_seconds)}</span><button aria-label="Stop editing this clip" onClick={()=>setEditing(null)}><X size={14}/></button></div>}
         <div className="chatSourceRow"><FileVideo size={16}/><select value={assetId} onChange={e=>{setAssetId(e.target.value);setSource(null);setEditing(null)}} disabled={locked} aria-label="Source video"><option value="">{source?"Attached URL — ready to import":"Choose an existing video or attach one…"}</option>{assets.map(a=><option key={a.id} value={a.id}>{a.name}{a.duration_seconds?` · ${time(a.duration_seconds)}`:""}{a.status==="uploading"?" · upload incomplete":""}</option>)}</select></div>
-        {showLink&&<form className="chatLinkInput" onSubmit={e=>{e.preventDefault();attach(null)}}><input type="url" required value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=… or a video/source URL" aria-label="Video URL"/><button className="btn small" disabled={locked||!url}>Attach URL</button></form>}
+        {showLink&&<form className="chatLinkInput" onSubmit={e=>{e.preventDefault();attach(null)}}><input type="url" required value={url} onChange={e=>{setUrl(e.target.value);setRightsConfirmed(false)}} placeholder="https://youtube.com/watch?v=… or a video/source URL" aria-label="Video URL"/><button className="btn small" disabled={locked||!url||!rightsConfirmed}>Attach URL</button><label className="chatRightsConfirmation"><input type="checkbox" checked={rightsConfirmed} onChange={e=>setRightsConfirmed(e.target.checked)}/> I own or have rights to this content.</label></form>}
         <div className="chatComposer"><textarea ref={textarea} value={input} onChange={e=>{setInput(e.target.value);requestId.current=null}} rows={3} maxLength={6000} placeholder={editing?"Try: trim the opening, speed up to 1.2x, use square format and yellow bold captions…":"Describe the moments, duration and style you want…"} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send()}}}/>
           <div className="chatComposerActions"><div><label className={"btn small "+(locked?"chatDisabled":"")} title="Upload video"><Paperclip size={16}/><span>Video</span><input hidden type="file" accept="video/*,.mkv,.avi" disabled={locked} onChange={e=>{const file=e.target.files?.[0];e.target.value="";if(file)attach(file)}}/></label><button className="btn small" onClick={()=>setShowLink(v=>!v)} disabled={locked}><Link size={15}/> URL</button></div><button className="btn primary" onClick={send} disabled={locked||!input.trim()} aria-label="Send instruction">{locked?<LoaderCircle size={18} className="chatSpin"/>:<ArrowUp size={18}/>}</button></div>
         </div><small className="chatComposerHint">{pending?"Processing continues in this saved conversation. You can open another chat.":"YouTube · Drive shared files · Dropbox · OneDrive · direct video URLs. Source access and storage limits apply."}</small>
       </div>
     </section>
+    <Modal open={quotaNotice.length>0} onOpenChange={open=>{if(!open)setQuotaNotice([])}} title="Later parts of your video need approval" description="The first eligible part is queued for its processing window. These later parts are held for their scheduled day and expire if you do not approve them within 48 hours.">
+      <div className="space-y-3">
+        {quotaNotice.map(part=><div key={part.id} className="panel p-3"><b>Part {part.part_number}</b><p className="text-sm text-muted mt-1">{Math.max(1,Math.round((Number(part.end_seconds)-Number(part.start_seconds))/60))} minutes · {new Date(part.scheduled_for).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}</p><p className="text-xs text-muted mt-1">{part.usage_date} · {part.timezone}</p></div>)}
+        <div className="flex justify-end gap-2"><button className="btn small" onClick={()=>setQuotaNotice([])}>Not now</button><button className="btn small primary" onClick={()=>{setQuotaNotice([]);onNavigate?.("pending")}}>Review pending parts</button></div>
+      </div>
+    </Modal>
   </div>
 }

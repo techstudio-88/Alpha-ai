@@ -1,9 +1,15 @@
 import {authorizeWorkflow,checked,problem,wakeWorker,workflowError} from '../../../../lib/workflow-server';
+import {UUID} from '../../../../lib/video-workflow.mjs';
+import {checkRateLimit,rateLimitResponse,resolveWorkspacePlan} from '../../../../lib/rate-limit';
 export const runtime='nodejs';
 export async function POST(request){
   try{
     const {workspaceId,jobId,action}=await request.json();
-    const {admin,token}=await authorizeWorkflow(request,workspaceId);
+    if(!UUID.test(jobId||''))throw problem('A valid job is required.');
+    const {admin,token,user}=await authorizeWorkflow(request,workspaceId);
+    const plan=await resolveWorkspacePlan(admin,workspaceId);
+    const rate=await checkRateLimit(request,{endpoint:'api',userId:user.id,plan});
+    const blocked=rateLimitResponse(rate);if(blocked)return blocked;
     if(!['cancel','retry'].includes(action))throw problem('Choose cancel or retry.');
     const job=checked(await admin.from('processing_jobs').select('id,project_id,status,payload').eq('id',jobId).eq('workspace_id',workspaceId).maybeSingle());
     if(!job)throw problem('Job not found.',404);
