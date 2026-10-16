@@ -18,7 +18,7 @@ export async function POST(request){
     const{data:isMember,error:memberError}=await client.rpc("is_workspace_member",{wid:workspaceId});
     if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
     const admin=createClient(supabaseUrl,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
-    await enforceApiRateLimit(admin,user.id,"/api/import-ticket",20,60);
+    await enforceApiRateLimit(admin,"user:"+user.id,"/api/import-ticket",20,60,request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null);
     const{data:ticketRows,error:ticketError}=await client.rpc("issue_processing_ticket",{
       p_workspace_id:workspaceId,p_project_id:projectId,p_source_id:sourceId||null,p_job_id:jobId,p_media_asset_id:mediaAssetId||null
     });
