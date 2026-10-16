@@ -1,0 +1,218 @@
+/* Landing-only motion system. Kept separate from studio/editor styling. */
+.landing-hero,
+.landing-section,
+.formats-strip,
+.final-cta,
+.landing-footer {
+  --motion-ease: cubic-bezier(.2,.75,.25,1);
+}
+.landing-hero { isolation:isolate; }
+.landing-hero .hero-atmosphere {
+  animation: alphaAtmosphereDrift 18s ease-in-out infinite alternate;
+  transform-origin: center;
+}
+.landing-hero .hero-copy { animation: alphaHeroCopyIn .9s var(--motion-ease) both; }
+.landing-hero .hero-kicker { animation: alphaHeroFade .65s .08s both; }
+.landing-hero .hero-copy h1 { animation: alphaHeroTitle .95s .12s var(--motion-ease) both; }
+.landing-hero .hero-copy > p { animation: alphaHeroFade .8s .24s both; }
+.landing-hero .hero-actions { animation: alphaHeroFade .8s .34s both; }
+.landing-hero .pilot-label { animation: alphaHeroFade .8s .43s both; }
+.landing-hero .hero-details { animation: alphaHeroFade .8s .52s both; }
+.landing-hero .hero-stage {
+  transform: perspective(1400px) rotateX(var(--pointer-rotate-x,0deg)) rotateY(var(--pointer-rotate-y,0deg));
+  transition: transform .45s var(--motion-ease);
+  transform-style:preserve-3d;
+}
+.landing-hero .hero-source-parallax {
+  transform: translate3d(var(--pointer-shift-x,0px),var(--pointer-shift-y,0px),0);
+  transition: transform .45s var(--motion-ease);
+}
+.landing-hero .hero-source-card,
+.landing-hero .hero-clip-card,
+.landing-hero .hero-float-tag { will-change:transform; }
+.landing-hero .hero-source-card { animation: alphaFloatA 6.5s ease-in-out infinite; }
+.landing-hero .hero-clip-back { animation: alphaClipFloat 6s ease-in-out infinite; }
+.landing-hero .hero-clip-middle { animation: alphaClipFloat 5.4s .4s ease-in-out infinite; }
+.landing-hero .hero-clip-front { animation: alphaClipFloat 4.8s .8s ease-in-out infinite; }
+.landing-hero .hero-signal-dot { animation: alphaSignalPulse 1.8s ease-in-out infinite; }
+.landing-hero .hero-signal-path i { animation: alphaSignalTravel 2.2s ease-in-out infinite; }
+.landing-hero .hero-signal-path i:nth-of-type(2) { animation-delay:.35s; }
+.landing-hero .hero-signal-path i:nth-of-type(3) { animation-delay:.7s; }
+.landing-hero .hero-float-tag-one { animation: alphaFloatB 5.5s ease-in-out infinite; }
+.landing-hero .hero-float-tag-two { animation: alphaFloatC 6.2s .5s ease-in-out infinite; }
+.landing-hero .hero-demo-dock { animation: alphaDockIn 1s .25s var(--motion-ease) both; }
+.landing-hero .hero-explore svg,
+.landing-container .hero-actions a svg,
+.final-cta a svg { transition:transform .25s var(--motion-ease); }
+.landing-hero .hero-explore:hover svg,
+.landing-container .hero-actions a:hover svg,
+.final-cta a:hover svg { transform:translateX(4px); }
+.landing-motion-ready .motion-reveal {
+  opacity:0;
+  transform:translate3d(0,28px,0) scale(.985);
+  transition:opacity .75s var(--motion-ease), transform .8s var(--motion-ease);
+  transition-delay:var(--reveal-delay,0ms);
+}
+.landing-motion-ready .motion-reveal.is-in-view {
+  opacity:1;
+  transform:translate3d(0,0,0) scale(1);
+}
+.landing-container .how-card,
+.landing-container .bento-card,
+.landing-container .pricing-card,
+.landing-container .quality-node {
+  transform:perspective(1000px) rotateX(var(--card-rotate-x,0deg)) rotateY(var(--card-rotate-y,0deg));
+  transform-style:preserve-3d;
+  transition:transform .35s var(--motion-ease), box-shadow .35s var(--motion-ease), border-color .35s;
+  position:relative;
+}
+.landing-container .how-card::after,
+.landing-container .bento-card::after,
+.landing-container .pricing-card::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  pointer-events:none;
+  opacity:0;
+  background:radial-gradient(circle at var(--card-glow-x,50%) var(--card-glow-y,50%),rgba(129,102,255,.15),transparent 48%);
+  transition:opacity .35s;
+}
+.landing-container .how-card:hover::after,
+.landing-container .bento-card:hover::after,
+.landing-container .pricing-card:hover::after { opacity:1; }
+.landing-container .how-card:hover,
+.landing-container .bento-card:hover,
+.landing-container .pricing-card:hover,
+.landing-container .quality-node:hover {
+  box-shadow:0 24px 65px rgba(76,65,160,.14);
+}
+.landing-container .how-visual,
+.landing-container .feature-visual { animation:alphaVisualBob 6s ease-in-out infinite; }
+.landing-container .how-card:nth-child(2) .how-visual,
+.landing-container .bento-card:nth-child(2) .feature-visual { animation-delay:-1.7s; }
+.landing-container .how-card:nth-child(3) .how-visual,
+.landing-container .bento-card:nth-child(3) .feature-visual { animation-delay:-3.1s; }
+.landing-container .feature-visual::after {
+  content:"";
+  display:block;
+  pointer-events:none;
+}
+.landing-container .feature-score i em { animation:alphaProgressSweep 3.8s ease-in-out infinite; }
+.landing-container .feature-words mark { animation:alphaWordGlow 2.8s ease-in-out infinite; }
+.landing-container .feature-week > div i { animation:alphaDotPop 2.8s ease-in-out infinite; }
+.landing-container .feature-week > div:nth-child(2) i { animation-delay:.4s; }
+.landing-container .feature-week > div:nth-child(3) i { animation-delay:.8s; }
+.landing-container .feature-week > div:nth-child(5) i { animation-delay:1.2s; }
+.landing-container .quality-connector i { animation:alphaSignalTravel 2.4s ease-in-out infinite; }
+.landing-container .quality-connector i:nth-child(2) { animation-delay:.35s; }
+.landing-container .quality-connector i:nth-child(3) { animation-delay:.7s; }
+.landing-container .quality-node-icon { animation:alphaIconHover 4s ease-in-out infinite; }
+.landing-container .quality-timeline > i { background-size:200% 100%; animation:alphaGradientFlow 3.8s ease-in-out infinite; }
+.landing-container .assembly-glow { animation:alphaGlowBreathe 4.5s ease-in-out infinite; }
+.landing-container .assembly-playhead { animation:alphaPlayheadPulse 2s ease-in-out infinite; }
+.landing-container .assembly-stage-foot svg { animation:alphaIconHover 3.4s ease-in-out infinite; }
+.landing-container .sample-video.vertical .sample-captions span { animation:alphaCaptionLift .5s both; }
+.landing-container .sample-video.vertical .sample-captions span:nth-child(2) { animation-delay:.08s; }
+.landing-container .sample-video.vertical .sample-captions span:nth-child(3) { animation-delay:.16s; }
+.landing-container .sample-video.vertical .sample-captions span:nth-child(4) { animation-delay:.24s; }
+.landing-container .sample-video.vertical .sample-captions span:nth-child(5) { animation-delay:.32s; }
+.landing-container .sample-video.vertical .sample-captions span:nth-child(6) { animation-delay:.4s; }
+.landing-container .screen-toolbar .tabs { transition:transform .3s var(--motion-ease); }
+.landing-container .screen-toolbar .tabs:hover { transform:translateY(-2px); }
+.landing-container .usecase-panel > div:last-child { animation:alphaFloatB 7s ease-in-out infinite; }
+.landing-container .faq-list details { transition:background .25s,box-shadow .25s,transform .25s; }
+.landing-container .faq-list details[open] { transform:translateY(-2px); box-shadow:0 12px 30px rgba(72,64,142,.08); }
+.landing-container .faq-list summary svg { transition:transform .25s; }
+.landing-container .faq-list details[open] summary svg { transform:rotate(180deg); }
+.landing-container .formats-strip > div { transition:transform .3s var(--motion-ease), color .3s; }
+.landing-container .formats-strip > div:hover { transform:translateY(-4px); }
+.landing-footer .footer-grid > div { transition:transform .35s var(--motion-ease); }
+.landing-footer .footer-grid > div:hover { transform:translateY(-3px); }
+.final-cta { position:relative; isolation:isolate; overflow:hidden; }
+.final-cta::before,
+.final-cta::after {
+  content:"";
+  position:absolute;
+  z-index:-1;
+  width:34rem;
+  height:34rem;
+  border-radius:50%;
+  filter:blur(60px);
+  opacity:.18;
+  pointer-events:none;
+  animation:alphaAtmosphereDrift 15s ease-in-out infinite alternate;
+}
+.final-cta::before { background:#a78bfa; top:-22rem; left:-8rem; }
+.final-cta::after { background:#67e8f9; bottom:-27rem; right:-6rem; animation-delay:-7s; }
+.final-cta > * { position:relative; }
+.final-cta h2 { animation:alphaHeroTitle .8s var(--motion-ease) both; }
+.final-cta a { animation:alphaGradientFlow 5s ease-in-out infinite; }
+.landing-nav { animation:alphaNavDrop .65s var(--motion-ease) both; }
+.landing-nav .landing-links a { position:relative; }
+.landing-nav .landing-links a::after {
+  content:"";
+  position:absolute;
+  height:2px;
+  left:0;right:0;bottom:-5px;
+  background:linear-gradient(90deg,#8b5cf6,#06b6d4);
+  transform:scaleX(0);
+  transform-origin:left;
+  transition:transform .25s var(--motion-ease);
+}
+.landing-nav .landing-links a:hover::after { transform:scaleX(1); }
+@keyframes alphaAtmosphereDrift { 0%{transform:translate3d(-1.5%,0,0) scale(1)} 100%{transform:translate3d(1.5%,-2%,0) scale(1.05)} }
+@keyframes alphaHeroCopyIn { from{opacity:0;transform:translate3d(0,22px,0)} to{opacity:1;transform:none} }
+@keyframes alphaHeroFade { from{opacity:0;transform:translate3d(0,12px,0)} to{opacity:1;transform:none} }
+@keyframes alphaHeroTitle { from{opacity:0;transform:translate3d(0,24px,0) scale(.98);filter:blur(5px)} to{opacity:1;transform:none;filter:blur(0)} }
+@keyframes alphaDockIn { from{opacity:0;transform:translate3d(0,26px,0) rotateX(4deg)} to{opacity:1;transform:none} }
+@keyframes alphaNavDrop { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:none} }
+@keyframes alphaFloatA { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-8px) rotate(1deg)} }
+@keyframes alphaFloatB { 0%,100%{transform:translate3d(0,0,0)} 50%{transform:translate3d(0,-7px,0)} }
+@keyframes alphaFloatC { 0%,100%{transform:translate3d(0,0,0) rotate(0)} 50%{transform:translate3d(0,-5px,0) rotate(1deg)} }
+@keyframes alphaClipFloat { 0%,100%{translate:0 0} 50%{translate:0 -6px} }
+@keyframes alphaSignalPulse { 0%,100%{opacity:.5;scale:.9} 50%{opacity:1;scale:1.2} }
+@keyframes alphaSignalTravel { 0%,100%{opacity:.35;transform:scale(.8)} 50%{opacity:1;transform:scale(1.15)} }
+@keyframes alphaVisualBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+@keyframes alphaProgressSweep { 0%,100%{width:42%} 50%{width:86%} }
+@keyframes alphaWordGlow { 0%,100%{filter:saturate(1);box-shadow:0 0 0 rgba(124,58,237,0)} 50%{filter:saturate(1.35);box-shadow:0 5px 18px rgba(124,58,237,.2)} }
+@keyframes alphaDotPop { 0%,100%{transform:scale(.85);opacity:.65} 50%{transform:scale(1.15);opacity:1} }
+@keyframes alphaIconHover { 0%,100%{transform:translateY(0) rotate(0)} 50%{transform:translateY(-3px) rotate(-3deg)} }
+@keyframes alphaGlowBreathe { 0%,100%{opacity:.25;scale:.98} 50%{opacity:.7;scale:1.02} }
+@keyframes alphaPlayheadPulse { 0%,100%{filter:drop-shadow(0 0 2px rgba(124,58,237,.2))} 50%{filter:drop-shadow(0 0 9px rgba(124,58,237,.45))} }
+@keyframes alphaCaptionLift { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+@keyframes alphaGradientFlow { 0%,100%{background-position:0 50%} 50%{background-position:100% 50%} }
+@media (hover:hover) and (pointer:fine) {
+  .landing-container .how-card:hover,
+  .landing-container .bento-card:hover,
+  .landing-container .pricing-card:hover { translate:0 -3px; }
+}
+@media (max-width:760px) {
+  .landing-hero .hero-stage { transform:none; }
+  .landing-hero .hero-source-parallax { transform:none; }
+  .landing-container .how-card,
+  .landing-container .bento-card,
+  .landing-container .pricing-card,
+  .landing-container .quality-node { transform:none!important; }
+  .final-cta::before,.final-cta::after { filter:blur(35px); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .landing-hero *, .landing-container *, .landing-nav, .final-cta, .final-cta::before, .final-cta::after, .landing-footer * {
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    scroll-behavior:auto!important;
+    transition-duration:.01ms!important;
+  }
+  .landing-motion-ready .motion-reveal { opacity:1!important; transform:none!important; }
+}
+:root[data-motion="paused"] .landing-hero *,
+:root[data-motion="paused"] .landing-container *,
+:root[data-motion="paused"] .landing-nav,
+:root[data-motion="paused"] .final-cta,
+:root[data-motion="paused"] .final-cta::before,
+:root[data-motion="paused"] .final-cta::after,
+:root[data-motion="paused"] .landing-footer * {
+  animation-play-state:paused!important;
+  transition:none!important;
+}
+:root[data-motion="paused"] .landing-motion-ready .motion-reveal { opacity:1;transform:none; }
