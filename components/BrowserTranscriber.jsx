@@ -80,10 +80,6 @@ export default function BrowserTranscriber({ workspace }) {
         transcribeChunk:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
         localAnalysis:{type:"heuristic",candidateCount:candidates.length,model:"browser-whisper-tiny"}
       };
-      await touchJob(job.id,{
-        status:"completed",progress:100,current_stage:"local_analysis_complete",error:null,
-        payload:finalPayload,lease_until:null
-      });
       if(payload.projectId){
         const updated=await supabase.from("projects").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
         if(updated.error)throw updated.error;
@@ -92,6 +88,10 @@ export default function BrowserTranscriber({ workspace }) {
         const updated=await supabase.from("project_sources").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
         if(updated.error)throw updated.error;
       }
+      await touchJob(job.id,{
+        status:"completed",progress:100,current_stage:"local_analysis_complete",error:null,
+        payload:finalPayload,lease_until:null
+      });
       const paths=(Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks:[]).map(chunk=>chunk.storagePath).filter(Boolean);
       if(paths.length)await supabase.storage.from("media").remove(paths).catch(()=>{});
       setState({
