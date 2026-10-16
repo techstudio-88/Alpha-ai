@@ -225,6 +225,16 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     assert.equal((await db.query("select count(*)::int as n from public.processing_jobs where id=$1",[zeroJob])).rows[0].n,0,"A zero-balance job must not be accepted");
     assert.equal((await db.query("select count(*)::int as n from public.ai_chat_messages where session_id=$1",[zeroSession])).rows[0].n,0,"A failed reservation must roll back the chat message");
 
+    await db.query("select public.release_job_credits_for_provider_pause($1,$2,$3,$4,$5)",[workspace,chatJob,user,"Gemini provider outage","job:"+chatJob+":provider_pause:1"]);
+    assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,1,"A provider outage must release the reserved credit while the job is paused");
+    assert.equal((await db.query("select reserved_credits from public.processing_jobs where id=$1",[chatJob])).rows[0].reserved_credits,0);
+    await db.query("select public.reserve_job_credits($1,$2,$3,1,$4,$5)",[workspace,chatJob,user,"Credit reservation after provider recovery","job:"+chatJob+":resume:1"]);
+    assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,0,"A resumed job reacquires its credit reservation");
+    await db.query("update public.processing_jobs set status='failed' where id=$1",[chatJob]);
+    await db.query("select public.refund_failed_job_credits($1,$2,$3,$4,$5)",[workspace,chatJob,user,"Terminal failure after resume","job:"+chatJob+":refund:1"]);
+    await db.query("select public.refund_failed_job_credits($1,$2,$3,$4,$5)",[workspace,chatJob,user,"Duplicate terminal refund","job:"+chatJob+":refund:1"]);
+    assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,1,"Terminal refund after resume is idempotent");
+
     const reserveFeature=async requestId=>(await db.query("select public.reserve_workspace_feature_usage($1,$2,$3,$4,$5) as result",[workspace,user,"title_regeneration","Asia/Kolkata",requestId])).rows[0].result;
     const title1=await reserveFeature("title-1");
     const title1Replay=await reserveFeature("title-1");
