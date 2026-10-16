@@ -7,6 +7,7 @@ import {spawn} from"node:child_process";
 import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
+import {createGeminiKeyRing} from "./gemini-keyring.js";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
 import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
