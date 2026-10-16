@@ -1,6 +1,6 @@
 import {randomUUID} from "node:crypto";
 import {createClient} from "@supabase/supabase-js";
-import {authorizeWorkflow,enforceApiRateLimit,reserveWorkspaceFeatureUsage,finishWorkspaceFeatureUsage,problem,workflowError} from "../../../../lib/workflow-server";
+import {authorizeWorkflow,enforceApiRateLimit,reserveWorkspaceFeatureUsage,finishWorkspaceFeatureUsage,workflowError} from "../../../../lib/workflow-server";
 
 const db=()=>createClient(process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,{auth:{persistSession:false}});
 const prompts={
@@ -8,7 +8,9 @@ const prompts={
   title:"Generate 10 short-form video titles. Return a numbered list.",
   caption:"Write 5 concise social captions for this content.",
   ideas:"Give 8 distinct short-form clip ideas from this content, each with a hook angle.",
-  podcast:"Create a podcast-to-shorts plan with 8 clip angles and suggested durations."
+  podcast:"Create a podcast-to-shorts plan with 8 clip angles and suggested durations.",
+  cover:"Generate five distinct thumbnail cover concepts with visual hierarchy, short overlay text, and a reason each would attract attention.",
+  thumbnail:"Generate five distinct thumbnail cover concepts with visual hierarchy, short overlay text, and a reason each would attract attention."
 };
 export async function POST(request){
   let admin=null,usageId=null;
