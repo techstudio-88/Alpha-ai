@@ -2,12 +2,68 @@
 import {useState} from 'react';
 import * as tus from 'tus-js-client';
 import {sourceUrl} from '../../lib/video-workflow.mjs';
-import {readResponseWithinLimit} from '../../lib/local-processing.mjs';
+import {getLocalExportPolicy,readResponseWithinLimit} from '../../lib/local-processing.mjs';
 import {supabase} from '../../lib/supabase';
 import GoogleDriveBrowser from '../GoogleDriveBrowser';
 import GooglePhotosPicker from '../GooglePhotosPicker';
 import {useStudio,unwrap} from './data';
 import {Button,DropZone,ErrorState,Modal,Tabs} from './ui';
+
+const LOCAL_IMPORT_CAP_BYTES=80*1024*1024;
+const LOCAL_AUDIO_CHUNK_SECONDS=300;
+
+async function readVideoDuration(file){
+  const objectUrl=URL.createObjectURL(file);
+  try{
+    return await new Promise((resolve,reject)=>{
+      const video=document.createElement('video');
+      video.preload='metadata';
+      video.onloadedmetadata=()=>Number.isFinite(video.duration)&&video.duration>0?resolve(video.duration):reject(new Error('The browser could not read this video duration.'));
+      video.onerror=()=>reject(new Error('This video format could not be inspected in your browser.'));
+      video.src=objectUrl;
+    });
+  }finally{URL.revokeObjectURL(objectUrl)}
+}
+
+async function prepareLocalAudioChunks(file,workspaceId,projectId,onProgress){
+  const duration=await readVideoDuration(file);
+  if(duration>7200)throw new Error('Free local transcription is limited to videos up to 2 hours.');
+  let ffmpeg=null;
+  const uploadedPaths=[];
+  const chunks=[];
+  try{
+    const [{FFmpeg},{toBlobURL}]=await Promise.all([import('@ffmpeg/ffmpeg'),import('@ffmpeg/util')]);
+    ffmpeg=new FFmpeg();
+    const baseURL='https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd';
+    await ffmpeg.load({
+      coreURL:await toBlobURL(baseURL+'/ffmpeg-core.js','text/javascript'),
+      wasmURL:await toBlobURL(baseURL+'/ffmpeg-core.wasm','application/wasm')
+    });
+    await ffmpeg.writeFile('source-video',new Uint8Array(await file.arrayBuffer()));
+    const total=Math.ceil(duration/LOCAL_AUDIO_CHUNK_SECONDS);
+    for(let index=0;index<total;index++){
+      const start=index*LOCAL_AUDIO_CHUNK_SECONDS;
+      const length=Math.min(LOCAL_AUDIO_CHUNK_SECONDS,duration-start);
+      onProgress?.(index/total);
+      const outputName='audio-'+index+'.wav';
+      await ffmpeg.exec(['-ss',String(start),'-i','source-video','-t',String(length),'-map','0:a:0','-vn','-ac','1','-ar','16000','-c:a','pcm_s16le',outputName]);
+      const audio=await ffmpeg.readFile(outputName);
+      if(!audio?.length)throw new Error('Audio extraction returned an empty chunk.');
+      const storagePath=workspaceId+'/'+projectId+'/transcription/'+crypto.randomUUID()+'-'+String(index+1).padStart(3,'0')+'.wav';
+      const uploaded=await supabase.storage.from('media').upload(storagePath,new Blob([audio],{type:'audio/wav'}),{contentType:'audio/wav',cacheControl:'3600',upsert:false});
+      if(uploaded.error)throw uploaded.error;
+      uploadedPaths.push(storagePath);
+      chunks.push({storagePath,start,length});
+      await ffmpeg.deleteFile(outputName).catch(()=>{});
+      onProgress?.((index+1)/total);
+    }
+    await ffmpeg.deleteFile('source-video').catch(()=>{});
+    return {duration,chunks};
+  }catch(error){
+    if(uploadedPaths.length)await supabase.storage.from('media').remove(uploadedPaths).catch(()=>{});
+    throw error;
+  }finally{if(ffmpeg){try{await ffmpeg.terminate()}catch{}}}
+}
 
 export default function ImportVideo({open,onOpenChange,file:initialFile}){
   const {workspace,user,demo,refresh,navigate,notify}=useStudio();
