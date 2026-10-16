@@ -4,10 +4,11 @@ This phase changes backend behavior only. It does not redesign the application U
 
 ## Migration safety
 
-- `tests/fixtures/phase1_backend_foundation_baseline.sql` is a test-only snapshot of the live schema. It is not a deployable migration.
-- Production already has multiple timestamped Phase 1 migrations recorded on 2026-10-15. The only new deployable migration in this branch is `20261016113000_phase_1_runtime_hardening.sql`.
-- `20261016113000_phase_1_runtime_hardening.sql` adds runtime rate-limit, credit-pause/refund, and plan-entitlement enforcement.
-- Never apply the test fixture to production. Review the full migration list and pending diff, then apply only the new timestamped migration after CI passes and production rollout is approved.
+- `supabase/migrations/20261015062057_phase_1_backend_foundation.sql` restores the missing source for a migration version already recorded in production. It is an idempotent bootstrap snapshot reconstructed from the live final schema so clean installs can build the Phase 1 foundation.
+- Seven later Phase 1 migration source files were also absent from repository history. Their versioned compatibility files are intentionally no-ops because their final schema/function behavior is already represented in the bootstrap snapshot; this is documented in each file rather than pretending their original SQL was recovered.
+- `tests/fixtures/phase1_backend_foundation_baseline.sql` is a test-only mirror of the bootstrap snapshot. It is not a deployable migration.
+- Production already has the 2026-10-15 Phase 1 migration versions recorded. The only new deployable migration in this branch is `20261016113000_phase_1_runtime_hardening.sql`, which adds runtime rate-limit, credit-pause/refund, and plan-entitlement enforcement.
+- Never apply the test fixture or re-run already-recorded migration versions against production. Review the full migration list and pending diff, then apply only the new timestamped runtime migration after CI passes and production rollout is approved.
 
 Suggested checks from a trusted developer environment:
 
