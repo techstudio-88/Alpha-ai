@@ -9,10 +9,20 @@ export async function POST(request){
     if(!job)throw problem('Job not found.',404);
     const allowed=action==='retry'?['failed','cancelled']:['queued','processing','awaiting_transcription','transcribing'];
     if(!allowed.includes(job.status))throw problem('This job cannot be changed in its current state.',409);
-    const patch=action==='cancel'?{status:'cancelled',lease_until:null}:{status:'queued',error:null,attempt_count:0,lease_until:null,payload:{...job.payload,retryCount:0}};
+    const patch=action==='cancel'?{status:'cancelled',lease_until:null,cancel_requested_at:new Date().toISOString()}:{status:'queued',error:null,attempt_count:0,lease_until:null,next_retry_at:null,dead_lettered_at:null,error_id:null,failure_type:null,payload:{...job.payload,retryCount:0,videoQuotaPlanned:false,videoQuotaPlan:null,partStartSeconds:null,partEndSeconds:null,partNumber:null,usageDate:null}};
     const changed=checked(await admin.from('processing_jobs').update(patch).eq('id',job.id).eq('workspace_id',workspaceId).eq('status',job.status).select('id'));
     if(!changed.length)throw problem('The job changed. Refresh before retrying.',409);
-    const warning=action==='retry'?await wakeWorker({...patch.payload,jobId:job.id,workspaceId,projectId:job.project_id},token):null;
+    let accountingWarning=null;
+    if(action==='cancel'){
+      const usageResult=await admin.rpc('finish_video_usage_for_job',{p_job_id:job.id,p_succeeded:false});
+      if(usageResult.error)accountingWarning='Cancellation succeeded, but reserved video minutes need reconciliation.';
+      const requester=job.payload?.requestedBy;
+      if(requester){
+        const refund=await admin.rpc('refund_failed_job_credits',{p_workspace_id:workspaceId,p_job_id:job.id,p_user_id:requester,p_reason:'Refund after user cancellation',p_idempotency_key:'job:'+job.id+':refund'});
+        if(refund.error)accountingWarning='Cancellation succeeded, but credit refund needs reconciliation.';
+      }
+    }
+    const warning=action==='retry'?await wakeWorker({...patch.payload,jobId:job.id,workspaceId,projectId:job.project_id},token):accountingWarning;
     return Response.json({ok:true,warning},{status:202});
   }catch(error){return workflowError(error)}
 }
