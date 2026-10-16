@@ -169,6 +169,16 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     `);
     const sql = await readFile(new URL("../supabase/migrations/20261015_phase_1_backend_foundation.sql", import.meta.url), "utf8");
     await db.exec(sql);
+    await db.exec(`
+      create table public.brand_kits(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.brand_kit_profiles(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
+      create table public.clip_schedules(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz not null);
+      create table public.scheduled_posts(id uuid primary key default gen_random_uuid(),workspace_id uuid not null,scheduled_for timestamptz);
+      create table public.content_plans(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz);
+      create table public.publish_jobs(id uuid primary key default gen_random_uuid(),workspace_id uuid,scheduled_for timestamptz,metadata jsonb not null default '{}'::jsonb);
+    `);
+    const runtimeSql = await readFile(new URL("../supabase/migrations/20261016_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+    await db.exec(runtimeSql);
     const tables = (await db.query("select table_name from information_schema.tables where table_schema='public' and table_name=any($1)",[[
       "usage_credits","credit_ledger","pending_processing_parts","video_usage_daily","workspace_entitlements","workspace_feature_usage","gemini_key_health","api_rate_limits"
     ]])).rows.map(row=>row.table_name).sort();
