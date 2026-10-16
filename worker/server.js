@@ -39,6 +39,20 @@ async function recordGeminiKeyOutcome(entry,success,error=null){
   else await db("gemini_key_health",{method:"POST",body});
  }catch(error){console.warn("Gemini key health update failed for",entry.label,error?.message||"unknown error")}
 }
+let workerGeminiHealthLoaded=false;
+async function restoreWorkerGeminiCooldowns(){
+ if(workerGeminiHealthLoaded)return;
+ try{
+  const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until"}});
+  const now=Date.now();
+  for(const row of rows||[]){
+   const until=Date.parse(row.cooldown_until||"");
+   if(row.is_available===false&&Number.isFinite(until)&&until>now)GEMINI_KEY_RING.markUnavailable(row.key_label,until-now,now);
+   else if(row.key_label)GEMINI_KEY_RING.markAvailable(row.key_label);
+  }
+  workerGeminiHealthLoaded=true;
+ }catch(error){console.warn("Worker Gemini cooldowns could not be restored:",error?.message||"unknown error")}
+}
 function createGeminiClient(options={}){
  const entry=GEMINI_KEY_RING.next();
  if(!entry)throw new Error("GEMINI_API_KEY is not configured on the media worker.");
