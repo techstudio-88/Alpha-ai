@@ -151,6 +151,29 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     assert.equal(tables.length,8);
     assert.ok((await db.query("select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='reserve_job_credits'")).rows[0].n===1);
     assert.ok((await db.query("select relrowsecurity from pg_class where oid='public.credit_ledger'::regclass")).rows[0].relrowsecurity);
+
+    const workspace="44444444-4444-4444-8444-444444444444";
+    const user="55555555-5555-4555-8555-555555555555";
+    const project="66666666-6666-4666-8666-666666666666";
+    const asset="77777777-7777-4777-8777-777777777777";
+    const job="88888888-8888-4888-8888-888888888888";
+    await db.query("insert into auth.users(id,email) values($1,'phase1@example.test')",[user]);
+    await db.query("insert into public.workspaces(id) values($1)",[workspace]);
+    await db.query("insert into public.workspace_members(workspace_id,user_id) values($1,$2)",[workspace,user]);
+    await db.query("insert into public.projects(id,workspace_id) values($1,$2)",[project,workspace]);
+    await db.query("insert into public.media_assets(id,project_id,workspace_id,duration_seconds) values($1,$2,$3,2100)",[asset,project,workspace]);
+    await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','processing','{}'::jsonb)",[job,workspace,project]);
+    const planned=(await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,$6,$7,$8) as plan",[workspace,project,user,job,asset,2100,"Asia/Kolkata","[]"])).rows[0].plan;
+    assert.equal(planned.split,true,"35 minutes must split against the free 20-minute daily allowance");
+    assert.equal(planned.deferCurrent,false,"The first segment should use today's available allowance");
+    assert.equal(planned.partStartSeconds,0);
+    assert.ok(Number(planned.partEndSeconds)<=1200.01&&Number(planned.partEndSeconds)>1190);
+    assert.equal(planned.pendingParts,1);
+    assert.equal((await db.query("select count(*)::int as n from public.pending_processing_parts where parent_job_id=$1 and status='pending'",[job])).rows[0].n,1);
+    await db.query("select public.finish_video_usage_for_job($1,true)",[job]);
+    const usage=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0];
+    assert.equal(Number(usage.minutes_reserved),0);
+    assert.ok(Number(usage.minutes_completed)>=19.9&&Number(usage.minutes_completed)<=20.1);
   } finally {
     await db.close();
   }
