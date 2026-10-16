@@ -338,7 +338,7 @@ async function downloadRemote(url,out,type="direct_url",opts={}){
   }
   if(lastError)throw lastError;
 }}
-async function detectSpeakersWithGemini(filePath,duration,projectId){
+async function detectSpeakersWithGemini(filePath,duration,projectId,offsetSeconds=0){
   if(!GEMINI_API_KEY)return;
   try{
     const ai=new GoogleGenAI({apiKey:nextGeminiApiKey()});
