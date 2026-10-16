@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { allPages } from "../lib/video-workflow.mjs";
+import { generateLocalClipCandidates } from "../lib/local-analysis.mjs";
 
 const HEARTBEAT_MS = 20000;
 const JOB_LEASE_MS = 120000;
@@ -37,6 +38,73 @@ export default function BrowserTranscriber({ workspace }) {
       if (result.error) throw result.error;
     }
 
+    async function finishLocalAnalysis(job,payload){
+      const timedWords=await allPages(async(offset,size)=>{
+        const result=await supabase.from("transcript_words").select("word,start_ms,end_ms")
+          .eq("transcript_id",payload.transcriptId).order("start_ms").range(offset,offset+size-1);
+        if(result.error)throw result.error;
+        return result.data||[];
+      });
+      const candidates=generateLocalClipCandidates(timedWords,Number(payload.durationSeconds)||0,6);
+      const existing=await supabase.from("clips").select("id").eq("project_id",payload.projectId)
+        .contains("ai_spec",{source:"local-transcript-analysis"}).limit(1);
+      if(existing.error)throw existing.error;
+      if(!existing.data?.length&&candidates.length){
+        const rows=candidates.map((candidate,index)=>({
+          project_id:payload.projectId,
+          media_asset_id:payload.mediaAssetId||null,
+          title:candidate.title||("Local highlight "+(index+1)),
+          start_seconds:candidate.startSeconds,
+          end_seconds:candidate.endSeconds,
+          score:candidate.score,
+          status:"draft",
+          ai_spec:{
+            source:"local-transcript-analysis",
+            analysisType:"heuristic",
+            hook:candidate.hook,
+            reason:candidate.reason,
+            transcriptExcerpt:candidate.transcript,
+            aspect:"9:16",
+            captions:true,
+            captionStyle:"pop",
+            subjectTrackingApplied:false,
+            aiPromptApplied:false
+          }
+        }));
+        const inserted=await supabase.from("clips").insert(rows);
+        if(inserted.error)throw inserted.error;
+      }
+      const finalPayload={
+        ...payload,
+        transcriptionChunks:[],
+        transcribeChunk:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        localAnalysis:{type:"heuristic",candidateCount:candidates.length,model:"browser-whisper-tiny"}
+      };
+      await touchJob(job.id,{
+        status:"completed",progress:100,current_stage:"local_analysis_complete",error:null,
+        payload:finalPayload,lease_until:null
+      });
+      if(payload.projectId){
+        const updated=await supabase.from("projects").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
+        if(updated.error)throw updated.error;
+      }
+      if(payload.sourceId){
+        const updated=await supabase.from("project_sources").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
+        if(updated.error)throw updated.error;
+      }
+      const paths=(Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks:[]).map(chunk=>chunk.storagePath).filter(Boolean);
+      if(paths.length)await supabase.storage.from("media").remove(paths).catch(()=>{});
+      setState({
+        jobId:job.id,index:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        total:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        progress:100,
+        message:candidates.length
+          ?"Local transcription and "+candidates.length+" clip suggestions are ready. Scores are heuristic, not Gemini AI scores."
+          :"Transcription completed, but there was not enough timed speech to suggest clips."
+      });
+      setTimeout(()=>{if(alive)setState(null)},8000);
+    }
+
     async function processJob(job) {
       if (running.current) return;
 
@@ -51,6 +119,14 @@ export default function BrowserTranscriber({ workspace }) {
 
       try {
         if (!chunks.length || next >= chunks.length) {
+          if(payload.localOnly&&payload.transcriptId){
+            try{await finishLocalAnalysis(job,payload)}
+            catch(error){
+              retryAfter.current.set(job.id,Date.now()+30000);
+              await touchJob(job.id,{status:"awaiting_transcription",error:error?.message||"Local clip analysis failed.",current_stage:"local_analysis",payload}).catch(()=>{});
+              if(alive)setState({jobId:job.id,index:next,total:chunks.length,progress:0,error:error?.message||"Local clip analysis failed.",message:"Local clip analysis needs attention"});
+            }
+          }
           running.current = false;
           return;
         }
@@ -264,6 +340,12 @@ export default function BrowserTranscriber({ workspace }) {
               .eq("job_id", job.id)
               .eq("stage_key", "transcription");
             if (stageUpdate.error) throw stageUpdate.error;
+          }
+
+          if(completed&&payload.localOnly){
+            await finishLocalAnalysis(job,nextPayload);
+            await supabase.storage.from("media").remove([chunk.storagePath]).catch(()=>{});
+            return;
           }
 
           await touchJob(job.id, {
