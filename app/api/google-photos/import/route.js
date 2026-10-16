@@ -15,7 +15,7 @@ export async function POST(request){
   const{data:isMember,error:memberError}=await supabase.rpc("is_workspace_member",{wid:workspaceId});if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
   const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;if(!serviceKey)return Response.json({error:"Supabase server credentials are not configured."},{status:503});
   const limiter=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
-  await enforceApiRateLimit(limiter,user.id,"/api/google-photos/import",10,60);
+  await enforceApiRateLimit(limiter,"user:"+user.id,"/api/google-photos/import",10,60,request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null);
   const mediaFile=item.mediaFile; if(!String(mediaFile.mimeType||"").startsWith("video/"))return Response.json({error:"Selected Google Photos item is not a video."},{status:400});
    const sourceUrl=String(mediaFile.baseUrl);const externalId=String(item.id);
    const sourceHost=new URL(sourceUrl);if(sourceHost.protocol!=='https:'||!sourceHost.hostname.endsWith('.googleusercontent.com')||sourceHost.username||sourceHost.password||sourceHost.port)return Response.json({error:'Unsupported Google Photos source.'},{status:400});
