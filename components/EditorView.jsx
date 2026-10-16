@@ -323,7 +323,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip:incom
       </div>
       <div className="editorTopActions"><button className="btn" onClick={undo} disabled={!history.length}><Undo2 size={15}/></button><button className="btn" onClick={redo} disabled={!future.length}><Redo2 size={15}/></button><button className="btn" onClick={()=>setShortcutsOpen(true)}><Keyboard size={15}/> Shortcuts</button>
         <button className="btn" onClick={reset}><RotateCcw size={15}/> Reset</button>
-        <button className="btn" onClick={exportLocalTrim} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Working…":"Local export (free)"}</button><button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
+        <button className="btn" onClick={exportLocalTrim} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Working…":"Local trim (free)"}</button><button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
       </div>
     </div>
 
