@@ -45,7 +45,7 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
       create role authenticated;
       create role service_role;
     `);
-    const sql = await readFile(new URL("../supabase/migrations/20261016_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
+    const sql = await readFile(new URL("../supabase/migrations/20261016113000_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
     await db.exec(sql);
     const key = "a".repeat(64);
     const invoke = () => db.query(
@@ -168,7 +168,7 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
       create function private.issue_processing_ticket(p_workspace_id uuid,p_project_id uuid,p_source_id uuid,p_job_id uuid,p_media_asset_id uuid)
         returns table(ticket text,expires_at timestamptz) language sql as $$ select null::text,now() $$;
     `);
-    const sql = await readFile(new URL("../supabase/migrations/20261015_phase_1_backend_foundation.sql", import.meta.url), "utf8");
+    const sql = await readFile(new URL("./fixtures/phase1_backend_foundation_baseline.sql", import.meta.url), "utf8");
     await db.exec(sql);
     await db.exec(`
       create table public.brand_kits(id uuid primary key default gen_random_uuid(),workspace_id uuid not null);
