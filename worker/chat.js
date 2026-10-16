@@ -63,8 +63,9 @@ USER REQUEST: ${prompt}`;
   return {summary:last.summary,clips};
 }
 
-export async function generateChatPlan(p,{db,patchJob,key,keys,model}) {
-  const keyPool = [...new Set((Array.isArray(keys) ? keys : [key]).filter((value) => typeof value === "string" && value.trim()))];
+export async function generateChatPlan(p,{db,patchJob,key,keys,keyRing,model}) {
+  const suppliedKeys = keyRing?.keys?.length ? keyRing.keys : (Array.isArray(keys) ? keys : [key]).map((value, index) => typeof value === "string" ? {label:"GEMINI_API_KEY_" + (index + 1),key:value} : value);
+  const keyPool = suppliedKeys.filter((entry) => typeof entry?.key === "string" && entry.key.trim());
   if (!keyPool.length) throw new Error("GEMINI_API_KEY is not configured on the media worker.");
   let nextKeyIndex = 0;
   const asset=(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"*"}}))[0];
@@ -81,15 +82,18 @@ export async function generateChatPlan(p,{db,patchJob,key,keys,model}) {
       let lastError;
       const attempts=keyPool.length>1?keyPool.length:3;
       for(let attempt=0;attempt<attempts;attempt++){
-        const selectedKey=keyPool[nextKeyIndex%keyPool.length];
+        const selectedKey=keyRing?.next?.()||keyPool[nextKeyIndex%keyPool.length];
         nextKeyIndex=(nextKeyIndex+1)%keyPool.length;
-        const ai=new GoogleGenAI({apiKey:selectedKey,httpOptions:{timeout:120000}});
+        const ai=new GoogleGenAI({apiKey:selectedKey.key,httpOptions:{timeout:120000}});
         try{
           const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema},keyPool.length>1?1:3);
+          keyRing?.markAvailable?.(selectedKey.label);
           try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
         }catch(error){
           lastError=error;
-          if(!/401|403|429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|quota|API key|temporar/i.test(String(error?.message||error)))throw error;
+          const message=String(error?.message||error);
+          if(!/401|403|429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|quota|API key|temporar/i.test(message))throw error;
+          keyRing?.markUnavailable?.(selectedKey.label,/429|RESOURCE_EXHAUSTED|quota/i.test(message)?120000:60000);
         }
       }
       throw lastError||new Error("Gemini providers are temporarily unavailable.");
