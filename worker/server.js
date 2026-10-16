@@ -20,7 +20,7 @@ import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_KEY_RING=createGeminiKeyRing(),GEMINI_KEYS=GEMINI_KEY_RING.keys,GEMINI_API_KEY=GEMINI_KEY_RING.current()?.key||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const nextGeminiApiKey=()=>GEMINI_KEY_RING.next()?.key||"";
-const safeErrorMessage=error=>String(error?.message||error||"Unknown error").replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\\s]+/gi,"key=[redacted]").replace(/Bearer\\s+[A-Za-z0-9._-]+/gi,"Bearer [redacted]").slice(0,1000);
+const safeErrorMessage=error=>String(error?.message||error||"Unknown error").replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\s]+/gi,"key=[redacted]").replace(/Bearer\s+[A-Za-z0-9._-]+/gi,"Bearer [redacted]").slice(0,1000);
 
 const authStore=new AsyncLocalStorage();
 const jobDirs=new Map();
