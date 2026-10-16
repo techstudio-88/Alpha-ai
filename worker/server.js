@@ -416,7 +416,8 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
     const creditState=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"reserved_credits,payload",limit:"1"}}).catch(()=>[]))[0];
     if(Number(creditState?.reserved_credits||0)<=0){
       const resumeCount=Number(creditState?.payload?.creditResumeCount||0)+1;
-      await db("rpc/reserve_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_amount:1,p_reason:"Credit reservation when resuming a paused AI-chat job",p_idempotency_key:"job:"+p.jobId+":resume:"+resumeCount}});
+      const creditAmount=Math.max(1,Math.floor(Number(creditState?.payload?.creditCost||1))||1);
+      await db("rpc/reserve_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_amount:creditAmount,p_reason:"Credit reservation when resuming a paused AI-chat job",p_idempotency_key:"job:"+p.jobId+":resume:"+resumeCount}});
       await patchJob(p.jobId,{payload:{...(creditState?.payload||p),creditResumeCount:resumeCount}});
     }
   }
