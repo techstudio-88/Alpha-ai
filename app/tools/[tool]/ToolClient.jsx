@@ -14,9 +14,9 @@ export default function ToolClient({tool,names}){
       if(supabase){
         const {data:{session}}=await supabase.auth.getSession();
         if(session?.access_token){
-          headers.Authorization="Bearer "+session.access_token;
-          const {data:membership}=await supabase.from("workspace_members").select("workspace_id").eq("user_id",session.user.id).limit(1).maybeSingle();
+          const {data:membership}=await supabase.from("workspace_members").select("workspace_id").eq("user_id",session.user.id).order("created_at",{ascending:true}).limit(1).maybeSingle();
           workspaceId=membership?.workspace_id||null;
+          if(workspaceId)headers.Authorization="Bearer "+session.access_token;
         }
       }
       const requestId=globalThis.crypto?.randomUUID?.()||String(Date.now())+"-"+Math.random().toString(36).slice(2);
