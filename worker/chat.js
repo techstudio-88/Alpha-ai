@@ -51,13 +51,42 @@ async function restoreGeminiCooldowns(db,keyRing) {
   }
 }
 export async function generateGeminiWithRetry(ai,model,contents,config={},attempts=3){
-  let last;
-  for(let attempt=0;attempt<attempts;attempt++){
-    try{return await ai.models.generateContent({model,contents,config})}
-    catch(error){
-      last=error;const text=String(error?.message||'');
-      if(!/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar/i.test(text)||attempt===attempts-1)throw error;
-      await sleep(700*(attempt+1));
+  let current=ai,last;
+  const ring=current?.__alphaGeminiKeyRing;
+  const maxAttempts=ring?.keys?.length>1?Math.max(attempts,ring.keys.length):attempts;
+  for(let attempt=0;attempt<maxAttempts;attempt++){
+    try{
+      const result=await current.models.generateContent({model,contents,config});
+      const entry=current?.__alphaGeminiKeyEntry;
+      current?.__alphaGeminiKeyRing?.markAvailable?.(entry?.label);
+      await current?.__alphaOnGeminiOutcome?.(entry,true,null);
+      return result;
+    }catch(error){
+      last=error;
+      const message=String(error?.message||"");
+      const providerFailure=/401|403|429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|API key|high demand|temporar/i.test(message);
+      const currentRing=current?.__alphaGeminiKeyRing;
+      const currentEntry=current?.__alphaGeminiKeyEntry;
+      if(providerFailure&&currentRing?.keys?.length>1&&attempt<maxAttempts-1){
+        currentRing.markUnavailable(currentEntry?.label,/429|RESOURCE_EXHAUSTED|quota/i.test(message)?120000:60000);
+        await current?.__alphaOnGeminiOutcome?.(currentEntry,false,error);
+        const next=currentRing.next();
+        if(next){
+          const options=current.__alphaGeminiOptions||{};
+          current=new GoogleGenAI({apiKey:next.key,...options});
+          current.__alphaGeminiKeyRing=currentRing;
+          current.__alphaGeminiKeyEntry=next;
+          current.__alphaGeminiOptions=options;
+          current.__alphaOnGeminiOutcome=ai.__alphaOnGeminiOutcome;
+          continue;
+        }
+      }
+      if(/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar/i.test(message)&&attempt<maxAttempts-1){
+        await sleep(700*(attempt+1));
+        continue;
+      }
+      await current?.__alphaOnGeminiOutcome?.(currentEntry,false,error);
+      throw error;
     }
   }
   throw last;
