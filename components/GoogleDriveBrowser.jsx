@@ -2,18 +2,29 @@
 import{useEffect,useMemo,useRef,useState}from"react";
 import{FolderOpen,Search,Video,FileVideo,Loader2,Check,ArrowRight,RefreshCw}from"lucide-react";
 import{supabase}from"../lib/supabase";
+import {getLocalExportPolicy,readResponseWithinLimit} from "../lib/local-processing.mjs";
 
 const CLIENT_ID=process.env.NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID||"";
 const SCOPE="https://www.googleapis.com/auth/drive.file";
 
-export default function GoogleDriveBrowser({workspaceId,userId,onImported,onError}){
+export default function GoogleDriveBrowser({workspaceId,userId,onImported,onImportFile,onError}){
  const[token,setToken]=useState("");const[files,setFiles]=useState([]);const[q,setQ]=useState("");const[selected,setSelected]=useState(null);const[loading,setLoading]=useState(false);const[importing,setImporting]=useState(false);const[ready,setReady]=useState(false);const tokenClient=useRef(null);
  useEffect(()=>{if(!CLIENT_ID)return;let s=document.querySelector('script[src="https://accounts.google.com/gsi/client"]');if(!s){s=document.createElement("script");s.src="https://accounts.google.com/gsi/client";s.async=true;s.defer=true;s.onload=()=>setReady(true);document.head.appendChild(s)}else setReady(true)},[]);
  useEffect(()=>{if(ready&&window.google?.accounts?.oauth2){tokenClient.current=window.google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPE,prompt:"consent",callback:()=>{}})}},[ready]);
  const authorize=()=>{if(!CLIENT_ID)return onError?.("Google Drive is not configured. Add NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID in Vercel.");if(!tokenClient.current)return onError?.("Google authorization is still loading.");tokenClient.current.callback=async r=>{if(r.error)return onError?.("Google authorization was not completed.");setToken(r.access_token);await loadFiles(r.access_token)};tokenClient.current.requestAccessToken({prompt:token?"":"consent"})};
  const loadFiles=async t=>{setLoading(true);try{const params=new URLSearchParams({pageSize:"100",orderBy:"modifiedTime desc",fields:"files(id,name,mimeType,size,modifiedTime,thumbnailLink,capabilities,webViewLink),nextPageToken",q:"trashed=false and mimeType contains 'video/'"});const r=await fetch("https://www.googleapis.com/drive/v3/files?"+params,{headers:{Authorization:"Bearer "+t}});const d=await r.json();if(!r.ok)throw new Error(d.error?.message||"Unable to list Google Drive files.");setFiles(d.files||[])}catch(e){onError?.(e.message)}finally{setLoading(false)}};
  const filtered=useMemo(()=>{const x=q.trim().toLowerCase();return x?files.filter(f=>f.name.toLowerCase().includes(x)):files},[files,q]);
- const importFile=async()=>{if(!selected||!token)return;setImporting(true);try{const{data:{session}}=await supabase.auth.getSession();const r=await fetch("/api/google-drive/import",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+(session?.access_token||"")},body:JSON.stringify({accessToken:token,file:selected,workspaceId,userId})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Google Drive import failed.");onImported?.(d)}catch(e){onError?.(e.message)}finally{setImporting(false)}};
+ const importFile=async()=>{if(!selected||!token)return;setImporting(true);try{
+  if(onImportFile){
+   const policy=getLocalExportPolicy({isMobile:window.matchMedia("(max-width: 760px)").matches,deviceMemory:Number(navigator.deviceMemory)||0,hardwareConcurrency:Number(navigator.hardwareConcurrency)||0});
+   const response=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(selected.id)+"?alt=media",{headers:{Authorization:"Bearer "+token},cache:"no-store"});
+   const bytes=await readResponseWithinLimit(response,Math.min(policy.maxBytes,80*1024*1024));
+   const file=new File([bytes],selected.name||"google-drive-video.mp4",{type:selected.mimeType||"video/mp4"});
+   await onImportFile(file);
+   return;
+  }
+  const{data:{session}}=await supabase.auth.getSession();const r=await fetch("/api/google-drive/import",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+(session?.access_token||"")},body:JSON.stringify({accessToken:token,file:selected,workspaceId,userId})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Google Drive import failed.");onImported?.(d)
+ }catch(e){onError?.(e.message||"Google Drive import failed. If the browser blocks the download, a media worker is required.")}finally{setImporting(false)}};
  if(!CLIENT_ID)return <div className="driveBrowser"><div className="driveSetup"><FolderOpen size={24}/><h3>Connect Google Drive</h3><p>Add your Google OAuth web client ID to enable the secure Drive picker.</p></div></div>;
  return <div className="driveBrowser">
   {!token?<div className="driveConnect"><div className="driveLogo"><FolderOpen size={26}/></div><h3>Import from Google Drive</h3><p>Authorize Alpha.ai to access only Drive files you choose. No broad Drive access is requested.</p><button className="btn primary" onClick={authorize} disabled={!ready}><FolderOpen size={16}/> {ready?"Connect Google Drive":"Loading Google…"} <ArrowRight size={15}/></button></div>:

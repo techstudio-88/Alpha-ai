@@ -7,6 +7,7 @@ export async function POST(request){
   try{
     const body=await request.json();
     const context=await authorizeWorkflow(request,body.workspaceId);
+    if(!String(process.env.MEDIA_WORKER_URL||"").trim())throw problem("Cloud rendering is not configured because no media worker endpoint is set. Use Local export (free) for supported on-device edits.");
     const {asset}=await mediaContext(context.admin,body.workspaceId,body.projectId,body.mediaAssetId);
     if(!asset?.storage_path)throw problem('Source video is not stored. Re-import it before editing.',409);
     const result=await enqueueEditorRender({...context,body,asset,requireCapability:requireWorkerCapability,wake:wakeWorker});

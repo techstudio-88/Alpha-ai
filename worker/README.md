@@ -35,8 +35,8 @@ docker build -t alpha-ai-media-worker -f worker/Dockerfile .
 docker run --rm -p 8080:8080 --env-file worker/.env alpha-ai-media-worker
 ```
 
-The root Dockerfile is the Render Blueprint target and exposes port 10000. The worker
-Dockerfile uses port 8080. Both copy the shared workflow and credential-cipher modules.
+The root Dockerfile is a generic container target and exposes port 10000. The worker
+Dockerfile uses port 8080. Choose a host only after confirming it meets the zero-cost requirement; do not configure production until its endpoint is verified.
 Neither references an absent `transcribe.mjs` or loads faster-whisper.
 
 Every import persists its source before analysis; the private `media` bucket must

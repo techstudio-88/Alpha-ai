@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { allPages } from "../lib/video-workflow.mjs";
+import { generateLocalClipCandidates } from "../lib/local-analysis.mjs";
 
 const HEARTBEAT_MS = 20000;
 const JOB_LEASE_MS = 120000;
@@ -37,6 +38,103 @@ export default function BrowserTranscriber({ workspace }) {
       if (result.error) throw result.error;
     }
 
+    async function finishLocalAnalysis(job,payload){
+      const timedWords=await allPages(async(offset,size)=>{
+        const result=await supabase.from("transcript_words").select("word,start_ms,end_ms")
+          .eq("transcript_id",payload.transcriptId).order("start_ms").range(offset,offset+size-1);
+        if(result.error)throw result.error;
+        return result.data||[];
+      });
+      let candidates=[];
+      let analysisType="heuristic";
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(session?.access_token){
+          const response=await fetch("/api/local-clip-analysis",{
+            method:"POST",
+            headers:{"content-type":"application/json",authorization:"Bearer "+session.access_token},
+            body:JSON.stringify({workspaceId:workspace.id,projectId:payload.projectId,mediaAssetId:payload.mediaAssetId,transcriptId:payload.transcriptId,durationSeconds:payload.durationSeconds}),
+            signal:AbortSignal.timeout(25000)
+          });
+          if(response.ok){
+            const result=await response.json().catch(()=>({}));
+            if(Array.isArray(result.clips)&&result.clips.length){
+              candidates=result.clips;
+              analysisType="gemini-transcript";
+            }
+          }
+        }
+      }catch(error){console.info("Gemini transcript analysis unavailable; using local scoring.",error?.message||"")}
+      if(!candidates.length)candidates=generateLocalClipCandidates(timedWords,Number(payload.durationSeconds)||0,6);
+      const source=analysisType==="gemini-transcript"?"gemini-transcript-analysis":"local-transcript-analysis";
+      const existing=await supabase.from("clips").select("id,ai_spec").eq("project_id",payload.projectId).limit(100);
+      if(existing.error)throw existing.error;
+      const hasExisting=(existing.data||[]).some(clip=>["local-transcript-analysis","gemini-transcript-analysis"].includes(clip.ai_spec?.source));
+      if(!hasExisting&&candidates.length){
+        const rows=candidates.map((candidate,index)=>({
+          project_id:payload.projectId,
+          media_asset_id:payload.mediaAssetId||null,
+          title:candidate.title||("Transcript highlight "+(index+1)),
+          start_seconds:candidate.startSeconds,
+          end_seconds:candidate.endSeconds,
+          score:candidate.score,
+          status:"draft",
+          ai_spec:{
+            source,
+            analysisType:analysisType==="gemini-transcript"?"gemini-transcript":"heuristic",
+            hook:candidate.hook,
+            reason:candidate.reason,
+            transcriptExcerpt:candidate.transcript,
+            aspect:"9:16",
+            captions:true,
+            captionStyle:"pop",
+            subjectTrackingApplied:false,
+            aiPromptApplied:false
+          }
+        }));
+        const inserted=await supabase.from("clips").insert(rows);
+        if(inserted.error)throw inserted.error;
+      }
+      const finalPayload={
+        ...payload,
+        transcriptionChunks:[],
+        transcribeChunk:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        localAnalysis:{type:analysisType,candidateCount:candidates.length,model:analysisType==="gemini-transcript"?"gemini-transcript":"browser-whisper-tiny"}
+      };
+      if(payload.projectId){
+        const updated=await supabase.from("projects").update({status:"ready",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
+        if(updated.error)throw updated.error;
+      }
+      if(payload.sourceId){
+        const updated=await supabase.from("project_sources").update({status:"processed",updated_at:new Date().toISOString()}).eq("id",payload.sourceId);
+        if(updated.error)throw updated.error;
+      }
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(session?.access_token){
+          const stageResponse=await fetch("/api/local-processing/stages",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+session.access_token},body:JSON.stringify({workspaceId:workspace.id,jobId:job.id,action:"complete"})});
+          if(!stageResponse.ok)console.warn("Local stage status could not be finalized.");
+        }
+      }catch(error){console.warn("Local stage status could not be finalized:",error?.message||"")}
+      await touchJob(job.id,{
+        status:"completed",progress:100,current_stage:"local_analysis_complete",error:null,
+        payload:finalPayload,lease_until:null
+      });
+      const paths=(Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks:[]).map(chunk=>chunk.storagePath).filter(Boolean);
+      if(paths.length)await supabase.storage.from("media").remove(paths).catch(()=>{});
+      setState({
+        jobId:job.id,index:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        total:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
+        progress:100,
+        message:analysisType==="gemini-transcript"
+          ?"Gemini transcript analysis and "+candidates.length+" clip suggestions are ready. This analysis used transcript content and timing, not video-frame inspection."
+          :candidates.length
+            ?"Local transcription and "+candidates.length+" heuristic clip suggestions are ready. Add a server-side Gemini key for semantic transcript analysis."
+            :"Transcription completed, but there was not enough timed speech to suggest clips."
+      });
+      setTimeout(()=>{if(alive)setState(null)},8000);
+    }
+
     async function processJob(job) {
       if (running.current) return;
 
@@ -51,6 +149,14 @@ export default function BrowserTranscriber({ workspace }) {
 
       try {
         if (!chunks.length || next >= chunks.length) {
+          if(payload.localOnly&&payload.transcriptId){
+            try{await finishLocalAnalysis(job,payload)}
+            catch(error){
+              retryAfter.current.set(job.id,Date.now()+30000);
+              await touchJob(job.id,{status:"awaiting_transcription",error:error?.message||"Local clip analysis failed.",current_stage:"local_analysis",payload}).catch(()=>{});
+              if(alive)setState({jobId:job.id,index:next,total:chunks.length,progress:0,error:error?.message||"Local clip analysis failed.",message:"Local clip analysis needs attention"});
+            }
+          }
           running.current = false;
           return;
         }
@@ -264,6 +370,12 @@ export default function BrowserTranscriber({ workspace }) {
               .eq("job_id", job.id)
               .eq("stage_key", "transcription");
             if (stageUpdate.error) throw stageUpdate.error;
+          }
+
+          if(completed&&payload.localOnly){
+            await finishLocalAnalysis(job,nextPayload);
+            await supabase.storage.from("media").remove([chunk.storagePath]).catch(()=>{});
+            return;
           }
 
           await touchJob(job.id, {
