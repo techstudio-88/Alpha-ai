@@ -3,7 +3,7 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Activity,ChevronRight,Clock,Film,Fullscreen,Keyboard,Maximize2,Pause,Play,Redo2,RotateCcw,Save,Scissors,Scan,Search,SplitSquareHorizontal,Undo2,Volume2,VolumeX,WandSparkles,ZoomIn,ZoomOut} from "lucide-react";
 import {allPages} from "../lib/video-workflow.mjs";
-import {createTrimArguments,getLocalExportPolicy,readResponseWithinLimit} from "../lib/local-processing.mjs";
+import {createCaptionSrt,createLocalExportArguments,getLocalExportPolicy,readResponseWithinLimit} from "../lib/local-processing.mjs";
 
 function LiveWaveform({videoRef}){const canvasRef=useRef(null);useEffect(()=>{const v=videoRef.current,c=canvasRef.current;if(!v||!c)return;let ctx,analyser,source,raf;try{const AudioContext=window.AudioContext||window.webkitAudioContext;const ac=new AudioContext();analyser=ac.createAnalyser();analyser.fftSize=128;source=ac.createMediaElementSource(v);source.connect(analyser);analyser.connect(ac.destination);const draw=()=>{const data=new Uint8Array(analyser.frequencyBinCount);analyser.getByteTimeDomainData(data);ctx=c.getContext("2d");ctx.clearRect(0,0,c.width,c.height);ctx.beginPath();for(let i=0;i<data.length;i++){const x=i/(data.length-1)*c.width,y=c.height/2+(data[i]-128)/128*c.height*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle="#7c5cff";ctx.lineWidth=2;ctx.stroke();raf=requestAnimationFrame(draw)};ctx=c.getContext("2d");draw();return()=>{cancelAnimationFrame(raf);source?.disconnect();analyser?.disconnect();ac.close().catch(()=>{})}}catch{}},[videoRef]);return <canvas className="editorWaveform" ref={canvasRef} width="900" height="72" aria-label="Live audio waveform"/>}
 
@@ -250,9 +250,12 @@ export default function EditorView({projects,supabase,onUpload,initialClip:incom
       deviceMemory:Number(navigator.deviceMemory)||0,
       hardwareConcurrency:Number(navigator.hardwareConcurrency)||0
     });
-    if(!policy.allowed){setRenderMessage(policy.reason);return;}
     let ffmpeg=null;
-    setRendering(true);setRenderMessage("Preparing a private, on-device trim export…");setAiStatus("");
+    let downloadUrl="";
+    let librarySaved=false;
+    let libraryError="";
+    let storagePath="";
+    setRendering(true);setRenderMessage(policy.reason+" Preparing a private, on-device export…");setAiStatus("");
     try{
       const response=await fetch(sourceUrl,{cache:"no-store"});
       const inputBytes=await readResponseWithinLimit(response,policy.maxBytes);
@@ -267,21 +270,68 @@ export default function EditorView({projects,supabase,onUpload,initialClip:incom
         coreURL:await toBlobURL(baseURL+"/ffmpeg-core.js","text/javascript"),
         wasmURL:await toBlobURL(baseURL+"/ffmpeg-core.wasm","application/wasm")
       });
-      setRenderMessage("Preparing selected trim…");
+      setRenderMessage("Preparing trim, aspect ratio, speed, effects and captions…");
       await ffmpeg.writeFile("input.mp4",inputBytes);
-      await ffmpeg.exec(createTrimArguments(inPoint,outPoint||duration));
+      const srt=captions?createCaptionSrt(words,inPoint,outPoint||duration):"";
+      const hasCaptions=Boolean(srt.trim());
+      if(hasCaptions)await ffmpeg.writeFile("captions.srt",new TextEncoder().encode(srt));
+      const args=createLocalExportArguments(inPoint,outPoint||duration,{
+        aspect,speed,zoom,effect,transition,captions,hasCaptions,captionStyle,captionColor
+      });
+      await ffmpeg.exec(args);
       const output=await ffmpeg.readFile("output.mp4");
       const blob=new Blob([output],{type:"video/mp4"});
-      const downloadUrl=URL.createObjectURL(blob);
-      const anchor=document.createElement("a");
       const baseName=String(asset?.name||"alpha-clip").replace(/\.[^.]+$/,"").replace(/[^a-z0-9_-]+/gi,"-").slice(0,80)||"alpha-clip";
-      anchor.href=downloadUrl;anchor.download=baseName+"-trim.mp4";
+      const fileName=baseName+"-"+Date.now()+"-local.mp4";
+      try{
+        const {data:{user},error:userError}=await supabase.auth.getUser();
+        if(userError)throw userError;
+        if(!user?.id)throw new Error("Sign in again to save this export to Clip Library.");
+        if(!project?.workspace_id)throw new Error("This project has no workspace, so the export cannot be saved to Clip Library.");
+        storagePath=project.workspace_id+"/local-exports/"+fileName;
+        const uploaded=await supabase.storage.from("media").upload(storagePath,blob,{
+          contentType:"video/mp4",cacheControl:"3600",upsert:false
+        });
+        if(uploaded.error)throw uploaded.error;
+        const clipPayload={
+          project_id:project.id,
+          media_asset_id:asset?.id||activeClip?.media_asset_id||null,
+          title:(activeClip?.title||asset?.name||"Edited clip")+" — Local export",
+          start_seconds:inPoint,
+          end_seconds:outPoint||duration,
+          status:"ready",
+          render_path:storagePath,
+          ai_spec:{
+            source:"local-browser-export",aspect,speed,zoom,effect,transition,
+            captions:captions&&hasCaptions,captionStyle,captionColor,
+            subjectTrackingApplied:false,aiPromptApplied:false
+          }
+        };
+        const savedResult=activeClip?.id
+          ?await supabase.from("clips").update({status:"ready",render_path:storagePath,ai_spec:clipPayload.ai_spec,updated_at:new Date().toISOString()}).eq("id",activeClip.id).eq("project_id",project.id).select("*").single()
+          :await supabase.from("clips").insert(clipPayload).select("*").single();
+        if(savedResult.error)throw savedResult.error;
+        librarySaved=true;
+        const signed=await supabase.storage.from("media").createSignedUrl(storagePath,3600);
+        if(!signed.error&&signed.data?.signedUrl)setRenderedUrl(signed.data.signedUrl);
+      }catch(saveError){
+        libraryError=saveError?.message||"The export could not be saved to Clip Library.";
+        if(storagePath)await supabase.storage.from("media").remove([storagePath]).catch(()=>{});
+      }
+      downloadUrl=URL.createObjectURL(blob);
+      const anchor=document.createElement("a");
+      anchor.href=downloadUrl;anchor.download=fileName;
       document.body.appendChild(anchor);anchor.click();anchor.remove();
       window.setTimeout(()=>URL.revokeObjectURL(downloadUrl),60000);
-      setRenderMessage("Free local export finished. This first pass exports the selected trim only; captions, reframing, effects and AI edit instructions still require cloud processing.");
+      if(librarySaved){
+        setRenderMessage("Local export finished and saved to Clip Library. Trim, aspect crop, speed, effects, fades and transcript captions were applied where available. Subject-tracking AI reframe and AI edit prompts still require a configured media worker.");
+      }else{
+        setRenderMessage("Local export downloaded to your device, but Clip Library save failed: "+libraryError);
+      }
     }catch(e){
       setRenderMessage(e?.message||"Local export failed. Try a smaller video or a supported browser.");
     }finally{
+      if(downloadUrl)window.setTimeout(()=>URL.revokeObjectURL(downloadUrl),60000);
       if(ffmpeg){try{await ffmpeg.terminate()}catch{}}
       setRendering(false);
     }
@@ -323,7 +373,7 @@ export default function EditorView({projects,supabase,onUpload,initialClip:incom
       </div>
       <div className="editorTopActions"><button className="btn" onClick={undo} disabled={!history.length}><Undo2 size={15}/></button><button className="btn" onClick={redo} disabled={!future.length}><Redo2 size={15}/></button><button className="btn" onClick={()=>setShortcutsOpen(true)}><Keyboard size={15}/> Shortcuts</button>
         <button className="btn" onClick={reset}><RotateCcw size={15}/> Reset</button>
-        <button className="btn" onClick={exportLocalTrim} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Working…":"Local trim (free)"}</button><button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
+        <button className="btn" onClick={exportLocalTrim} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Working…":"Local export (free)"}</button><button className="btn" onClick={renderSelection} disabled={!project||!sourceUrl||rendering}><Film size={15}/>{rendering?"Rendering…":"Render clip"}</button><button className="btn primary" onClick={saveDraft} disabled={!project||!sourceUrl}><Save size={15}/>{saved?"Saved":"Save draft"}</button>
       </div>
     </div>
 
