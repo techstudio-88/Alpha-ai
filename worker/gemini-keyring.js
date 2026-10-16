@@ -13,13 +13,22 @@ export function readGeminiKeys(env = process.env) {
 export function createGeminiKeyRing(env = process.env) {
   const keys = readGeminiKeys(env);
   let cursor = 0;
+  const cooldowns = new Map();
   return {
     keys,
-    next() {
+    next(now = Date.now()) {
       if (!keys.length) return null;
-      const value = keys[cursor % keys.length];
-      cursor = (cursor + 1) % keys.length;
+      const available = keys.filter((entry) => (cooldowns.get(entry.label) || 0) <= now);
+      const pool = available.length ? available : [...keys].sort((a, b) => (cooldowns.get(a.label) || 0) - (cooldowns.get(b.label) || 0)).slice(0, 1);
+      const value = pool[cursor % pool.length];
+      cursor = (cursor + 1) % Math.max(1, pool.length);
       return value;
+    },
+    markUnavailable(label, cooldownMs = 60000, now = Date.now()) {
+      if (keys.some((entry) => entry.label === label)) cooldowns.set(label, now + Math.max(1000, cooldownMs));
+    },
+    markAvailable(label) {
+      cooldowns.delete(label);
     },
     current() {
       return keys[0] || null;
