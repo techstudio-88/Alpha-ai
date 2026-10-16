@@ -142,112 +142,6 @@ grant execute on function public.consume_api_rate_limit(text, text, integer, int
   to service_role;
 
 
--- Refund only the currently active reservation. A provider-pause refund is a
--- separate ledger cycle and must not prevent a later terminal refund after resume.
-create or replace function public.refund_failed_job_credits(
-  p_workspace_id uuid,p_job_id uuid,p_user_id uuid,p_reason text,p_idempotency_key text
-) returns public.credit_ledger
-language plpgsql security definer set search_path to ''
-as $function$
-declare
-  v_job public.processing_jobs;
-  v_reservation public.credit_ledger;
-  v_balance public.usage_credits;
-  v_entry public.credit_ledger;
-  v_amount integer;
-begin
-  if p_workspace_id is null or p_job_id is null or p_user_id is null
-     or length(trim(coalesce(p_idempotency_key,'')))<8 then
-    raise exception using errcode='22023',message='Invalid credit refund request';
-  end if;
-  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
-  if found then
-    if v_entry.workspace_id<>p_workspace_id or v_entry.user_id<>p_user_id or v_entry.job_id<>p_job_id
-       or v_entry.transaction_type<>'refund' then
-      raise exception using errcode='23505',message='Credit refund idempotency key conflict';
-    end if;
-    return v_entry;
-  end if;
-  select * into v_job from public.processing_jobs
-    where id=p_job_id and workspace_id=p_workspace_id for update;
-  if not found then raise exception using errcode='23503',message='Job not found'; end if;
-  if v_job.status not in ('failed','dead_letter','cancelled') then
-    raise exception using errcode='23514',message='Only failed or cancelled jobs can be refunded';
-  end if;
-  v_amount:=greatest(0,coalesce(v_job.reserved_credits,0));
-  if v_amount=0 then return null; end if;
-  select * into v_reservation from public.credit_ledger
-    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id
-      and transaction_type='reserve' order by created_at desc limit 1 for update;
-  if not found then raise exception using errcode='23503',message='Active credit reservation not found'; end if;
-  select * into v_balance from public.usage_credits
-    where workspace_id=p_workspace_id and user_id=p_user_id for update;
-  if not found then raise exception using errcode='23503',message='Credit balance not found'; end if;
-  update public.usage_credits set credits=credits+v_amount,updated_at=now() where id=v_balance.id;
-  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
-    values(p_workspace_id,p_user_id,p_job_id,v_amount,'refund',
-      coalesce(nullif(trim(p_reason),''),'Automatic refund for failed or cancelled job'),p_idempotency_key)
-    returning * into v_entry;
-  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
-  return v_entry;
-end
-$function$;
-
-revoke all on function public.refund_failed_job_credits(uuid,uuid,uuid,text,text) from public,anon,authenticated;
-grant execute on function public.refund_failed_job_credits(uuid,uuid,uuid,text,text) to service_role;
-
-create or replace function public.release_job_credits_for_provider_pause(
-  p_workspace_id uuid,p_job_id uuid,p_user_id uuid,p_reason text,p_idempotency_key text
-) returns public.credit_ledger
-language plpgsql security definer set search_path to ''
-as $function$
-declare
-  v_job public.processing_jobs;
-  v_reservation public.credit_ledger;
-  v_balance public.usage_credits;
-  v_entry public.credit_ledger;
-  v_amount integer;
-begin
-  if p_workspace_id is null or p_job_id is null or p_user_id is null
-     or length(trim(coalesce(p_idempotency_key,'')))<8 then
-    raise exception using errcode='22023',message='Invalid provider-pause credit release request';
-  end if;
-  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
-  if found then
-    if v_entry.workspace_id<>p_workspace_id or v_entry.user_id<>p_user_id or v_entry.job_id<>p_job_id
-       or v_entry.transaction_type<>'refund' then
-      raise exception using errcode='23505',message='Provider-pause idempotency key conflict';
-    end if;
-    return v_entry;
-  end if;
-  select * into v_job from public.processing_jobs
-    where id=p_job_id and workspace_id=p_workspace_id for update;
-  if not found then raise exception using errcode='23503',message='Job not found'; end if;
-  if v_job.status not in ('queued','processing') then
-    raise exception using errcode='23514',message='Only active jobs can release credits during provider pause';
-  end if;
-  v_amount:=greatest(0,coalesce(v_job.reserved_credits,0));
-  if v_amount=0 then return null; end if;
-  select * into v_reservation from public.credit_ledger
-    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id
-      and transaction_type='reserve' order by created_at desc limit 1 for update;
-  if not found then raise exception using errcode='23503',message='Credit reservation not found'; end if;
-  select * into v_balance from public.usage_credits
-    where workspace_id=p_workspace_id and user_id=p_user_id for update;
-  if not found then raise exception using errcode='23503',message='Credit balance not found'; end if;
-  update public.usage_credits set credits=credits+v_amount,updated_at=now() where id=v_balance.id;
-  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
-    values(p_workspace_id,p_user_id,p_job_id,v_amount,'refund',
-      coalesce(nullif(trim(p_reason),''),'Temporary credit release during AI provider outage'),p_idempotency_key)
-    returning * into v_entry;
-  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
-  return v_entry;
-end
-$function$;
-
-revoke all on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) from public,anon,authenticated;
-grant execute on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) to service_role;
-
 -- Failed and explicitly cancelled jobs may return a prior reservation once only.
 create or replace function public.refund_failed_job_credits(
   p_workspace_id uuid,
@@ -465,3 +359,112 @@ revoke all on function public.enforce_publish_entitlements() from public,anon,au
 grant execute on function public.enforce_workspace_brand_kit_limit() to service_role;
 grant execute on function public.enforce_scheduling_entitlement() to service_role;
 grant execute on function public.enforce_publish_entitlements() to service_role;
+
+
+-- Final definitions override the legacy single-reservation refund implementations above.
+-- Refund only the currently active reservation. A provider-pause refund is a
+-- separate ledger cycle and must not prevent a later terminal refund after resume.
+create or replace function public.refund_failed_job_credits(
+  p_workspace_id uuid,p_job_id uuid,p_user_id uuid,p_reason text,p_idempotency_key text
+) returns public.credit_ledger
+language plpgsql security definer set search_path to ''
+as $function$
+declare
+  v_job public.processing_jobs;
+  v_reservation public.credit_ledger;
+  v_balance public.usage_credits;
+  v_entry public.credit_ledger;
+  v_amount integer;
+begin
+  if p_workspace_id is null or p_job_id is null or p_user_id is null
+     or length(trim(coalesce(p_idempotency_key,'')))<8 then
+    raise exception using errcode='22023',message='Invalid credit refund request';
+  end if;
+  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
+  if found then
+    if v_entry.workspace_id<>p_workspace_id or v_entry.user_id<>p_user_id or v_entry.job_id<>p_job_id
+       or v_entry.transaction_type<>'refund' then
+      raise exception using errcode='23505',message='Credit refund idempotency key conflict';
+    end if;
+    return v_entry;
+  end if;
+  select * into v_job from public.processing_jobs
+    where id=p_job_id and workspace_id=p_workspace_id for update;
+  if not found then raise exception using errcode='23503',message='Job not found'; end if;
+  if v_job.status not in ('failed','dead_letter','cancelled') then
+    raise exception using errcode='23514',message='Only failed or cancelled jobs can be refunded';
+  end if;
+  v_amount:=greatest(0,coalesce(v_job.reserved_credits,0));
+  if v_amount=0 then return null; end if;
+  select * into v_reservation from public.credit_ledger
+    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id
+      and transaction_type='reserve' order by created_at desc limit 1 for update;
+  if not found then raise exception using errcode='23503',message='Active credit reservation not found'; end if;
+  select * into v_balance from public.usage_credits
+    where workspace_id=p_workspace_id and user_id=p_user_id for update;
+  if not found then raise exception using errcode='23503',message='Credit balance not found'; end if;
+  update public.usage_credits set credits=credits+v_amount,updated_at=now() where id=v_balance.id;
+  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
+    values(p_workspace_id,p_user_id,p_job_id,v_amount,'refund',
+      coalesce(nullif(trim(p_reason),''),'Automatic refund for failed or cancelled job'),p_idempotency_key)
+    returning * into v_entry;
+  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
+  return v_entry;
+end
+$function$;
+
+revoke all on function public.refund_failed_job_credits(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.refund_failed_job_credits(uuid,uuid,uuid,text,text) to service_role;
+
+create or replace function public.release_job_credits_for_provider_pause(
+  p_workspace_id uuid,p_job_id uuid,p_user_id uuid,p_reason text,p_idempotency_key text
+) returns public.credit_ledger
+language plpgsql security definer set search_path to ''
+as $function$
+declare
+  v_job public.processing_jobs;
+  v_reservation public.credit_ledger;
+  v_balance public.usage_credits;
+  v_entry public.credit_ledger;
+  v_amount integer;
+begin
+  if p_workspace_id is null or p_job_id is null or p_user_id is null
+     or length(trim(coalesce(p_idempotency_key,'')))<8 then
+    raise exception using errcode='22023',message='Invalid provider-pause credit release request';
+  end if;
+  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
+  if found then
+    if v_entry.workspace_id<>p_workspace_id or v_entry.user_id<>p_user_id or v_entry.job_id<>p_job_id
+       or v_entry.transaction_type<>'refund' then
+      raise exception using errcode='23505',message='Provider-pause idempotency key conflict';
+    end if;
+    return v_entry;
+  end if;
+  select * into v_job from public.processing_jobs
+    where id=p_job_id and workspace_id=p_workspace_id for update;
+  if not found then raise exception using errcode='23503',message='Job not found'; end if;
+  if v_job.status not in ('queued','processing') then
+    raise exception using errcode='23514',message='Only active jobs can release credits during provider pause';
+  end if;
+  v_amount:=greatest(0,coalesce(v_job.reserved_credits,0));
+  if v_amount=0 then return null; end if;
+  select * into v_reservation from public.credit_ledger
+    where job_id=p_job_id and workspace_id=p_workspace_id and user_id=p_user_id
+      and transaction_type='reserve' order by created_at desc limit 1 for update;
+  if not found then raise exception using errcode='23503',message='Credit reservation not found'; end if;
+  select * into v_balance from public.usage_credits
+    where workspace_id=p_workspace_id and user_id=p_user_id for update;
+  if not found then raise exception using errcode='23503',message='Credit balance not found'; end if;
+  update public.usage_credits set credits=credits+v_amount,updated_at=now() where id=v_balance.id;
+  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
+    values(p_workspace_id,p_user_id,p_job_id,v_amount,'refund',
+      coalesce(nullif(trim(p_reason),''),'Temporary credit release during AI provider outage'),p_idempotency_key)
+    returning * into v_entry;
+  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
+  return v_entry;
+end
+$function$;
+
+revoke all on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) to service_role;
+
