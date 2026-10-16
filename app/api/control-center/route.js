@@ -53,7 +53,7 @@ export async function GET(request){
  try{
   const{user,admin,role,allowlisted,allow}=await guard(request);
   const{data:{users},error:userError}=await admin.auth.admin.listUsers({page:1,perPage:1000});if(userError)throw userError;
-  const[{data:profiles},{data:workspaces},{data:projects},{data:jobs},{data:events},{data:consents},{data:members},{data:notifications},{data:audit},{data:workspaceMembers}]=await Promise.all([
+  const[{data:profiles},{data:workspaces},{data:projects},{data:jobs},{data:events},{data:consents},{data:members},{data:notifications},{data:audit},{data:workspaceMembers},{data:creditLedger},{data:geminiKeys},{data:rateLimits}]=await Promise.all([
    admin.from("profiles").select("id,full_name,avatar_url,created_at,updated_at"),
    admin.from("workspaces").select("id,name,owner_id,created_at"),
    admin.from("projects").select("id,workspace_id,owner_id,name,status,created_at,updated_at").order("created_at",{ascending:false}).limit(500),
