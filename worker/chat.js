@@ -76,11 +76,23 @@ export async function generateChatPlan(p,{db,patchJob,key,keys,model}) {
   let clip=p.clipId ? (await db("clips",{params:{id:"eq."+p.clipId,media_asset_id:"eq."+asset.id,select:"*"}}))[0] : p.selection || null;
   if(p.clipId&&!clip) throw new Error("Selected clip is unavailable.");
   if(clip&&p.selection)clip={...clip,...p.selection};
-  const ai=new GoogleGenAI({apiKey:key,httpOptions:{timeout:120000}});
   const plan=await planTranscript({words,duration:Number(asset.duration_seconds),prompt:p.prompt,history,clip,
     generate:async(contents,responseSchema)=>{
-      const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema});
-      try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
+      let lastError;
+      const attempts=keyPool.length>1?keyPool.length:3;
+      for(let attempt=0;attempt<attempts;attempt++){
+        const selectedKey=keyPool[nextKeyIndex%keyPool.length];
+        nextKeyIndex=(nextKeyIndex+1)%keyPool.length;
+        const ai=new GoogleGenAI({apiKey:selectedKey,httpOptions:{timeout:120000}});
+        try{
+          const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema},keyPool.length>1?1:3);
+          try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
+        }catch(error){
+          lastError=error;
+          if(!/401|403|429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|quota|API key|temporar/i.test(String(error?.message||error)))throw error;
+        }
+      }
+      throw lastError||new Error("Gemini providers are temporarily unavailable.");
     },
     onProgress:async(index,total)=>patchJob(p.jobId,{progress:65+Math.round(index/total*25),current_stage:"gemini_planning",payload:{...p,transcriptId:transcript.id,analysisWindow:index+1,analysisWindows:total}})
   });
