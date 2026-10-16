@@ -1,3 +1,73 @@
+import {randomUUID} from "node:crypto";
 import {createClient} from "@supabase/supabase-js";
+import {enforceWorkspaceApiRateLimit,reserveWorkspaceFeatureUsage,finishWorkspaceFeatureUsage,problem,workflowError} from "../../../../lib/workflow-server";
+
+export const runtime="nodejs";
 const admin=()=>createClient(process.env.SUPABASE_URL||process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,{auth:{persistSession:false}});
-export async function POST(req){try{const auth=req.headers.get("authorization")||"";if(!auth.startsWith("Bearer "))return Response.json({error:"Unauthorized"},{status:401});const pub=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,{auth:{persistSession:false}});const {data:u}=await pub.auth.getUser(auth.slice(7));if(!u.user)return Response.json({error:"Unauthorized"},{status:401});const b=await req.json();if(!b.workspace_id)return Response.json({error:"workspace_id required"},{status:400});const {data:member}=await admin().from("workspace_members").select("role").eq("workspace_id",b.workspace_id).eq("user_id",u.user.id).maybeSingle();if(!member)return Response.json({error:"Workspace access denied"},{status:403});const imageUrl=String(b.image_url||"");if(!imageUrl)return Response.json({error:"image_url required"},{status:400});const r=await fetch(imageUrl);if(!r.ok)return Response.json({error:"Thumbnail could not be fetched."},{status:400});const mime=r.headers.get("content-type")||"image/jpeg";const buf=Buffer.from(await r.arrayBuffer());const prompt="Analyze this video thumbnail for short-form creator content. Return JSON with overall_score,mobile_readability,clarity,curiosity,contrast,emotion,text_readability,topic_clarity,benchmark_percentile and an analysis object containing strengths,weaknesses,improvements. Do not claim this is a true market percentile; use a heuristic benchmark.";const gr=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(process.env.GEMINI_MODEL||"gemini-3.8-flash")+":generateContent?key="+encodeURIComponent(process.env.GEMINI_API_KEY||""),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:mime,data:buf.toString("base64")}}]}],generationConfig:{responseMimeType:"application/json"}})});const gj=await gr.json();const raw=gj?.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("")||"{}";const analysis=JSON.parse(raw);if(b.clip_id){await admin().from("thumbnail_analyses").insert({workspace_id:b.workspace_id||null,clip_id:b.clip_id,storage_path:b.storage_path||null,overall_score:analysis.overall_score,mobile_readability:analysis.mobile_readability,clarity:analysis.clarity,curiosity:analysis.curiosity,contrast:analysis.contrast,emotion:analysis.emotion,text_readability:analysis.text_readability,topic_clarity:analysis.topic_clarity,benchmark_percentile:analysis.benchmark_percentile,benchmark_type:"heuristic",model_version:"gemini",analysis:analysis.analysis||analysis})}return Response.json(analysis)}catch(e){return Response.json({error:e.message||"Thumbnail analysis failed"},{status:500})}}
+const publicClient=()=>createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,{auth:{persistSession:false}});
+
+export async function POST(req){
+  let client=null,usageId=null;
+  try{
+    const auth=req.headers.get("authorization")||"";
+    if(!auth.startsWith("Bearer "))throw problem("Unauthorized",401);
+    const {data:userData}=await publicClient().auth.getUser(auth.slice(7));
+    const user=userData?.user;
+    if(!user)throw problem("Unauthorized",401);
+    const body=await req.json();
+    const workspaceId=String(body.workspace_id||body.workspaceId||"");
+    if(!workspaceId)throw problem("workspace_id required",400);
+    client=admin();
+    const {data:member,error:memberError}=await client.from("workspace_members").select("role").eq("workspace_id",workspaceId).eq("user_id",user.id).maybeSingle();
+    if(memberError)throw memberError;
+    if(!member)throw problem("Workspace access denied",403);
+    const ip=req.headers.get("x-real-ip")||req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null;
+    await enforceWorkspaceApiRateLimit(client,"user:"+user.id,workspaceId,"/api/thumbnail/analyze",10,60,ip);
+    const reservation=await reserveWorkspaceFeatureUsage(client,workspaceId,user.id,"cover_rotation",String(body.request_id||randomUUID()),String(body.timezone||"Asia/Kolkata"));
+    usageId=reservation.usageId||null;
+
+    const imageUrl=String(body.image_url||"");
+    if(!imageUrl)throw problem("image_url required",400);
+    const target=new URL(imageUrl);
+    const host=target.hostname.toLowerCase();
+    if(target.protocol!=="https:"||host==="localhost"||host.endsWith(".localhost")||/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)||host==="::1"||host==="[::1]"){
+      throw problem("Only public HTTPS thumbnail URLs are supported.",400);
+    }
+    const imageResponse=await fetch(target,{signal:AbortSignal.timeout(10000),redirect:"error"});
+    if(!imageResponse.ok)throw problem("Thumbnail could not be fetched.",400);
+    const contentLength=Number(imageResponse.headers.get("content-length")||0);
+    if(contentLength>1200000)throw problem("Thumbnail is too large. Use an image under 1.2 MB.",413);
+    const mime=(imageResponse.headers.get("content-type")||"image/jpeg").split(";")[0].trim().toLowerCase();
+    if(!["image/jpeg","image/png","image/webp"].includes(mime))throw problem("Only JPEG, PNG, and WebP thumbnails are supported.",400);
+    const buffer=Buffer.from(await imageResponse.arrayBuffer());
+    if(buffer.byteLength>1200000)throw problem("Thumbnail is too large. Use an image under 1.2 MB.",413);
+    const prompt="Analyze this video thumbnail for short-form creator content. Return JSON with overall_score,mobile_readability,clarity,curiosity,contrast,emotion,text_readability,topic_clarity,benchmark_percentile and an analysis object containing strengths,weaknesses,improvements. Do not claim this is a true market percentile; use a heuristic benchmark.";
+    const worker=(process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com").replace(/\/$/,"");
+    const response=await fetch(worker+"/assistant",{
+      method:"POST",
+      headers:{"content-type":"application/json","x-worker-secret":process.env.MEDIA_WORKER_SECRET||""},
+      body:JSON.stringify({prompt,context:"Thumbnail analysis request. Use heuristic judgments only.",imageBase64:buffer.toString("base64"),mimeType:mime,responseMimeType:"application/json"}),
+      signal:AbortSignal.timeout(20000)
+    });
+    if(!response.ok)throw Object.assign(new Error("AI provider is temporarily unavailable. Please retry shortly."),{status:503});
+    const result=await response.json();
+    const analysis=JSON.parse(String(result.text||"{}"));
+    if(body.clip_id){
+      const {error}=await client.from("thumbnail_analyses").insert({
+        workspace_id:workspaceId,clip_id:body.clip_id,storage_path:body.storage_path||null,
+        overall_score:analysis.overall_score,mobile_readability:analysis.mobile_readability,
+        clarity:analysis.clarity,curiosity:analysis.curiosity,contrast:analysis.contrast,
+        emotion:analysis.emotion,text_readability:analysis.text_readability,topic_clarity:analysis.topic_clarity,
+        benchmark_percentile:analysis.benchmark_percentile,benchmark_type:"heuristic",model_version:"gemini",
+        analysis:analysis.analysis||analysis
+      });
+      if(error)throw error;
+    }
+    await finishWorkspaceFeatureUsage(client,usageId,true);
+    usageId=null;
+    return Response.json(analysis);
+  }catch(error){
+    if(usageId&&client)await finishWorkspaceFeatureUsage(client,usageId,false).catch(()=>{});
+    return workflowError(error);
+  }
+}
