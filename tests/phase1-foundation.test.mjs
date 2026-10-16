@@ -22,6 +22,8 @@ test("Phase 1 rate limit migration atomically caps a fixed-window key and route"
       );
       create table public.video_usage_daily(user_id uuid);
       create table public.workspace_feature_usage(user_id uuid);
+      create role anon;
+      create role authenticated;
       create role service_role;
     `);
     const sql = await readFile(new URL("../supabase/migrations/20261016_phase_1_runtime_hardening.sql", import.meta.url), "utf8");
