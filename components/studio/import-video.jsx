@@ -76,11 +76,13 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
     try{
       if(demo){notify('This is a sample workspace. Sign in to import your own footage.');return}
       const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);
-      if(!isFile&&parsed.sourceType==='direct_url'){
-        const response=await fetch(parsed.url,{mode:'cors',credentials:'omit',cache:'no-store'});
+      if(!isFile&&['direct_url','dropbox','onedrive'].includes(parsed.sourceType)){
+        const remoteUrl=new URL(parsed.url);
+        if(parsed.sourceType==='dropbox'){remoteUrl.searchParams.delete('dl');remoteUrl.searchParams.set('raw','1')}
+        if(parsed.sourceType==='onedrive')remoteUrl.searchParams.set('download','1');
+        const response=await fetch(remoteUrl.toString(),{mode:'cors',credentials:'omit',cache:'no-store'});
         const directPolicy=getLocalExportPolicy({isMobile:window.matchMedia('(max-width: 760px)').matches,deviceMemory:Number(navigator.deviceMemory)||0,hardwareConcurrency:Number(navigator.hardwareConcurrency)||0});
         const bytes=await readResponseWithinLimit(response,Math.min(directPolicy.maxBytes,LOCAL_IMPORT_CAP_BYTES));
-        const remoteUrl=new URL(parsed.url);
         const leaf=decodeURIComponent(remoteUrl.pathname.split('/').filter(Boolean).pop()||'remote-video.mp4').replace(/[^a-z\d._-]/gi,'-').slice(-120);
         const declared=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
         const ext=/\.(mp4|mov|webm|mkv|m4v)$/i.exec(leaf)?.[1]?.toLowerCase();
@@ -93,7 +95,7 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
       const statusResponse=await fetch('/api/worker/status',{cache:'no-store'}).catch(()=>null);
       const workerStatus=await statusResponse?.json().catch(()=>({}));
       workerConfigured=Boolean(statusResponse?.ok&&workerStatus?.configured);
-      if(!isFile&&parsed.sourceType!=='direct_url'&&!workerConfigured)throw new Error('This provider link needs a configured media worker. For a free local import, use a direct HTTPS video file URL that permits browser CORS, or upload the video from your device.');
+      if(!isFile&&!['direct_url','dropbox','onedrive'].includes(parsed.sourceType)&&!workerConfigured)throw new Error('This provider link needs a configured media worker. For a free local import, use a direct HTTPS video file URL that permits browser CORS, or upload the video from your device.');
       const localPolicy=getLocalExportPolicy({isMobile:window.matchMedia('(max-width: 760px)').matches,deviceMemory:Number(navigator.deviceMemory)||0,hardwareConcurrency:Number(navigator.hardwareConcurrency)||0});
       const localCap=Math.min(localPolicy.maxBytes,LOCAL_IMPORT_CAP_BYTES);
       if(isFile&&!workerConfigured&&input.size>localCap)throw new Error('No media worker is configured, so this upload will be processed locally. This device has a '+Math.floor(localCap/1048576)+' MB local-processing limit. Choose a smaller video to avoid freezing the browser.');
