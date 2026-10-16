@@ -131,7 +131,7 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
       create table public.workspaces(id uuid primary key,name text,owner_id uuid,created_at timestamptz default now());
       create table public.workspace_members(workspace_id uuid,user_id uuid,role text,created_at timestamptz default now());
       create table public.projects(id uuid primary key,workspace_id uuid,owner_id uuid,name text,created_at timestamptz default now());
-      create table public.media_assets(id uuid primary key,project_id uuid,workspace_id uuid,storage_path text,duration_seconds numeric,created_at timestamptz default now());
+      create table public.media_assets(id uuid primary key,project_id uuid,workspace_id uuid,storage_path text,duration_seconds numeric,status text default 'uploaded',created_at timestamptz default now());
       create table public.processing_jobs(
         id uuid primary key,workspace_id uuid,project_id uuid,job_type text not null default 'process_media',
         status text not null default 'queued',progress integer not null default 0,payload jsonb not null default '{}'::jsonb,
@@ -162,7 +162,7 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     await db.query("insert into public.workspace_members(workspace_id,user_id) values($1,$2)",[workspace,user]);
     await db.query("insert into public.projects(id,workspace_id) values($1,$2)",[project,workspace]);
     await db.query("insert into public.media_assets(id,project_id,workspace_id,duration_seconds) values($1,$2,$3,2100)",[asset,project,workspace]);
-    await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','processing','{}'::jsonb)",[job,workspace,project]);
+    await db.query("insert into public.processing_jobs(id,workspace_id,project_id,job_type,status,payload) values($1,$2,$3,'process_media','processing',$4::jsonb)",[job,workspace,project,JSON.stringify({requestedBy:user})]);
     const planned=(await db.query("select public.plan_video_processing_parts($1,$2,$3,$4,$5,$6,$7,$8) as plan",[workspace,project,user,job,asset,2100,"Asia/Kolkata","[]"])).rows[0].plan;
     assert.equal(planned.split,true,"35 minutes must split against the free 20-minute daily allowance");
     assert.equal(planned.deferCurrent,false,"The first segment should use today's available allowance");
@@ -174,6 +174,22 @@ test("the restored Phase 1 foundation migration builds on the pre-Phase-1 schema
     const usage=(await db.query("select minutes_reserved,minutes_completed from public.video_usage_daily where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0];
     assert.equal(Number(usage.minutes_reserved),0);
     assert.ok(Number(usage.minutes_completed)>=19.9&&Number(usage.minutes_completed)<=20.1);
+    await db.query("update public.processing_jobs set status='completed' where id=$1",[job]);
+
+    await db.query("insert into public.usage_credits(workspace_id,user_id,credits) values($1,$2,1)",[workspace,user]);
+    const chatSession="99999999-9999-4999-8999-999999999999";
+    const chatJob="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const chatPayload={operation:"ai_chat_plan",sessionId:chatSession,mediaAssetId:asset,workspaceId:workspace,projectId:project,requestedBy:user,prompt:"Create a short"};
+    const submitChat=()=>db.query("select public.submit_ai_chat_job($1,$2,$3,$4,$5,$6,$7,$8)",[chatJob,chatSession,workspace,user,project,asset,"Create a short",chatPayload]);
+    await submitChat();
+    await submitChat();
+    assert.equal((await db.query("select credits from public.usage_credits where workspace_id=$1 and user_id=$2",[workspace,user])).rows[0].credits,0,"An accepted AI-chat job must reserve one credit and finish at zero balance");
+    assert.equal((await db.query("select count(*)::int as n from public.credit_ledger where job_id=$1 and transaction_type='reserve'",[chatJob])).rows[0].n,1,"Replaying an accepted job must not charge twice");
+    const zeroSession="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const zeroJob="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    await assert.rejects(db.query("select public.submit_ai_chat_job($1,$2,$3,$4,$5,$6,$7,$8)",[zeroJob,zeroSession,workspace,user,project,asset,"No balance",{...chatPayload,sessionId:zeroSession}]),/credit/i);
+    assert.equal((await db.query("select count(*)::int as n from public.processing_jobs where id=$1",[zeroJob])).rows[0].n,0,"A zero-balance job must not be accepted");
+    assert.equal((await db.query("select count(*)::int as n from public.ai_chat_messages where session_id=$1",[zeroSession])).rows[0].n,0,"A failed reservation must roll back the chat message");
   } finally {
     await db.close();
   }
