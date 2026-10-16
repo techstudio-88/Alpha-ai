@@ -81,7 +81,7 @@ export default function BrowserTranscriber({ workspace }) {
         localAnalysis:{type:"heuristic",candidateCount:candidates.length,model:"browser-whisper-tiny"}
       };
       if(payload.projectId){
-        const updated=await supabase.from("projects").update({status:"completed",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
+        const updated=await supabase.from("projects").update({status:"ready",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
         if(updated.error)throw updated.error;
       }
       if(payload.sourceId){
