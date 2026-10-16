@@ -16,7 +16,15 @@ export async function POST(request){
     if(!changed.length)throw problem('The job changed. Refresh before retrying.',409);
     let accountingWarning=null;
     if(action==='cancel'){
-      if(job.payload?.scheduledPartId)await admin.from('pending_processing_parts').update({status:'cancelled',decided_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.payload.scheduledPartId);
+      const cancelledAt=new Date().toISOString();
+      if(job.payload?.scheduledPartId)await admin.from('pending_processing_parts').update({status:'cancelled',decided_at:cancelledAt,updated_at:cancelledAt}).eq('id',job.payload.scheduledPartId);
+      const childParts=await admin.from('pending_processing_parts').select('id,job_id').eq('parent_job_id',job.id).in('status',['pending','approved','queued','processing']);
+      await admin.from('pending_processing_parts').update({status:'cancelled',decided_at:cancelledAt,updated_at:cancelledAt}).eq('parent_job_id',job.id).in('status',['pending','approved','queued','processing']);
+      for(const part of childParts.data||[]){
+        if(!part.job_id||part.job_id===job.id)continue;
+        const cancelledChild=await admin.from('processing_jobs').update({status:'cancelled',cancel_requested_at:cancelledAt,lease_until:null,next_retry_at:null}).eq('id',part.job_id).in('status',['queued','processing','awaiting_transcription','transcribing']).select('id');
+        if(cancelledChild.data?.length)await admin.rpc('finish_video_usage_for_job',{p_job_id:part.job_id,p_succeeded:false});
+      }
       const usageResult=await admin.rpc('finish_video_usage_for_job',{p_job_id:job.id,p_succeeded:false});
       if(usageResult.error)accountingWarning='Cancellation succeeded, but reserved video minutes need reconciliation.';
       const requester=job.payload?.requestedBy;
