@@ -4,9 +4,10 @@ This phase changes backend behavior only. It does not redesign the application U
 
 ## Migration safety
 
-- `20261015_phase_1_backend_foundation.sql` restores the source-controlled baseline for the foundation already present in the live database. The live migration history must be checked before applying anything.
-- `20261016_phase_1_runtime_hardening.sql` adds runtime rate-limit, credit-pause/refund, and plan-entitlement enforcement.
-- Do not manually re-run the 20261015 baseline against production. Confirm that version is already recorded, inspect the pending diff, then apply only pending migrations after CI passes and production rollout is approved.
+- `tests/fixtures/phase1_backend_foundation_baseline.sql` is a test-only snapshot of the live schema. It is not a deployable migration.
+- Production already has multiple timestamped Phase 1 migrations recorded on 2026-10-15. The only new deployable migration in this branch is `20261016113000_phase_1_runtime_hardening.sql`.
+- `20261016113000_phase_1_runtime_hardening.sql` adds runtime rate-limit, credit-pause/refund, and plan-entitlement enforcement.
+- Never apply the test fixture to production. Review the full migration list and pending diff, then apply only the new timestamped migration after CI passes and production rollout is approved.
 
 Suggested checks from a trusted developer environment:
 
