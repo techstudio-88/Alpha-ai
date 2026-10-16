@@ -104,7 +104,8 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
       if(isFile){
         const path=`${workspace.id}/${project.id}/${crypto.randomUUID()}-${input.name.replace(/[^a-z\d._-]/gi,'-')}`;
         asset=unwrap(await supabase.from('media_assets').insert({workspace_id:workspace.id,project_id:project.id,owner_id:user.id,name:input.name,storage_path:path,mime_type:input.type||'video/mp4',size_bytes:input.size,status:'uploading'}).select().single());
-        const {data}=await supabase.auth.getSession();
+        const {data,error:sessionError}=await supabase.auth.getSession();
+        if(sessionError||!data.session?.access_token)throw new Error('Your sign-in session expired. Sign in again before uploading.');
         const endpoint=process.env.NEXT_PUBLIC_SUPABASE_URL+'/storage/v1/upload/resumable';
         await new Promise((resolve,reject)=>{
           const upload=new tus.Upload(input,{endpoint,retryDelays:[0,2000,5000,10000],headers:{authorization:`Bearer ${data.session.access_token}`,apikey:process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY},chunkSize:6*1024*1024,metadata:{bucketName:'media',objectName:path,contentType:input.type||'video/mp4',cacheControl:'3600'},removeFingerprintOnSuccess:true,onError:()=>reject(new Error('Upload interrupted. Check your connection and retry.')),onProgress:(sent,total)=>setProgress(Math.round(sent/total*90)),onSuccess:resolve});
