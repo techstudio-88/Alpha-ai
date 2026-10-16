@@ -6,7 +6,7 @@ import {getLocalExportPolicy,readResponseWithinLimit} from '../../lib/local-proc
 import {supabase} from '../../lib/supabase';
 import GoogleDriveBrowser from '../GoogleDriveBrowser';
 import GooglePhotosPicker from '../GooglePhotosPicker';
-import {useStudio,unwrap} from './data';
+import {studioApi,useStudio,unwrap} from './data';
 import {Button,DropZone,ErrorState,Modal,Tabs} from './ui';
 
 const LOCAL_IMPORT_CAP_BYTES=80*1024*1024;
@@ -129,6 +129,7 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
       const payload={workspaceId:workspace.id,projectId:project.id,sourceId:source.id,mediaAssetId:asset?.id||null,requestedBy:user.id,sourceType:isFile?'upload':parsed.sourceType,url:parsed?.url||null,preferencesRequired:!localAudio,...(localAudio?{localOnly:true,localAnalysis:'heuristic',durationSeconds:localAudio.duration,transcriptId:transcript.id,transcribeChunk:0,transcriptionChunks:localAudio.chunks}: {})};
       // Local mode uses browser FFmpeg + Whisper and never queues work to an absent server.
       const job=unwrap(await supabase.from('processing_jobs').insert({workspace_id:workspace.id,project_id:project.id,job_type:'ingest',status:localAudio?'awaiting_transcription':'awaiting_preferences',progress:localAudio?8:0,current_stage:localAudio?'transcription':null,payload}).select().single());
+      if(localAudio)await studioApi('/api/local-processing/stages',{body:{workspaceId:workspace.id,jobId:job.id,action:'start'}}).catch(error=>console.warn('Could not initialize local processing stages:',error.message));
       notify(localAudio?'Upload saved. Transcribing on this device with the free browser model.':'Source uploaded. Let’s tailor the cut before processing.');
       await supabase.from('projects').update({status:'processing'}).eq('id',project.id);
       setProgress(100);refresh();onOpenChange(false);navigate('chat',{project:project.id,job:job.id,afterUpload:localAudio?undefined:'1'});
