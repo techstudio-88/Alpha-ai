@@ -8,7 +8,6 @@ test("local clip analysis creates bounded, scored, non-duplicate candidates from
   let time = 0;
   for (let repeat = 0; repeat < 8; repeat++) {
     for (const token of text.trim().split(/\s+/)) {
-      const clean = token.replace(/[^a-z0-9?!']/gi, "");
       words.push({ word: token, start_ms: Math.round(time * 1000), end_ms: Math.round((time + 0.32) * 1000) });
       time += 0.36;
     }
