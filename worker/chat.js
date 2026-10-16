@@ -1,4 +1,5 @@
 import {GoogleGenAI} from "@google/genai";
+import {randomUUID} from "node:crypto";
 import {allPages,validateEdit} from "../lib/video-workflow.mjs";
 
 const clipSchema = {type:"object",properties:{
@@ -9,14 +10,83 @@ const clipSchema = {type:"object",properties:{
 },required:["a","b","title","reason","score","aspect","speed","zoom","captions","captionStyle","captionColor","effect","transition"]};
 const schema = {type:"object",properties:{summary:{type:"string"},unsupportedReason:{type:"string"},clips:{type:"array",items:clipSchema}},required:["summary","unsupportedReason","clips"]};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function recordGeminiKeyOutcome(db, entry, success, error=null) {
+  if (!entry?.label) return;
+  const now=new Date();
+  const message=String(error?.message||error||"");
+  const rateLimited=/429|RESOURCE_EXHAUSTED|quota/i.test(message);
+  try {
+    const rows=await db("gemini_key_health",{params:{key_label:"eq."+entry.label,select:"key_label,success_count,failure_count,rate_limit_count",limit:"1"}});
+    const previous=rows?.[0];
+    const cooldownMs=rateLimited?120000:60000;
+    const body={
+      key_label:entry.label,
+      is_available:Boolean(success),
+      cooldown_until:success?null:new Date(now.getTime()+cooldownMs).toISOString(),
+      last_status:success?"ok":rateLimited?"429":/401|403|API key/i.test(message)?"auth_error":/503|UNAVAILABLE/i.test(message)?"503":"error",
+      last_error_id:success?null:randomUUID(),
+      success_count:Number(previous?.success_count||0)+(success?1:0),
+      failure_count:Number(previous?.failure_count||0)+(success?0:1),
+      rate_limit_count:Number(previous?.rate_limit_count||0)+(rateLimited?1:0),
+      last_used_at:now.toISOString(),
+      updated_at:now.toISOString()
+    };
+    if(previous) await db("gemini_key_health",{method:"PATCH",params:{key_label:"eq."+entry.label},body});
+    else await db("gemini_key_health",{method:"POST",body});
+  } catch(error) {
+    console.warn("Gemini key health update failed for",entry.label,error?.message||"unknown error");
+  }
+}
+async function restoreGeminiCooldowns(db,keyRing) {
+  try {
+    const rows=await db("gemini_key_health",{params:{select:"key_label,is_available,cooldown_until"}});
+    const now=Date.now();
+    for(const row of rows||[]){
+      const until=Date.parse(row.cooldown_until||"");
+      if(row.is_available===false&&Number.isFinite(until)&&until>now)keyRing?.markUnavailable?.(row.key_label,until-now,now);
+      else if(row.key_label)keyRing?.markAvailable?.(row.key_label);
+    }
+  } catch(error) {
+    console.warn("Gemini key health could not be restored:",error?.message||"unknown error");
+  }
+}
 export async function generateGeminiWithRetry(ai,model,contents,config={},attempts=3){
-  let last;
-  for(let attempt=0;attempt<attempts;attempt++){
-    try{return await ai.models.generateContent({model,contents,config})}
-    catch(error){
-      last=error;const text=String(error?.message||'');
-      if(!/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar/i.test(text)||attempt===attempts-1)throw error;
-      await sleep(700*(attempt+1));
+  let current=ai,last;
+  const ring=current?.__alphaGeminiKeyRing;
+  const maxAttempts=ring?.keys?.length>1?Math.max(attempts,ring.keys.length):attempts;
+  for(let attempt=0;attempt<maxAttempts;attempt++){
+    try{
+      const result=await current.models.generateContent({model,contents,config});
+      const entry=current?.__alphaGeminiKeyEntry;
+      current?.__alphaGeminiKeyRing?.markAvailable?.(entry?.label);
+      await current?.__alphaOnGeminiOutcome?.(entry,true,null);
+      return result;
+    }catch(error){
+      last=error;
+      const message=String(error?.message||"");
+      const providerFailure=/401|403|429|503|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|API key|high demand|temporar/i.test(message);
+      const currentRing=current?.__alphaGeminiKeyRing;
+      const currentEntry=current?.__alphaGeminiKeyEntry;
+      if(providerFailure&&currentRing?.keys?.length>1&&attempt<maxAttempts-1){
+        currentRing.markUnavailable(currentEntry?.label,/429|RESOURCE_EXHAUSTED|quota/i.test(message)?120000:60000);
+        await current?.__alphaOnGeminiOutcome?.(currentEntry,false,error);
+        const next=currentRing.next();
+        if(next){
+          const options=current.__alphaGeminiOptions||{};
+          current=new GoogleGenAI({apiKey:next.key,...options});
+          current.__alphaGeminiKeyRing=currentRing;
+          current.__alphaGeminiKeyEntry=next;
+          current.__alphaGeminiOptions=options;
+          current.__alphaOnGeminiOutcome=ai.__alphaOnGeminiOutcome;
+          continue;
+        }
+      }
+      if(/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand|temporar/i.test(message)&&attempt<maxAttempts-1){
+        await sleep(700*(attempt+1));
+        continue;
+      }
+      await current?.__alphaOnGeminiOutcome?.(currentEntry,false,error);
+      throw error;
     }
   }
   throw last;
@@ -63,8 +133,12 @@ USER REQUEST: ${prompt}`;
   return {summary:last.summary,clips};
 }
 
-export async function generateChatPlan(p,{db,patchJob,key,model}) {
-  if (!key) throw new Error("GEMINI_API_KEY is not configured on the Render media worker.");
+export async function generateChatPlan(p,{db,patchJob,key,keys,keyRing,model}) {
+  const suppliedKeys = keyRing?.keys?.length ? keyRing.keys : (Array.isArray(keys) ? keys : [key]).map((value, index) => typeof value === "string" ? {label:"GEMINI_API_KEY_" + (index + 1),key:value} : value);
+  const keyPool = suppliedKeys.filter((entry) => typeof entry?.key === "string" && entry.key.trim());
+  if (!keyPool.length) throw new Error("GEMINI_API_KEY is not configured on the media worker.");
+  let nextKeyIndex = 0;
+  await restoreGeminiCooldowns(db,keyRing);
   const asset=(await db("media_assets",{params:{id:"eq."+p.mediaAssetId,project_id:"eq."+p.projectId,select:"*"}}))[0];
   if(!asset) throw new Error("Chat source video is unavailable.");
   const transcript=(await db("transcripts",{params:{media_asset_id:"eq."+asset.id,status:"eq.completed",select:"id",order:"created_at.desc",limit:1}}))[0];
@@ -74,11 +148,28 @@ export async function generateChatPlan(p,{db,patchJob,key,model}) {
   let clip=p.clipId ? (await db("clips",{params:{id:"eq."+p.clipId,media_asset_id:"eq."+asset.id,select:"*"}}))[0] : p.selection || null;
   if(p.clipId&&!clip) throw new Error("Selected clip is unavailable.");
   if(clip&&p.selection)clip={...clip,...p.selection};
-  const ai=new GoogleGenAI({apiKey:key,httpOptions:{timeout:120000}});
   const plan=await planTranscript({words,duration:Number(asset.duration_seconds),prompt:p.prompt,history,clip,
     generate:async(contents,responseSchema)=>{
-      const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema});
-      try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
+      let lastError;
+      const attempts=keyPool.length>1?keyPool.length:3;
+      for(let attempt=0;attempt<attempts;attempt++){
+        const selectedKey=keyRing?.next?.()||keyPool[nextKeyIndex%keyPool.length];
+        nextKeyIndex=(nextKeyIndex+1)%keyPool.length;
+        const ai=new GoogleGenAI({apiKey:selectedKey.key,httpOptions:{timeout:120000}});
+        try{
+          const result=await generateGeminiWithRetry(ai,model,contents,{responseMimeType:"application/json",responseJsonSchema:responseSchema},keyPool.length>1?1:3);
+          keyRing?.markAvailable?.(selectedKey.label);
+          await recordGeminiKeyOutcome(db,selectedKey,true);
+          try{return JSON.parse(result.text)}catch{throw new Error("Gemini returned invalid edit-plan JSON.");}
+        }catch(error){
+          lastError=error;
+          const message=String(error?.message||error);
+          if(!/401|403|429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|quota|API key|temporar/i.test(message))throw error;
+          keyRing?.markUnavailable?.(selectedKey.label,/429|RESOURCE_EXHAUSTED|quota/i.test(message)?120000:60000);
+          await recordGeminiKeyOutcome(db,selectedKey,false,error);
+        }
+      }
+      throw lastError||new Error("Gemini providers are temporarily unavailable.");
     },
     onProgress:async(index,total)=>patchJob(p.jobId,{progress:65+Math.round(index/total*25),current_stage:"gemini_planning",payload:{...p,transcriptId:transcript.id,analysisWindow:index+1,analysisWindows:total}})
   });
