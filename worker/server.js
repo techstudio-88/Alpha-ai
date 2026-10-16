@@ -8,6 +8,7 @@ import {randomUUID} from"node:crypto";
 import {pathToFileURL} from "node:url";
 import {pipeline} from "node:stream/promises";
 import {createGeminiKeyRing} from "./gemini-keyring.js";
+import {classifyWorkerFailure} from "./retry-policy.js";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
 import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
@@ -770,14 +771,12 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   if(cancelled)return;
   console.error("job",p.jobId,e);
   const message=String(e?.message||"Processing failed.");
-  const providerUnavailable=/429|403|401|503|UNAVAILABLE|RESOURCE_EXHAUSTED|quota|API key|temporar|timeout|ECONNRESET|EAI_AGAIN|network/i.test(message);
-  const retryCount=providerUnavailable?Number(p.retryCount||0):Number(p.retryCount||0)+1;
-  const terminal=!providerUnavailable&&(Boolean(p.sessionId)&&p.operation!=="render_edit"||retryCount>=5);
+  const retry=classifyWorkerFailure(message,Number(p.retryCount||0),{sessionBound:Boolean(p.sessionId),operation:p.operation});
+  const {providerUnavailable,retryCount,terminal,nextRetryAt}=retry;
   const errorId=randomUUID();
   const failureType=providerUnavailable?"provider_unavailable":/timeout|ECONNRESET|EAI_AGAIN/i.test(message)?"network_timeout":/quota|credit/i.test(message)?"quota_or_credit":/permission|unauthorized|forbidden/i.test(message)?"authorization":"processing";
   const safeError=providerUnavailable?"AI provider is temporarily unavailable. This job is paused and will retry automatically. Reference: "+errorId:message.replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\s]+/gi,"key=[redacted]").slice(0,1000);
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
-  const nextRetryAt=terminal?null:new Date(Date.now()+Math.min(15*60*1000,providerUnavailable?120000:15000*Math.pow(2,Math.min(retryCount,5)))).toISOString();
   const accountingPatch=providerUnavailable?{attempt_count:Math.max(0,Number(p.retryCount||1)-1)}:{};
   await patchJob(p.jobId,{status:terminal?"failed":"queued",error:safeError,error_id:errorId,failure_type:failureType,next_retry_at:nextRetryAt,dead_lettered_at:terminal?new Date().toISOString():null,...accountingPatch,payload:{...checkpoint,retryCount,errorId,failureType}}).catch(()=>{});
   if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:terminal?"failed":"queued",updated_at:new Date().toISOString()}}).catch(()=>{});if(terminal){await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});if(p.requestedBy)await db("rpc/refund_failed_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_reason:"Automatic refund after terminal job failure",p_idempotency_key:"job:"+p.jobId+":refund"}}).catch(e=>console.warn("credit refund needs review:",e.message));}
