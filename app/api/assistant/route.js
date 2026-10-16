@@ -22,10 +22,24 @@ export async function POST(request){
       projects:projects.slice(0,12).map(p=>({...p,name:String(p.name).slice(0,100)})),clips:clips.slice(0,10).map(c=>({...c,title:String(c.title).slice(0,100)})),
       task:'Provide advice or draft copy. Editing actions are previewed and applied in the clip editor; never claim changes or publishing have been performed.'}).slice(0,12000);
     const worker=String(process.env.MEDIA_WORKER_URL||'').replace(/\/$/,'');
-    if(!worker)throw problem('The AI assistant needs a configured media worker. Local trim and local export remain available; AI analysis is not configured.',503);
-    const response=await fetch(worker+'/assistant',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,context}),signal:AbortSignal.timeout(20000)});
-    if(!response.ok)throw problem('The assistant is temporarily unavailable. Try again after the media worker wakes.',503);
-    const result=await response.json();
-    return Response.json({text:String(result.text||'').slice(0,16000)});
+    if(worker){
+      const response=await fetch(worker+'/assistant',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,context}),signal:AbortSignal.timeout(20000)});
+      if(!response.ok)throw problem('The assistant is temporarily unavailable. Try again after the media worker wakes.',503);
+      const result=await response.json();
+      return Response.json({text:String(result.text||'').slice(0,16000)});
+    }
+    const apiKey=String(process.env.GEMINI_API_KEY||'').trim();
+    if(!apiKey)throw problem('AI chat needs a server-side GEMINI_API_KEY or a configured media worker. Local transcription, clip suggestions and supported local exports remain available.',503);
+    const model=String(process.env.GEMINI_MODEL||'gemini-2.5-flash').trim();
+    const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(apiKey),{
+      method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({contents:[{parts:[{text:'You are Alpha.ai Assistant. Help with content strategy, clips, hooks, titles, transcripts, editing plans, publishing copy and workspace organization. Be practical and concise. Never claim to have performed an action you did not perform.\nWorkspace context:\n'+context+'\nUser request:\n'+prompt}]}],generationConfig:{temperature:0.35,maxOutputTokens:1800}}),
+      signal:AbortSignal.timeout(20000),cache:'no-store'
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw problem(result?.error?.message||'Gemini assistant request failed.',response.status===429?429:503);
+    const text=(result?.candidates?.[0]?.content?.parts||[]).map(part=>part.text||'').join('').trim();
+    if(!text)throw problem('Gemini returned an empty assistant response. Try again.',502);
+    return Response.json({text:text.slice(0,16000)});
   }catch(error){return workflowError(error)}
 }
