@@ -141,6 +141,50 @@ grant execute on function public.refund_failed_job_credits(uuid, uuid, uuid, tex
   to service_role;
 
 
+
+create or replace function public.release_job_credits_for_provider_pause(
+  p_workspace_id uuid,p_job_id uuid,p_user_id uuid,p_reason text,p_idempotency_key text
+) returns public.credit_ledger
+language plpgsql security definer set search_path to ''
+as $function$
+declare
+  v_job public.processing_jobs;
+  v_reservation public.credit_ledger;
+  v_balance public.usage_credits;
+  v_entry public.credit_ledger;
+begin
+  if p_workspace_id is null or p_job_id is null or p_user_id is null
+     or length(trim(coalesce(p_idempotency_key,'')))<8 then
+    raise exception using errcode='22023',message='Invalid provider-pause credit release request';
+  end if;
+  select * into v_entry from public.credit_ledger where idempotency_key=p_idempotency_key;
+  if found then return v_entry; end if;
+  select * into v_job from public.processing_jobs where id=p_job_id and workspace_id=p_workspace_id for update;
+  if not found then raise exception using errcode='23503',message='Job not found'; end if;
+  if v_job.status not in ('queued','processing') then
+    raise exception using errcode='23514',message='Only active jobs can release credits during provider pause';
+  end if;
+  if coalesce(v_job.reserved_credits,0)<=0 then return null; end if;
+  select * into v_reservation from public.credit_ledger
+    where job_id=p_job_id and user_id=p_user_id and transaction_type='reserve'
+    order by created_at desc limit 1;
+  if not found then raise exception using errcode='23503',message='Credit reservation not found'; end if;
+  select * into v_balance from public.usage_credits
+    where workspace_id=p_workspace_id and user_id=p_user_id for update;
+  if not found then raise exception using errcode='23503',message='Credit balance not found'; end if;
+  update public.usage_credits set credits=credits+abs(v_reservation.amount),updated_at=now() where id=v_balance.id;
+  insert into public.credit_ledger(workspace_id,user_id,job_id,amount,transaction_type,reason,idempotency_key)
+    values(p_workspace_id,p_user_id,p_job_id,abs(v_reservation.amount),'refund',
+      coalesce(nullif(trim(p_reason),''),'Temporary credit release during AI provider outage'),p_idempotency_key)
+    returning * into v_entry;
+  update public.processing_jobs set reserved_credits=0 where id=p_job_id and workspace_id=p_workspace_id;
+  return v_entry;
+end
+$function$;
+
+revoke all on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.release_job_credits_for_provider_pause(uuid,uuid,uuid,text,text) to service_role;
+
 -- Enforce brand-kit caps and scheduling/publishing entitlements at the database boundary.
 create or replace function public.enforce_brand_kit_limit()
 returns trigger
