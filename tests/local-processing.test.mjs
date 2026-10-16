@@ -18,7 +18,7 @@ test("trim arguments reject invalid ranges and create a bounded MP4 trim", () =>
   assert.throws(() => createTrimArguments(10, 10), /valid clip range/i);
   assert.throws(() => createTrimArguments(-1, 10), /valid clip range/i);
   const args = createTrimArguments(2.5, 8.5);
-  assert.deepEqual(args.slice(0, 5), ["-ss", "2.5", "-i", "input.mp4", "-t"]);
+  assert.deepEqual(args.slice(0, 5), ["-i", "input.mp4", "-ss", "2.5", "-t"]);
   assert.equal(args[5], "6");
   assert.equal(args.at(-1), "output.mp4");
 });
