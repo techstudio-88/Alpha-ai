@@ -45,22 +45,43 @@ export default function BrowserTranscriber({ workspace }) {
         if(result.error)throw result.error;
         return result.data||[];
       });
-      const candidates=generateLocalClipCandidates(timedWords,Number(payload.durationSeconds)||0,6);
-      const existing=await supabase.from("clips").select("id").eq("project_id",payload.projectId)
-        .contains("ai_spec",{source:"local-transcript-analysis"}).limit(1);
+      let candidates=[];
+      let analysisType="heuristic";
+      try{
+        const {data:{session}}=await supabase.auth.getSession();
+        if(session?.access_token){
+          const response=await fetch("/api/local-clip-analysis",{
+            method:"POST",
+            headers:{"content-type":"application/json",authorization:"Bearer "+session.access_token},
+            body:JSON.stringify({workspaceId:workspace.id,projectId:payload.projectId,mediaAssetId:payload.mediaAssetId,transcriptId:payload.transcriptId,durationSeconds:payload.durationSeconds}),
+            signal:AbortSignal.timeout(25000)
+          });
+          if(response.ok){
+            const result=await response.json().catch(()=>({}));
+            if(Array.isArray(result.clips)&&result.clips.length){
+              candidates=result.clips;
+              analysisType="gemini-transcript";
+            }
+          }
+        }
+      }catch(error){console.info("Gemini transcript analysis unavailable; using local scoring.",error?.message||"")}
+      if(!candidates.length)candidates=generateLocalClipCandidates(timedWords,Number(payload.durationSeconds)||0,6);
+      const source=analysisType==="gemini-transcript"?"gemini-transcript-analysis":"local-transcript-analysis";
+      const existing=await supabase.from("clips").select("id,ai_spec").eq("project_id",payload.projectId).limit(100);
       if(existing.error)throw existing.error;
-      if(!existing.data?.length&&candidates.length){
+      const hasExisting=(existing.data||[]).some(clip=>["local-transcript-analysis","gemini-transcript-analysis"].includes(clip.ai_spec?.source));
+      if(!hasExisting&&candidates.length){
         const rows=candidates.map((candidate,index)=>({
           project_id:payload.projectId,
           media_asset_id:payload.mediaAssetId||null,
-          title:candidate.title||("Local highlight "+(index+1)),
+          title:candidate.title||("Transcript highlight "+(index+1)),
           start_seconds:candidate.startSeconds,
           end_seconds:candidate.endSeconds,
           score:candidate.score,
           status:"draft",
           ai_spec:{
-            source:"local-transcript-analysis",
-            analysisType:"heuristic",
+            source,
+            analysisType:analysisType==="gemini-transcript"?"gemini-transcript":"heuristic",
             hook:candidate.hook,
             reason:candidate.reason,
             transcriptExcerpt:candidate.transcript,
@@ -78,7 +99,7 @@ export default function BrowserTranscriber({ workspace }) {
         ...payload,
         transcriptionChunks:[],
         transcribeChunk:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
-        localAnalysis:{type:"heuristic",candidateCount:candidates.length,model:"browser-whisper-tiny"}
+        localAnalysis:{type:analysisType,candidateCount:candidates.length,model:analysisType==="gemini-transcript"?"gemini-transcript":"browser-whisper-tiny"}
       };
       if(payload.projectId){
         const updated=await supabase.from("projects").update({status:"ready",updated_at:new Date().toISOString()}).eq("id",payload.projectId);
@@ -98,9 +119,11 @@ export default function BrowserTranscriber({ workspace }) {
         jobId:job.id,index:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
         total:Array.isArray(payload.transcriptionChunks)?payload.transcriptionChunks.length:0,
         progress:100,
-        message:candidates.length
-          ?"Local transcription and "+candidates.length+" clip suggestions are ready. Scores are heuristic, not Gemini AI scores."
-          :"Transcription completed, but there was not enough timed speech to suggest clips."
+        message:analysisType==="gemini-transcript"
+          ?"Gemini transcript analysis and "+candidates.length+" clip suggestions are ready. This analysis used transcript content and timing, not video-frame inspection."
+          :candidates.length
+            ?"Local transcription and "+candidates.length+" heuristic clip suggestions are ready. Add a server-side Gemini key for semantic transcript analysis."
+            :"Transcription completed, but there was not enough timed speech to suggest clips."
       });
       setTimeout(()=>{if(alive)setState(null)},8000);
     }
