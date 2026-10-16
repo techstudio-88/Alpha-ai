@@ -78,7 +78,8 @@ export default function ImportVideo({open,onOpenChange,file:initialFile}){
       const isFile=input instanceof File,parsed=isFile?null:sourceUrl(input);
       if(!isFile&&parsed.sourceType==='direct_url'){
         const response=await fetch(parsed.url,{mode:'cors',credentials:'omit',cache:'no-store'});
-        const bytes=await readResponseWithinLimit(response,200*1024*1024);
+        const directPolicy=getLocalExportPolicy({isMobile:window.matchMedia('(max-width: 760px)').matches,deviceMemory:Number(navigator.deviceMemory)||0,hardwareConcurrency:Number(navigator.hardwareConcurrency)||0});
+        const bytes=await readResponseWithinLimit(response,Math.min(directPolicy.maxBytes,LOCAL_IMPORT_CAP_BYTES));
         const remoteUrl=new URL(parsed.url);
         const leaf=decodeURIComponent(remoteUrl.pathname.split('/').filter(Boolean).pop()||'remote-video.mp4').replace(/[^a-z\d._-]/gi,'-').slice(-120);
         const declared=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
