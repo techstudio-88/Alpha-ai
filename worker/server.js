@@ -775,7 +775,7 @@ async function processJob(p){const dir=fs.mkdtempSync(path.join(os.tmpdir(),"alp
   const terminal=!providerUnavailable&&(Boolean(p.sessionId)&&p.operation!=="render_edit"||retryCount>=5);
   const errorId=randomUUID();
   const failureType=providerUnavailable?"provider_unavailable":/timeout|ECONNRESET|EAI_AGAIN/i.test(message)?"network_timeout":/quota|credit/i.test(message)?"quota_or_credit":/permission|unauthorized|forbidden/i.test(message)?"authorization":"processing";
-  const safeError=providerUnavailable?"AI provider is temporarily unavailable. This job is paused and will retry automatically. Reference: "+errorId:message.replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\\s]+/gi,"key=[redacted]").slice(0,1000);
+  const safeError=providerUnavailable?"AI provider is temporarily unavailable. This job is paused and will retry automatically. Reference: "+errorId:message.replace(/AIza[0-9A-Za-z_-]{20,}/g,"[redacted]").replace(/key=[^&\s]+/gi,"key=[redacted]").slice(0,1000);
   const checkpoint=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"payload"}}).catch(()=>[]))[0]?.payload||p;
   const nextRetryAt=terminal?null:new Date(Date.now()+Math.min(15*60*1000,providerUnavailable?120000:15000*Math.pow(2,Math.min(retryCount,5)))).toISOString();
   const accountingPatch=providerUnavailable?{attempt_count:Math.max(0,Number(p.retryCount||1)-1)}:{};
