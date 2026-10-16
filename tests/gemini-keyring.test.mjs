@@ -23,3 +23,11 @@ test("Gemini key ring round-robins and handles an empty configuration",()=>{
   assert.equal(ring.next().key,"one");
   assert.equal(createGeminiKeyRing({}).next(),null);
 });
+
+test("Gemini key cooldown skips throttled keys until the pool is exhausted",()=>{
+  const ring=createGeminiKeyRing({GEMINI_API_KEY_1:"one",GEMINI_API_KEY_2:"two"});
+  ring.markUnavailable("GEMINI_API_KEY_1",120000,1000);
+  assert.equal(ring.next(1001).key,"two");
+  ring.markUnavailable("GEMINI_API_KEY_2",60000,1000);
+  assert.equal(ring.next(1001).label,"GEMINI_API_KEY_2");
+});
