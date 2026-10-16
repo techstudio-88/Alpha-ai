@@ -899,6 +899,17 @@ async function resumeQueuedJobs(){
     if(!KEY){console.error("Supabase server-side key is not configured; queued jobs cannot be resumed safely.");return}
     if(activeJobs.size)return;
     const nowIso=new Date().toISOString();
+    const expiredParts=await db("pending_processing_parts",{params:{status:"in.(pending,approved)",expires_at:"lt."+nowIso,select:"id,parent_job_id,project_id",limit:"100"}}).catch(()=>[]);
+    for(const part of expiredParts||[]){
+      await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+part.id,status:"in.(pending,approved)"},body:{status:"expired",decided_at:nowIso,updated_at:nowIso}}).catch(()=>{});
+      if(part.parent_job_id){
+        const outstanding=await db("pending_processing_parts",{params:{parent_job_id:"eq."+part.parent_job_id,status:"in.(pending,approved,queued,processing)",select:"id",limit:"1"}}).catch(()=>[]);
+        if(!outstanding.length){
+          const parent=(await db("processing_jobs",{params:{id:"eq."+part.parent_job_id,select:"status",limit:"1"}}).catch(()=>[]))[0];
+          if(parent?.status==="completed")await db("projects",{method:"PATCH",params:{id:"eq."+part.project_id},body:{status:"ready"}}).catch(()=>{});
+        }
+      }
+    }
     const dueParts=await db("pending_processing_parts",{params:{status:"eq.approved",scheduled_for:"lte."+nowIso,select:"id",order:"scheduled_for.asc",limit:"1"}}).catch(()=>[]);
     if(dueParts?.[0]?.id)await db("rpc/claim_due_pending_part",{method:"POST",body:{p_part_id:dueParts[0].id}}).catch(e=>console.warn("pending video part scheduler:",e.message));
     const rpcUrl=SUPA+"/rest/v1/rpc/claim_processing_job";const rpcResponse=await fetch(rpcUrl,{method:"POST",headers:baseAuth,body:JSON.stringify({p_worker:"media-worker"})});const claimed=rpcResponse.ok?await rpcResponse.json().catch(()=>[]):null;
