@@ -1,4 +1,5 @@
 import{createClient}from"@supabase/supabase-js";
+import {enforceWorkspaceApiRateLimit} from "../../../lib/workflow-server";
 export const runtime="nodejs";
 export const maxDuration=50;
 const supabaseUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,12 +32,13 @@ export async function POST(request){
     const valid=rows?.[0];
     if(ticketError||!valid)return Response.json({error:"Invalid or expired processing ticket."},{status:401});
     if(valid.workspace_id!==workspaceId||valid.project_id!==projectId||String(valid.job_id)!==String(jobId)||String(valid.source_id||"")!==String(sourceId||"")||String(valid.media_asset_id||"")!==String(mediaAssetId||""))return Response.json({error:"Processing ticket context mismatch."},{status:401});
+    await enforceWorkspaceApiRateLimit(verifier,"user:"+valid.user_id,workspaceId,"/api/import-source",20,60,request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null);
     const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
     const{response,result}=await callWorker(worker,ticket,{url:url||null,sourceType:sourceType||"upload",workspaceId,projectId,sourceId:sourceId||null,jobId,mediaAssetId:mediaAssetId||null,requestedBy:valid.user_id});
     if(!response.ok){const status=response.status===401||response.status===403?response.status:502;const fallback=response.status===429?"The media worker is restarting or temporarily throttled. Please retry in a moment.":result.error||"Media worker rejected the job.";return Response.json({error:fallback},{status});}
     return Response.json({ok:true,jobId,worker:result});
   }catch(error){
     console.error("import-source",error);
-    return Response.json({error:error?.name==="AbortError"?"Media worker is waking up. Please retry the import.":error?.message||"Unable to start media ingestion."},{status:502});
+    return Response.json({error:error?.name==="AbortError"?"Media worker is waking up. Please retry the import.":error?.message||"Unable to start media ingestion."},{status:error?.status||502,headers:error?.retryAfter?{"Retry-After":String(error.retryAfter)}:undefined});
   }
 }

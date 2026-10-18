@@ -1,5 +1,6 @@
 "use client";
 import {useState} from "react";
+import {supabase} from "../../../lib/supabase.js";
 
 export default function ToolClient({tool,names}){
   const [input,setInput]=useState("");
@@ -8,7 +9,18 @@ export default function ToolClient({tool,names}){
   async function run(){
     setBusy(true);setOut("");
     try{
-      const r=await fetch("/api/tools/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({tool,input})});
+      const headers={"content-type":"application/json"};
+      let workspaceId=null;
+      if(supabase){
+        const {data:{session}}=await supabase.auth.getSession();
+        if(session?.access_token){
+          const {data:membership}=await supabase.from("workspace_members").select("workspace_id").eq("user_id",session.user.id).order("created_at",{ascending:true}).limit(1).maybeSingle();
+          workspaceId=membership?.workspace_id||null;
+          if(workspaceId)headers.Authorization="Bearer "+session.access_token;
+        }
+      }
+      const requestId=globalThis.crypto?.randomUUID?.()||String(Date.now())+"-"+Math.random().toString(36).slice(2);
+      const r=await fetch("/api/tools/generate",{method:"POST",headers,body:JSON.stringify({tool,input,workspaceId,request_id:requestId})});
       const j=await r.json();
       setOut(j.text||j.error||"No result.");
     }finally{setBusy(false);}

@@ -1,6 +1,7 @@
 import{createClient}from"@supabase/supabase-js";
 import {encryptCredential} from '../../../../lib/credential-cipher.mjs';
 import {requireWorkerCapability} from '../../../../lib/worker-capabilities';
+import {enforceWorkspaceApiRateLimit} from '../../../../lib/workflow-server';
 export const runtime="nodejs";
 export async function POST(request){
  try{
@@ -11,6 +12,9 @@ export async function POST(request){
   const supabase=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:auth}}});
   const{data:{user},error}=await supabase.auth.getUser(auth.slice(7));if(error||!user||user.id!==userId)return Response.json({error:"Invalid session."},{status:401});
   const{data:isMember,error:memberError}=await supabase.rpc("is_workspace_member",{wid:workspaceId});if(memberError||!isMember)return Response.json({error:"Workspace access denied."},{status:403});
+  const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;if(!serviceKey)return Response.json({error:"Supabase server credentials are not configured."},{status:503});
+  const limiter=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
+  await enforceWorkspaceApiRateLimit(limiter,"user:"+user.id,workspaceId,"/api/google-drive/import",10,60,request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||null);
   const meta=await fetch("https://www.googleapis.com/drive/v3/files/"+encodeURIComponent(file.id)+"?fields=id,name,mimeType,size,modifiedTime,capabilities",{headers:{Authorization:"Bearer "+accessToken}});const md=await meta.json();if(!meta.ok)return Response.json({error:md.error?.message||"Unable to verify Drive file."},{status:400});
   if(!md.mimeType?.startsWith("video/"))return Response.json({error:"Selected Drive file is not a video."},{status:400});
   if(md.capabilities?.canDownload===false)return Response.json({error:"Google Drive does not allow this file to be downloaded."},{status:400});
@@ -23,5 +27,5 @@ export async function POST(request){
    const wr=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","x-worker-secret":workerSecret},body:JSON.stringify({workspaceId,projectId:project.data.id,jobId:job.data.id,requestedBy:user.id}),signal:AbortSignal.timeout(10000)}).catch(()=>null);
    const wd=await wr?.json().catch(()=>({}));if(wr&&[401,403].includes(wr.status))throw new Error(wd.error||"Media worker authorization failed.");
   return Response.json({ok:true,projectId:project.data.id,jobId:job.data.id,file:md});
- }catch(e){console.error("google-drive-import",e);return Response.json({error:e?.message||"Google Drive import failed."},{status:500})}
+ }catch(e){console.error("google-drive-import",e);return Response.json({error:e?.message||"Google Drive import failed."},{status:e?.status||500,headers:e?.retryAfter?{"Retry-After":String(e.retryAfter)}:undefined})}
 }

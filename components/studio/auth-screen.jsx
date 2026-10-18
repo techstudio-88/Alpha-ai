@@ -42,9 +42,9 @@ export default function AuthScreen({mode='signin'}){
       <ButtonLink href="/" variant="ghost" className="px-0"><ArrowLeft size={14}/>Back to Alpha.ai</ButtonLink>
       <h1>{reset?'Reset your password':signup?'Make room for your ideas.':'Welcome back.'}</h1>
       <p>{reset?'We’ll send a link to the email on your account.':signup?'Create a workspace for your next batch of clips.':'Your projects are right where you left them.'}</p>
-      {!reset&&<><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Button variant="primary" className="w-full" onClick={()=>social('google')} busy={busy}><Chrome size={16}/>Continue with Google</Button><Button variant="secondary" className="w-full" onClick={()=>social('github')} busy={busy}><Github size={16}/>Continue with GitHub</Button></div><p className="text-xs text-muted flex items-center justify-center gap-2 mt-3"><Check size={13}/>Continue with Google or GitHub for direct access.</p>{options?.googleEnabled===false&&<p role="status" className="text-xs text-warning mt-3 text-center">Google sign-in still needs to be enabled in the Supabase Auth providers.</p>}{!reset&&<div className="flex items-center gap-4 text-xs text-muted my-6"><i className="flex-1 border-t"/>or use email<i className="flex-1 border-t"/></div>}</>}
+      {!reset&&<><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Button variant="primary" className="w-full" onClick={()=>social('google')} busy={busy}><Chrome size={16}/>Continue with Google</Button><Button variant="secondary" className="w-full" onClick={()=>social('github')} busy={busy}><Github size={16}/>Continue with GitHub</Button></div><p className="text-xs text-muted flex items-center justify-center gap-2 mt-3"><Check size={13}/>Continue with Google or GitHub for direct access.</p>{options?.googleEnabled===false&&<p role="status" className="text-xs text-warning mt-3 text-center">Google sign-in still needs to be enabled in the Supabase Auth providers.</p>}{!reset&&options?.emailEnabled!==false&&<div className="flex items-center gap-4 text-xs text-muted my-6"><i className="flex-1 border-t"/>or use email<i className="flex-1 border-t"/></div>}</>}
       {options?.emailEnabled===false&&<p role="status" className="text-xs text-muted mt-6">Email sign-in is turned off for this project. Continue with Google or GitHub to open your workspace.{reset?' Password reset is unavailable while email sign-in is disabled.':''}</p>}
-      <form onSubmit={submit}>
+      {options?.emailEnabled!==false&&<form onSubmit={submit}>
         {signup&&<Input label="Your name" autoComplete="name" value={name} onChange={e=>setName(e.target.value)} required/>}
         <Input label="Email address" type="email" autoComplete="email" placeholder="you@yourstudio.com" value={email} onChange={e=>setEmail(e.target.value)} required/>
         {!reset&&<Input label="Password" type="password" autoComplete={signup?'new-password':'current-password'} minLength={signup?8:undefined} value={password} onChange={e=>setPassword(e.target.value)} required/>}
@@ -53,7 +53,7 @@ export default function AuthScreen({mode='signin'}){
         {error&&<p role="alert" className="text-xs text-destructive">{error}</p>}
         {message&&<p role="status" className="text-xs text-success">{message}</p>}
         <Button type="submit" className="w-full" busy={busy}>{reset?'Send reset link':signup?'Create account':'Sign in'}<ArrowRight size={14}/></Button>
-      </form>
+      </form>}
       {!reset&&<p className="text-xs text-muted mt-6">{signup?'Already have a workspace?':'New to Alpha.ai?'}{' '}<a href={signup?'/studio':'/studio?mode=signup'} className="text-foreground underline">{signup?'Sign in':'Create an account'}</a></p>}
       <p className="text-xs text-muted mt-4">By continuing, you agree to our <a href="/terms" className="underline">Terms</a> and <a href="/privacy" className="underline">Privacy Policy</a>.</p>
       <ButtonLink href="/studio?demo=1" variant="ghost" className="w-full mt-6">Explore the sample studio<ArrowRight size={14}/></ButtonLink>

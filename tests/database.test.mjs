@@ -11,13 +11,16 @@ test("chat transactions enforce workspace scope and persist exactly one plan/ren
     await db.exec(`create role anon; create role authenticated; create role service_role;
       create schema auth; create schema private;
       create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as 'select null::uuid';
       create table workspaces(id uuid primary key);
       create table workspace_members(workspace_id uuid,user_id uuid);
       create table projects(id uuid primary key,workspace_id uuid);
       create table media_assets(id uuid primary key,project_id uuid,status text);
       create table clips(id uuid primary key default gen_random_uuid(),project_id uuid,media_asset_id uuid,title text,start_seconds numeric,end_seconds numeric,score numeric,status text);
       create table processing_jobs(id uuid primary key,workspace_id uuid,project_id uuid,job_type text,status text,progress integer,payload jsonb,created_at timestamptz default now(),current_stage text,error text,heartbeat_at timestamptz,updated_at timestamptz,lease_until timestamptz,lease_token uuid,attempt_count integer);
-      create function private.is_workspace_member(uuid) returns boolean language sql as 'select true';`);
+      create function private.is_workspace_member(uuid) returns boolean language sql as 'select true';
+      create function private.issue_processing_ticket(p_workspace_id uuid,p_project_id uuid,p_source_id uuid,p_job_id uuid,p_media_asset_id uuid)
+        returns table(ticket text,expires_at timestamptz) language sql as 'select null::text,now()';`);
     await db.exec(await readFile(new URL("../supabase/migrations/20260928_chat_first_production.sql",import.meta.url),"utf8"));
     await db.exec(await readFile(new URL("../supabase/migrations/20261003_ai_video_workflow.sql",import.meta.url),"utf8"));
     const w=randomUUID(),other=randomUUID(),user=randomUUID(),project=randomUUID(),asset=randomUUID(),session=randomUUID(),job=randomUUID();
