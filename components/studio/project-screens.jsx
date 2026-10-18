@@ -17,7 +17,7 @@ function ProjectCard({project}){
     if(!path)return null;
     const {data}=await supabase.storage.from('media').createSignedUrl(path,900);return data?.signedUrl;
   },[project.id,demo]);
-  return <button className="panel project-card" onClick={()=>navigate('chat',{project:project.id})}><div className="project-thumbnail">{preview.data?<img src={preview.data} alt="" loading="lazy" width="480" height="270"/>:<Film size={28}/>}</div><div className="project-card-copy"><h3>{project.name}</h3><div className="project-meta"><Status value={project.status}/><span>{new Date(project.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span></div></div></button>;
+  return <button className="panel project-card" onClick={()=>navigate('studio',{project:project.id})}><div className="project-thumbnail">{preview.data?<img src={preview.data} alt="" loading="lazy" width="480" height="270"/>:<Film size={28}/>}</div><div className="project-card-copy"><h3>{project.name}</h3><div className="project-meta"><Status value={project.status}/><span>{new Date(project.created_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span></div></div></button>;
 }
 export function HomeScreen({projects}){
   const {openImport,navigate,user,state}=useStudio();const [onboarding,setOnboarding]=useState(true);
@@ -64,16 +64,73 @@ function CompletionBanner({projectId,preferences}){
 }
 
 export function ClipsScreen({projectId,embedded=false}){
-  const {demo,navigate,openImport,notify,state}=useStudio();
+  const {demo,navigate,openImport,notify,state,workspace}=useStudio();
   const clips=useRows('clips','*,projects!inner(workspace_id),clip_versions(id,version,storage_path,render_status,edit_data),clip_scores(*)',{projectId,poll:!!projectId});
-  const [query,setQuery]=useState(''),[sort,setSort]=useState('score'),[selected,setSelected]=useState([]),[approved,setApproved]=useState([]),[focus,setFocus]=useState(0);
+  const [query,setQuery]=useState(''),[sort,setSort]=useState('score'),[selected,setSelected]=useState([]),[approved,setApproved]=useState([]),[focus,setFocus]=useState(0),[batchBusy,setBatchBusy]=useState(false);
   const rows=(state==='empty'?[]:clips.data||[]).filter(c=>(c.title||'').toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='score'?(b.score||0)-(a.score||0):new Date(b.created_at)-new Date(a.created_at));
   const sources=useClipSources(rows);
   const edit=clip=>navigate('editor',{project:clip.project_id,clip:clip.id});
   const publish=clip=>navigate('publish',{clip:clip.id});
+  const schedule=clip=>navigate('publish',{clip:clip.id,schedule:'1'});
+  const seo=clip=>navigate('seo',{clip:clip.id,project:clip.project_id});
+
   async function approve(ids){
     try{if(!demo)unwrap(await supabase.from('clips').update({status:'approved'}).in('id',ids));setApproved(v=>[...v,...ids]);notify(`${ids.length} clip${ids.length===1?'':'s'} approved${demo?' in this sample session':''}.`)}catch(error){notify(error.message)}
   }
+
+  async function deleteClips(ids){
+    if(!ids.length)return;
+    if(!window.confirm(`Are you sure you want to delete ${ids.length} clip${ids.length===1?'':'s'}?`))return;
+    setBatchBusy(true);
+    try{
+      if(!demo){
+        unwrap(await supabase.from('clips').delete().in('id',ids));
+      }
+      setSelected(v=>v.filter(id=>!ids.includes(id)));
+      clips.retry();
+      notify(`${ids.length} clip${ids.length===1?'':'s'} deleted.`);
+    }catch(err){
+      notify(err.message);
+    }finally{
+      setBatchBusy(false);
+    }
+  }
+
+  async function batchExport(ids){
+    if(!ids.length)return;
+    setBatchBusy(true);
+    try{
+      notify(`Generating ZIP for ${ids.length} selected clips...`);
+      const response=await studioApi('/api/exports',{
+        method:'POST',
+        body:{workspace_id:workspace.id,project_id:projectId,clipIds:ids}
+      });
+      if(response?.url){
+        const a=document.createElement('a');
+        a.href=response.url;
+        a.download=response.filename||'alpha-ai-clips.zip';
+        a.rel='noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        notify('ZIP package downloaded successfully.');
+      }
+    }catch(err){
+      notify(err.message);
+    }finally{
+      setBatchBusy(false);
+    }
+  }
+
+  function batchPublish(ids){
+    if(!ids.length)return;
+    if(ids.length===1){
+      navigate('publish',{clip:ids[0]});
+    }else{
+      navigate('publish',{clip:ids[0],batch:ids.join(',')});
+    }
+  }
+
   useEffect(()=>{const key=e=>{
     if(e.metaKey||e.ctrlKey||e.altKey||e.target.closest('input,textarea,select,[contenteditable]')||document.querySelector('[role="dialog"]'))return;
     const c=rows[focus];if(!c)return;
@@ -81,6 +138,41 @@ export function ClipsScreen({projectId,embedded=false}){
     if(e.key.toLowerCase()==='k'){e.preventDefault();setFocus(v=>Math.max(0,v-1))}
     if(e.key.toLowerCase()==='a')approve([c.id]);if(e.key.toLowerCase()==='e')edit(c);if(e.key.toLowerCase()==='p')publish(c);
   };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[rows,focus,demo]);
+
   if(clips.error)return <ErrorState message={clips.error} onRetry={clips.retry}/>;
-  return <>{!embedded&&<Heading title="Clips" description="Review the strongest ideas. Give each one a place to go." action={<Button onClick={()=>openImport()}><Plus size={15}/>Import video</Button>}/>}<div className="screen-toolbar"><div className="flex gap-4 items-center flex-wrap"><Input label="Find a moment" placeholder="Search clips…" value={query} onChange={e=>setQuery(e.target.value)} className="max-w-xs"/><Select label="Sort clips" value={sort} onValueChange={setSort} options={[{value:'score',label:'Highest score'},{value:'recent',label:'Most recent'}]}/></div><p className="text-xs text-muted">J / K navigate · A approve · E edit · P publish</p></div>{selected.length>0&&<div className="bulk-bar"><span>{selected.length} clips selected</span><div className="flex gap-2"><Button size="sm" onClick={()=>approve(selected)}>Approve selected</Button><Button size="sm" onClick={()=>setSelected([])}>Clear</Button></div></div>}{clips.loading&&!clips.data?<ScreenSkeleton/>:rows.length?<div className="clip-grid">{rows.map((clip,i)=><ClipCard key={clip.id} clip={{...clip,status:approved.includes(clip.id)?'approved':clip.status}} src={sources[clip.id]} selected={selected.includes(clip.id)} onSelect={()=>setSelected(v=>v.includes(clip.id)?v.filter(id=>id!==clip.id):[...v,clip.id])} focused={focus===i} onEdit={()=>edit(clip)} onPublish={()=>publish(clip)} onApprove={()=>approve([clip.id])}/>)}</div>:<EmptyState icon={Film} title={query?'No matching moments.':projectId?'Your clips will land here.':'A library of your best moments.'} description={query?'Try another phrase.':'Finished renders appear here with their scores and review actions.'} action={<Button onClick={()=>query?setQuery(''):openImport()}>{query?'Clear search':'Import a recording'}</Button>}/>}</>;
+  return <>{!embedded&&<Heading title="Clips" description="Review the strongest ideas. Give each one a place to go." action={<Button onClick={()=>openImport()}><Plus size={15}/>Import video</Button>}/>}
+    <div className="screen-toolbar">
+      <div className="flex gap-4 items-center flex-wrap">
+        <Input label="Find a moment" placeholder="Search clips…" value={query} onChange={e=>setQuery(e.target.value)} className="max-w-xs"/>
+        <Select label="Sort clips" value={sort} onValueChange={setSort} options={[{value:'score',label:'Highest score'},{value:'recent',label:'Most recent'}]}/>
+      </div>
+      <p className="text-xs text-muted">J / K navigate · A approve · E edit · P publish</p>
+    </div>
+    {selected.length>0&&<div className="bulk-bar flex items-center justify-between gap-3 flex-wrap">
+      <span className="font-medium text-xs">{selected.length} clips selected</span>
+      <div className="flex gap-2 flex-wrap">
+        <Button size="sm" variant="primary" busy={batchBusy} onClick={()=>batchExport(selected)}>Batch Export (ZIP)</Button>
+        <Button size="sm" variant="secondary" onClick={()=>batchPublish(selected)}>Batch Publish</Button>
+        <Button size="sm" variant="danger" busy={batchBusy} onClick={()=>deleteClips(selected)}>Batch Delete</Button>
+        <Button size="sm" variant="ghost" onClick={()=>approve(selected)}>Approve</Button>
+        <Button size="sm" variant="ghost" onClick={()=>setSelected([])}>Clear</Button>
+      </div>
+    </div>}
+    {clips.loading&&!clips.data?<ScreenSkeleton/>:rows.length?<div className="clip-grid">
+      {rows.map((clip,i)=><ClipCard
+        key={clip.id}
+        clip={{...clip,status:approved.includes(clip.id)?'approved':clip.status}}
+        src={sources[clip.id]}
+        selected={selected.includes(clip.id)}
+        onSelect={()=>setSelected(v=>v.includes(clip.id)?v.filter(id=>id!==clip.id):[...v,clip.id])}
+        focused={focus===i}
+        onEdit={()=>edit(clip)}
+        onPublish={()=>publish(clip)}
+        onSchedule={()=>schedule(clip)}
+        onSeo={()=>seo(clip)}
+        onDelete={()=>deleteClips([clip.id])}
+        onApprove={()=>approve([clip.id])}
+      />)}
+    </div>:<EmptyState icon={Film} title={query?'No matching moments.':projectId?'Your clips will land here.':'A library of your best moments.'} description={query?'Try another phrase.':'Finished renders appear here with their scores and review actions.'} action={<Button onClick={()=>query?setQuery(''):openImport()}>{query?'Clear search':'Import a recording'}</Button>}/>}
+  </>;
 }

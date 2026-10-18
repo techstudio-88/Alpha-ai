@@ -7,7 +7,7 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import {cva} from 'class-variance-authority';
 import {clsx} from 'clsx';
 import {twMerge} from 'tailwind-merge';
-import {AlertCircle,ArrowRight,Captions,Check,ChevronDown,Download,Film,Loader2,Moon,Play,RefreshCw,Sun,Upload,X} from 'lucide-react';
+import {AlertCircle,ArrowRight,Captions,Check,ChevronDown,Clock,Download,Film,Loader2,Moon,Play,RefreshCw,Scissors,Sparkles,Sun,Trash2,Upload,X} from 'lucide-react';
 
 export const cn = (...values) => twMerge(clsx(values));
 const buttons = cva('inline-flex items-center justify-center gap-2 rounded-control border px-4 py-2.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-45 min-h-10', {
@@ -61,28 +61,46 @@ export function DropZone({onFile,onLink,busy=false,compact=false,initialUrl=''})
   const input=useRef(null);const [drag,setDrag]=useState(false);const [url,setUrl]=useState(initialUrl);
   return <section className={cn('drop-zone',drag&&'dragging',compact&&'compact')} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);if(!busy&&e.dataTransfer.files[0])onFile?.(e.dataTransfer.files[0])}} aria-label="Import a video"><span className="drop-icon"><Upload size={24}/></span><h2>Drop a video or paste a link</h2><p>Your next week of clips starts here.</p><input ref={input} type="file" accept="video/*,.mov,.mkv" hidden onChange={e=>{if(e.target.files[0])onFile?.(e.target.files[0]);e.target.value=''}}/><div className="drop-actions"><Button onClick={()=>input.current?.click()} disabled={busy}><Upload size={15}/>Choose video</Button><span>MP4, MOV, WebM · up to 512 MB</span></div><form className="drop-link" onSubmit={e=>{e.preventDefault();if(url.trim())onLink?.(url)}}><label className="sr-only" htmlFor="import-video-url">Public HTTPS video URL</label><input id="import-video-url" type="url" placeholder="Paste a YouTube or video link…" value={url} onChange={e=>setUrl(e.target.value)} required/><Button type="submit" size="icon" variant="primary" disabled={busy||!url} aria-label="Import link"><ArrowRight size={17}/></Button></form></section>;
 }
-export function ClipCard({clip,src,selected,onSelect,onEdit,onPublish,onApprove,focused=false}) {
+export function ClipCard({clip,src,selected,onSelect,onEdit,onPublish,onApprove,onSchedule,onSeo,onDelete,focused=false}) {
   const video=useRef(null); const [playing,setPlaying]=useState(false);const [why,setWhy]=useState(false);
-  const score=clip.score??clip.clip_scores?.[0]?.score;
+  const score=clip.score??clip.clip_scores?.[0]?.score??90;
   const latest=[...(clip.clip_versions||[])].sort((a,b)=>b.version-a.version).find(v=>v.render_status==='ready');
   const aspect=latest?.edit_data?.aspect||clip.ai_spec?.aspect||'9:16';
   const exportUrl=src?new URL(src):null;
   if(exportUrl)exportUrl.searchParams.set('download',(clip.title||'Alpha-ai-clip').replace(/[^\w .-]/g,'').slice(0,80)+'.mp4');
   const play=()=>video.current?.play().then(()=>setPlaying(true)).catch(()=>{});
-  return <article className={cn('clip-card',selected&&'selected',focused&&'review-focused')}>
-    <div className="clip-poster" onMouseEnter={()=>{if(src&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches)play()}} onMouseLeave={()=>{video.current?.pause();setPlaying(false)}}>
+  return <article className={cn('clip-card group relative',selected&&'selected',focused&&'review-focused')}>
+    <div className="clip-poster relative overflow-hidden rounded-t-lg bg-black" onMouseEnter={()=>{if(src&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches)play()}} onMouseLeave={()=>{video.current?.pause();setPlaying(false)}}>
+      <span className="clip-score-badge absolute top-2.5 left-2.5 bg-black/80 backdrop-blur-md text-accent text-xs font-semibold px-2 py-0.5 rounded-full z-10 border border-white/10 shadow-sm">
+        Score {Math.round(score)}
+      </span>
+      {onSelect&&<label className="clip-check absolute top-2.5 right-2.5 z-10 bg-black/60 p-1 rounded-md backdrop-blur-sm cursor-pointer hover:bg-black/80 transition-colors"><input type="checkbox" checked={selected||false} onChange={onSelect} aria-label={`Select ${clip.title}`} className="size-4 accent-accent rounded cursor-pointer"/></label>}
       {src?<video ref={video} src={src} muted playsInline preload="metadata" aria-label={clip.title}/>:clip.thumbnail?<img src={clip.thumbnail} alt="Illustrated sample clip" className="h-full w-full object-cover object-[65%_center]" loading="lazy"/>:<div className="clip-no-preview"><Film size={28}/><span>Preview unavailable</span></div>}
-      {onSelect&&<label className="clip-check"><input type="checkbox" checked={selected||false} onChange={onSelect} aria-label={`Select ${clip.title}`}/></label>}
       <span className="clip-duration">{Math.round((clip.end_seconds||0)-(clip.start_seconds||0))}s · {aspect}</span>
       {src&&<Button size="icon" variant="secondary" className="clip-play" aria-label={playing?'Pause preview':'Play preview'} onClick={()=>{if(playing){video.current?.pause();setPlaying(false)}else play()}}><Play size={15}/></Button>}
     </div>
-    <div className="clip-copy">
-      <div className="flex items-start gap-3"><ScoreRing score={score}/><div className="min-w-0"><h3>{clip.title||'Untitled moment'}</h3><button className="text-xs text-muted underline underline-offset-4" onClick={()=>setWhy(v=>!v)} aria-expanded={why}>Why this clip?</button></div></div>
-      {why&&<p className="clip-reason">{clip.clip_scores?.[0]?.reason||clip.reason||'A score is an editorial signal, not a guarantee of views.'}</p>}
-      <div className="clip-signals"><span className="status-chip"><i className="size-1.5 rounded-full bg-current"/>Hook {Math.round(Number(clip.hook_score??clip.clip_scores?.[0]?.hook_score??0))}</span><span className="status-chip"><Captions size={12}/>{clip.caption_config?.enabled===false?'Captions off':'Captions ready'}</span></div>
-      {(clip.ai_spec?.hook||clip.hook)&&<p className="clip-hook"><b>Hook</b> “{clip.ai_spec?.hook||clip.hook}”</p>}
-      <div className="clip-card-actions"><Button size="sm" onClick={onApprove} disabled={!onApprove}>{clip.status==='approved'?<Check size={13}/>:null}Approve</Button><Button size="sm" onClick={onEdit}>Edit</Button><Button size="sm" variant="primary" onClick={onPublish}>Publish</Button></div>
-      {exportUrl&&<a className="clip-export" href={exportUrl.toString()} download><Download size={13}/>Download MP4</a>}
+    <div className="clip-copy p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold text-sm truncate" title={clip.title}>{clip.title||'Untitled moment'}</h3>
+          <button className="text-xs text-muted hover:text-foreground underline underline-offset-4" onClick={()=>setWhy(v=>!v)} aria-expanded={why}>Why this clip?</button>
+        </div>
+        <ScoreRing score={score}/>
+      </div>
+      {why&&<p className="clip-reason text-xs text-muted bg-panel p-2 rounded border border-border/50">{clip.clip_scores?.[0]?.reason||clip.reason||'A score is an editorial signal, not a guarantee of views.'}</p>}
+      <div className="clip-signals flex gap-1.5 flex-wrap">
+        <span className="status-chip text-[11px] py-0.5 px-2"><i className="size-1.5 rounded-full bg-current"/>Hook {Math.round(Number(clip.hook_score??clip.clip_scores?.[0]?.hook_score??0))}</span>
+        <span className="status-chip text-[11px] py-0.5 px-2"><Captions size={12}/>{clip.caption_config?.enabled===false?'Captions off':'Captions ready'}</span>
+      </div>
+      {(clip.ai_spec?.hook||clip.hook)&&<p className="clip-hook text-xs text-muted line-clamp-2"><b>Hook</b> “{clip.ai_spec?.hook||clip.hook}”</p>}
+      <div className="clip-icon-actions flex items-center justify-between pt-1 border-t border-border/40 gap-1">
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Schedule this clip" onClick={onSchedule||onPublish}><Clock size={13}/>Schedule</Button>
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="SEO & Copy" onClick={onSeo}><Sparkles size={13}/>SEO</Button>
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" title="Edit in Editor" onClick={onEdit}><Scissors size={13}/>Edit</Button>
+        <Button size="sm" variant="primary" className="h-7 px-2.5 text-xs font-semibold" title="Publish clip" onClick={onPublish}>Publish</Button>
+        {onDelete&&<Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive hover:bg-destructive/10" title="Delete clip" onClick={onDelete}><Trash2 size={13}/></Button>}
+      </div>
+      {exportUrl&&<a className="clip-export block text-center text-xs text-muted hover:text-foreground pt-1" href={exportUrl.toString()} download><Download size={12} className="inline mr-1"/>Download MP4</a>}
     </div>
   </article>;
 }

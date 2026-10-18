@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles} from 'lucide-react';
+import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
@@ -14,15 +14,14 @@ import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
 import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
 import {MotionToggle} from './motion';
-import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen} from './management-screens';
+import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
 import {PricingCards} from './marketing';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
-const AssistantScreen=dynamic(()=>import('./assistant-screen'),{loading:()=> <ScreenSkeleton/>});
 
-export const NAV=[['home','Home',Home],['projects','Projects',Folder],['chat','Video chat',WandSparkles],['clips','Clips',Clapperboard],['assistant','AI assistant',WandSparkles],['publish','Publish',CalendarDays],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
-const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand'};
+export const NAV=[['home','Home',Home],['projects','Projects',Folder],['studio','Studio',WandSparkles],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['stuff','Stuff',Archive],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
+const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio',assistant:'studio'};
 
 export default function StudioApp() {
   const params=useSearchParams(),router=useRouter(),demo=params.get('demo')==='1';
@@ -107,6 +106,13 @@ function StudioWorkspace() {
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
+  const [usageLimits,setUsageLimits]=useState({availableCredits:100,dailyVideoMinutes:20});
+  useEffect(()=>{
+    if(demo||!workspace?.id)return;
+    studioApi(`/api/usage?workspace_id=${encodeURIComponent(workspace.id)}`)
+      .then(res=>{if(res)setUsageLimits({availableCredits:res.availableCredits??100,dailyVideoMinutes:res.dailyVideoMinutes??20})})
+      .catch(()=>{});
+  },[demo,workspace?.id]);
   useEffect(()=>{
     document.documentElement.dataset.studioSidebar=collapsed?'collapsed':'expanded';
     return()=>{delete document.documentElement.dataset.studioSidebar};
@@ -125,11 +131,13 @@ function StudioWorkspace() {
   else if(view==='home')screen=<HomeScreen projects={projects}/>;
   else if(view==='projects')screen=<ProjectsScreen resource={projects}/>;
   else if(view==='project')screen=projects.loading?<ScreenSkeleton/>:projects.error?<ErrorState message={projects.error} onRetry={projects.retry}/>:<ProjectScreen projects={projects.data||[]} projectId={projectId}/>;
-  else if(view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='studio'||view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
-  else if(view==='assistant')screen=<AssistantScreen/>;
+  else if(view==='assistant')screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='publish')screen=<PublishScreen/>;
+  else if(view==='seo')screen=<SeoScreen clipId={clipId} projectId={projectId}/>;
+  else if(view==='stuff')screen=<StuffScreen/>;
   else if(view==='insights')screen=<InsightsScreen/>;
   else if(view==='brand')screen=<BrandScreen/>;
   else if(view==='settings')screen=<SettingsScreen/>;
@@ -140,7 +148,7 @@ function StudioWorkspace() {
       <nav aria-label="Studio navigation">{navItems}</nav>
       <div className="sidebar-bottom">
         {workspaceSelect}
-        <div className="usage-meter"><strong>{usage.error?'—':`${minutes} min`}</strong><span className="block mt-1">Source media in this workspace</span><span className="block mt-1">Pilot access · billing not connected</span></div>
+        <div className="usage-meter"><strong>{usageLimits.availableCredits} credits · {usageLimits.dailyVideoMinutes}m daily</strong><span className="block mt-1">{minutes} min source media in workspace</span><span className="block mt-1">Free daily allowance</span></div>
         <Button size="sm" className="w-full" onClick={()=>setUpgrade(true)} aria-label="View planned upgrades">View planned upgrades</Button>
       </div>
     </aside>
@@ -153,6 +161,7 @@ function StudioWorkspace() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button className="studio-search" onClick={()=>setCommand(true)} aria-label="Search workspace, Command K"><Search size={15}/><span>Search workspace</span><kbd>⌘ K</kbd></button>
+          <Button variant="ghost" size="icon" aria-label="AI Assistant" title="AI Assistant" onClick={()=>navigate('studio',{project:projectId,assistant:'1'})}><WandSparkles size={17}/></Button>
           <ThemeToggle/>
           <span className="hidden sm:inline-flex"><MotionToggle/></span>
           <Button variant="ghost" size="icon" aria-label="View notifications" onClick={()=>setNotifications(true)}><Bell size={17}/></Button>

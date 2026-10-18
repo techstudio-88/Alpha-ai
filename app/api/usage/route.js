@@ -10,6 +10,22 @@ export async function GET(request){
     const postedRewards=(ledger||[]).filter(row=>row.entry_type==='reward'&&row.status==='posted').reduce((sum,row)=>sum+Number(row.amount||0),0);
     const postedSpend=(ledger||[]).filter(row=>row.entry_type==='spend'&&row.status==='posted').reduce((sum,row)=>sum+Math.abs(Number(row.amount||0)),0);
     const daily=Number(allowance?.daily_tokens??100),spent=Math.max(Number(allowance?.tokens_spent||0),postedSpend),bonus=postedRewards;
-    return Response.json({date,dailyTokens:daily,bonusTokens:bonus,spentTokens:spent,availableTokens:Math.max(0,daily+bonus-spent),processingMinutes:Number(allowance?.processing_minutes||0),upgradeRequired:spent>=daily+bonus},{headers:{'Cache-Control':'no-store'}});
+    const creditRow=checked(await admin.from('usage_credits').select('credits').eq('workspace_id',workspaceId).eq('user_id',user.id).maybeSingle());
+    const creditBalance=creditRow?.credits!=null?Number(creditRow.credits):Math.max(0,daily+bonus-spent);
+    return Response.json({
+      date,
+      credits:creditBalance,
+      dailyCredits:daily,
+      bonusCredits:bonus,
+      spentCredits:spent,
+      availableCredits:creditBalance,
+      dailyTokens:daily,
+      bonusTokens:bonus,
+      spentTokens:spent,
+      availableTokens:creditBalance,
+      dailyVideoMinutes:20,
+      processingMinutes:Number(allowance?.processing_minutes||0),
+      upgradeRequired:creditBalance<=0 && spent>=daily+bonus
+    },{headers:{'Cache-Control':'no-store'}});
   }catch(error){return workflowError(error)}
 }
