@@ -1,56 +1,80 @@
 -- Migration: 20261019_phase_2_studio_seo_publish_retention.sql
--- Phase 2: Storage retention, deletion logs, export archives, and SEO/publish schema
+-- Phase 2: Storage Retention Policy, SEO Counters, Stuff/Export History & Instagram Connector Support
 
-create table if not exists public.storage_deletion_logs (
-  id uuid primary key default gen_random_uuid(),
-  workspace_id uuid references public.workspaces(id) on delete set null,
-  file_path text not null,
-  entity_type text not null, -- 'upload', 'clip', 'thumbnail', 'zip', 'media_asset'
-  bytes_freed bigint not null default 0,
-  reason text not null default 'retention_policy',
-  deleted_at timestamptz not null default now()
-);
+-- 1. Storage retention & expiry tracking
+alter table public.media_assets
+  add column if not exists expires_at timestamptz default (now() + interval '7 days'),
+  add column if not exists deletion_warned_at timestamptz;
 
-create index if not exists idx_storage_deletion_logs_workspace_id on public.storage_deletion_logs(workspace_id);
-create index if not exists idx_storage_deletion_logs_deleted_at on public.storage_deletion_logs(deleted_at desc);
+alter table public.clip_versions
+  add column if not exists expires_at timestamptz default (now() + interval '7 days');
 
 create table if not exists public.export_archives (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
-  user_id uuid references auth.users(id) on delete set null,
-  storage_path text not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
   filename text not null,
-  file_size_bytes bigint not null default 0,
+  storage_path text not null,
+  size_bytes bigint not null default 0,
   clip_count integer not null default 0,
-  created_at timestamptz not null default now(),
+  plan_snapshot text not null default 'free',
+  status text not null default 'ready' check (status in ('building','ready','expired','failed')),
   expires_at timestamptz not null default (now() + interval '7 days'),
-  download_count integer not null default 0,
-  last_downloaded_at timestamptz
+  created_at timestamptz not null default now()
 );
 
-create index if not exists idx_export_archives_workspace_id on public.export_archives(workspace_id);
-create index if not exists idx_export_archives_project_id on public.export_archives(project_id);
-create index if not exists idx_export_archives_expires_at on public.export_archives(expires_at);
+create index if not exists export_archives_workspace_idx on public.export_archives(workspace_id, created_at desc);
+alter table public.export_archives enable row level security;
 
--- Add retention tracking columns to media assets and clips if missing
-do $$
-begin
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='media_assets' and column_name='expires_at') then
-    alter table public.media_assets add column expires_at timestamptz default (now() + interval '7 days');
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='media_assets' and column_name='deletion_warning_sent_at') then
-    alter table public.media_assets add column deletion_warning_sent_at timestamptz;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='clip_versions' and column_name='expires_at') then
-    alter table public.clip_versions add column expires_at timestamptz default (now() + interval '7 days');
-  end if;
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='clip_versions' and column_name='deletion_warning_sent_at') then
-    alter table public.clip_versions add column deletion_warning_sent_at timestamptz;
-  end if;
-end $$;
+drop policy if exists export_archives_member_all on public.export_archives;
+create policy export_archives_member_all on public.export_archives
+  for all to authenticated
+  using (public.is_workspace_member(workspace_id))
+  with check (public.is_workspace_member(workspace_id));
 
--- Calculate retention expiry based on workspace plan: Free: 7 days, Pro: 30 days, Studio: 90 days
+create table if not exists public.storage_deletion_logs (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  project_id uuid references public.projects(id) on delete set null,
+  entity_type text not null check (entity_type in ('media_asset','clip_version','thumbnail','export_zip')),
+  entity_id uuid,
+  storage_path text not null,
+  reason text not null default 'retention_expired',
+  deleted_at timestamptz not null default now()
+);
+
+create index if not exists storage_deletion_logs_workspace_idx on public.storage_deletion_logs(workspace_id, deleted_at desc);
+alter table public.storage_deletion_logs enable row level security;
+
+-- 2. SEO Regeneration & Cover Rotation Server-Enforced Counters
+alter table public.clip_repurpose_assets
+  add column if not exists regeneration_count integer not null default 0,
+  add column if not exists max_regenerations integer not null default 3,
+  add column if not exists cover_rotation_count integer not null default 0,
+  add column if not exists max_cover_rotations integer not null default 1,
+  add column if not exists youtube_tags text[] not null default '{}',
+  add column if not exists keyword_suggestions text[] not null default '{}',
+  add column if not exists variations jsonb not null default '[]'::jsonb;
+
+-- 3. Score Breakdown (Hook, Flow, Emotion, Length) & Target Language
+alter table public.clip_scores
+  add column if not exists flow_score numeric default 80,
+  add column if not exists length_score numeric default 85;
+
+alter table public.transcripts
+  add column if not exists detected_language text default 'en',
+  add column if not exists target_caption_language text default 'en';
+
+-- 4. Publish Jobs status expansion (draft, scheduled, publishing, published, failed)
+alter table public.publish_jobs
+  drop constraint if exists publish_jobs_status_check;
+
+alter table public.publish_jobs
+  add constraint publish_jobs_status_check
+  check (status in ('draft','queued','scheduled','processing','publishing','published','failed','cancelled'));
+
+-- 5. Calculate retention expiry based on workspace plan: Free: 7 days, Pro: 30 days, Studio: 90 days
 create or replace function public.calculate_retention_expiry(p_workspace_id uuid)
 returns timestamptz
 language plpgsql
@@ -70,32 +94,3 @@ begin
   end if;
 end;
 $$;
-
--- RLS
-alter table public.storage_deletion_logs enable row level security;
-alter table public.export_archives enable row level security;
-
-drop policy if exists "storage_deletion_logs_member_select" on public.storage_deletion_logs;
-create policy "storage_deletion_logs_member_select" on public.storage_deletion_logs
-  for select to authenticated
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = storage_deletion_logs.workspace_id
-        and wm.user_id = auth.uid()
-    )
-  );
-
-drop policy if exists "export_archives_member_select" on public.export_archives;
-create policy "export_archives_member_select" on public.export_archives
-  for select to authenticated
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = export_archives.workspace_id
-        and wm.user_id = auth.uid()
-    )
-  );
-
-grant select on public.storage_deletion_logs, public.export_archives to authenticated;
-grant all on public.storage_deletion_logs, public.export_archives to service_role;

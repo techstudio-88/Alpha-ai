@@ -4,164 +4,62 @@ This document defines the exact procedures for backing up and restoring Alpha.ai
 
 ---
 
-## 1. Scope of Backups
+## 1. Scope of Backups (Requirement #0)
 
-### 1.1 Core Database Tables
+### 1.1 Tables Requiring Daily Automated Backups (Point-in-Time Recovery / pg_dump)
 
-The following tables contain critical state and must be included in scheduled snapshots:
+- **Identity & Tenancy**: `auth.users`, `public.profiles`, `public.workspaces`, `public.workspace_members`, `public.subscriptions`
+- **Billing & Quotas**: `public.token_ledger`, `public.credit_ledger`, `public.daily_usage`, `public.promotion_claims`, `public.usage_credits`, `public.workspace_entitlements`
+- **Projects & Editorial State**: `public.projects`, `public.project_sources`, `public.media_assets`, `public.videos`, `public.transcripts`, `public.transcript_segments`, `public.transcript_words`, `public.clips`, `public.clip_versions`, `public.clip_scores`, `public.clip_repurpose_assets`
+- **Queues, Publishing & Audit**: `public.processing_jobs`, `public.pending_video_parts`, `public.publish_connections`, `public.publish_jobs`, `public.export_archives`, `public.storage_deletion_logs`, `public.audit_logs`, `public.user_consent_events`
 
-| Domain | Tables | Description |
-|---|---|---|
-| **Workspaces & Auth** | `profiles`, `workspaces`, `workspace_members`, `subscriptions`, `workspace_entitlements` | User identity, multi-tenant workspace associations, and plan entitlements |
-| **Media & Projects** | `projects`, `media_assets`, `project_sources`, `videos` | Project hierarchy, raw source file metadata, upload tracking |
-| **AI & Transcripts** | `transcripts`, `transcript_segments`, `transcript_words`, `processing_jobs` | Whisper/Gemini transcripts, word-level timestamps, processing job queue |
-| **Clips & Edits** | `clips`, `clip_versions`, `clip_scores`, `clip_repurpose_assets`, `clip_schedules` | Generated clips, re-cut boundaries, 4-metric scores, SEO copy, schedules |
-| **Publishing** | `publish_connections`, `publish_jobs`, `scheduled_posts`, `posts` | Encrypted YouTube/Instagram OAuth tokens, publish queue, status logs |
-| **Accounting & Quota** | `usage_credits`, `credit_ledger`, `daily_usage`, `token_ledger`, `video_usage_daily`, `workspace_feature_usage` | Credit balance, daily video-minute counters, feature regeneration quotas |
-| **Governance & Exports**| `export_archives`, `storage_deletion_logs`, `audit_logs`, `notifications`, `brand_kits`, `brand_kit_profiles` | ZIP archive metadata, retention logs, compliance audit trail |
+### 1.2 Storage Buckets Requiring Backup
 
-### 1.2 Storage Buckets
-
-- **`media`**: Contains raw video uploads (`<workspaceId>/<projectId>/...`), rendered vertical clips, generated thumbnails (`.jpg`/`.png`), and cached export ZIP archives (`<workspaceId>/<projectId>/exports/...`).
+- **Bucket `media`**: Specifically active `<workspace_id>/<project_id>/source-*.mp4`, `/clips/*/v*.mp4`, `/thumbnails/*.jpg`, and `/exports/*.zip` within their retention window, plus permanent brand-kit logos.
 
 ---
 
-## 2. Backup Procedures
+## 2. How to Back Up & Restore
 
-### 2.1 Database Full Dump (`pg_dump`)
-
-To create a complete snapshot of the database schema and data:
-
+### 2.1 Database Backup
+Run `pg_dump` with custom format:
 ```bash
-# Set database connection string securely (from Supabase dashboard or pooler)
-export DB_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
-
-# Dump entire database with custom format (compressed, supports selective restore)
-pg_dump "$DB_URL" \
-  --format=custom \
-  --clean \
-  --if-exists \
-  --no-owner \
-  --no-privileges \
-  --schema=public \
-  --file="alpha_ai_backup_$(date +%Y%m%d_%H%M%S).dump"
-
-# Plaintext SQL dump for audit and schema inspection
-pg_dump "$DB_URL" \
-  --format=plain \
-  --schema=public \
-  --no-owner \
-  --no-privileges \
-  --file="alpha_ai_schema_$(date +%Y%m%d_%H%M%S).sql"
+pg_dump --format=custom --no-acl --no-owner "$SUPABASE_DB_URL" -f alpha_backup_$(date +%F).dump
 ```
 
-### 2.2 Table-Specific Data Dump
-
-For lightweight, frequent operational backups of ledger, publish connections, and workspace memberships:
-
+### 2.2 Database Restore
+Restore with automatic cleanup of existing objects:
 ```bash
-pg_dump "$DB_URL" \
-  --table=public.usage_credits \
-  --table=public.credit_ledger \
-  --table=public.daily_usage \
-  --table=public.workspace_entitlements \
-  --table=public.publish_connections \
-  --table=public.export_archives \
-  --table=public.storage_deletion_logs \
-  --data-only \
-  --file="alpha_ai_ledger_$(date +%Y%m%d).sql"
+pg_restore --clean --if-exists --no-acl --no-owner -d "$SUPABASE_DB_URL" alpha_backup_YYYY-MM-DD.dump
 ```
 
-### 2.3 Storage Bucket Backup (`media`)
+### 2.3 Storage Backup & Restore
+Supabase Storage is S3-compatible. Use AWS CLI or Supabase S3 protocol:
 
-Supabase Storage is S3-compatible. Use AWS CLI or Supabase CLI to synchronize the `media` bucket to local or offsite backup storage:
-
+**Backup Storage:**
 ```bash
-# Configure AWS CLI with Supabase S3 credentials
-export AWS_ACCESS_KEY_ID="[SUPABASE-STORAGE-KEY-ID]"
-export AWS_SECRET_ACCESS_KEY="[SUPABASE-STORAGE-SECRET]"
-export S3_ENDPOINT="https://[PROJECT-REF].supabase.co/storage/v1/s3"
+aws s3 sync s3://media s3://media-backup --endpoint-url https://<project_ref>.supabase.co/storage/v1/s3
+```
 
-# Mirror the media bucket to an offsite S3-compatible archive
-aws s3 sync s3://media ./storage_backup_media/ \
-  --endpoint-url="$S3_ENDPOINT" \
-  --exclude "*.tmp"
+**Storage Restore:**
+Sync object prefixes back to `supabase.storage.from('media')` via Supabase Storage S3 protocol:
+```bash
+aws s3 sync s3://media-backup s3://media --endpoint-url https://<project_ref>.supabase.co/storage/v1/s3
 ```
 
 ---
 
-## 3. Restoration Procedures
+## 3. Platform Limitations & Approval Submissions (Requirement #7)
 
-### 3.1 Disaster Recovery: Full Database Restore (`pg_restore`)
+### 3.1 YouTube Data API v3 (`youtube.upload` scope)
+- **Limitation**: Until Google completes OAuth Trust & Safety verification for your Google Cloud project, all videos uploaded via the API by external users are locked to private by YouTube unless your app is verified, and unverified apps are capped at 100 test users. Default quota is 10,000 units/day (each video upload costs 1,600 units = ~6 uploads/day on default quota).
+- **What You Must Submit to Google**:
+  1. **OAuth Brand Verification**: verified domain ownership in Google Search Console, homepage link to `/privacy` and `/terms`.
+  2. **Sensitive/Restricted Scope Verification** for `https://www.googleapis.com/auth/youtube.upload` with a YouTube screencast video showing the full OAuth consent screen, connecting a channel, and publishing a clip in Alpha AI.
+  3. **YouTube API Quota Extension form** requesting 100,000+ units/day.
 
-To restore into a fresh database or staging instance:
-
-```bash
-# Ensure target database is clean and accessible
-export TARGET_DB_URL="postgresql://postgres:[PASSWORD]@db.[NEW-PROJECT-REF].supabase.co:5432/postgres"
-
-# Restore from the custom-format dump
-pg_restore \
-  --dbname="$TARGET_DB_URL" \
-  --clean \
-  --if-exists \
-  --no-owner \
-  --no-privileges \
-  --schema=public \
-  --verbose \
-  "alpha_ai_backup_20261019_120000.dump"
-```
-
-### 3.2 Selective Table Restore
-
-To restore only specific tables (for example, recovering accidentally deleted projects or credit ledger):
-
-```bash
-pg_restore \
-  --dbname="$TARGET_DB_URL" \
-  --table=credit_ledger \
-  --table=usage_credits \
-  --data-only \
-  "alpha_ai_backup_20261019_120000.dump"
-```
-
-### 3.3 Storage Bucket Restore
-
-Restore media files back to the Supabase `media` bucket:
-
-```bash
-aws s3 sync ./storage_backup_media/ s3://media \
-  --endpoint-url="$S3_ENDPOINT" \
-  --exact-timestamps
-```
-
----
-
-## 4. Verification & Health Checklist
-
-After any restore operation, run the following verification steps:
-
-1. **Verify Schema & Migrations**:
-   ```bash
-   npx supabase migration list --project-ref [PROJECT-REF]
-   ```
-2. **Verify Row Counts**:
-   ```sql
-   SELECT 'workspaces' as table_name, count(*) FROM public.workspaces
-   UNION ALL
-   SELECT 'projects', count(*) FROM public.projects
-   UNION ALL
-   SELECT 'clips', count(*) FROM public.clips
-   UNION ALL
-   SELECT 'usage_credits', count(*) FROM public.usage_credits
-   UNION ALL
-   SELECT 'publish_connections', count(*) FROM public.publish_connections;
-   ```
-3. **Verify Encryption & Secrets**:
-   Ensure `MEDIA_WORKER_SECRET` matches the key used to encrypt `publish_connections` and `project_sources`.
-4. **Run Application Acceptance Tests**:
-   ```bash
-   npm test
-   npm run check:syntax
-   npm run build
-   ```
+### 3.2 Instagram Graph API (`instagram_content_publish`, `instagram_basic`, `pages_show_list`)
+- **Limitation**: Instagram's API does not support Personal Instagram accounts—users must have an Instagram Business or Creator account linked to a Facebook Page. Reel uploads use a 2-step container flow (`POST /<ig-user-id>/media` with `media_type=REELS` and a public/signed video URL, polling container status until `FINISHED`, then `POST /<ig-user-id>/media_publish`), capped at 50 API-published posts per 24 hours per account.
+- **What You Must Submit to Meta App Review**:
+  1. **Meta Business Verification** in Meta Business Suite.
+  2. **App Review submission** for `instagram_basic`, `instagram_content_publish`, and `pages_read_engagement` with screen recordings showing the OAuth login, account connection, and Reel publishing inside Alpha AI.
