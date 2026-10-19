@@ -4,7 +4,7 @@
   gap: clamp(32px, 5vw, 72px);
   padding: 92px 0 94px;
 }
-.premium-hero .hero-atmosphere { inset: -70px -40px; background: radial-gradient(ellipse at 68% 37%, rgb(198 244 50 / 7%), transparent 48%); }
+.premium-hero .hero-atmosphere { inset: 0; background: radial-gradient(ellipse at 68% 37%, rgb(198 244 50 / 7%), transparent 48%); }
 .premium-hero .hero-kicker { border-radius: 999px; padding: 8px 13px; color: var(--muted); letter-spacing: .095em; background: color-mix(in srgb, var(--panel) 75%, transparent); }
 .premium-hero .hero-kicker i { box-shadow: 0 0 0 4px rgb(198 244 50 / 10%), 0 0 14px rgb(198 244 50 / 55%); }
 .premium-hero .hero-copy h1 { max-width: 620px; font-size: clamp(48px, 4.9vw, 72px); letter-spacing: -.068em; line-height: 1.025; font-weight: 570; margin: 25px 0 25px; }
