@@ -4,7 +4,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive} from 'lucide-react';
+import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive,Plus} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
