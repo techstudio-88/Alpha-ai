@@ -10,10 +10,13 @@ export async function GET(request){
     const postedRewards=(ledger||[]).filter(row=>row.entry_type==='reward'&&row.status==='posted').reduce((sum,row)=>sum+Number(row.amount||0),0);
     const postedSpend=(ledger||[]).filter(row=>row.entry_type==='spend'&&row.status==='posted').reduce((sum,row)=>sum+Math.abs(Number(row.amount||0)),0);
     const daily=Number(allowance?.daily_tokens??100),spent=Math.max(Number(allowance?.tokens_spent||0),postedSpend),bonus=postedRewards;
+    const entitlement=checked(await admin.from('workspace_entitlements').select('plan').eq('workspace_id',workspaceId).maybeSingle());
+    const plan=['pro','studio'].includes(String(entitlement?.plan||'free').toLowerCase())?String(entitlement.plan).toLowerCase():'free';
     const creditRow=checked(await admin.from('usage_credits').select('credits').eq('workspace_id',workspaceId).eq('user_id',user.id).maybeSingle());
     const creditBalance=creditRow?.credits!=null?Number(creditRow.credits):Math.max(0,daily+bonus-spent);
     return Response.json({
       date,
+      plan,
       credits:creditBalance,
       dailyCredits:daily,
       bonusCredits:bonus,
