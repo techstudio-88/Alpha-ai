@@ -99,6 +99,13 @@ export default function ProjectChat() {
 
   // Start processing after popups
   async function confirmProcessingPreferences() {
+    // Keep this guard server-independent: keyboard submission or a stale click must
+    // never start a job with an incomplete brief.
+    if (busy || !preferencesComplete) return;
+    if (!demo && (!workspace?.id || !projectId || !job?.id)) {
+      setError('Your processing job is still loading. Wait a moment and try again.');
+      return;
+    }
     setBusy(true);
     setError('');
     const finalPrefs = {
@@ -608,6 +615,7 @@ export default function ProjectChat() {
             <button
               key={opt.id}
               onClick={() => {
+                setError('');
                 setSelectedPlatforms(opt.id);
                 setCaptionStyle('');
                 setClipCount('');
@@ -664,7 +672,7 @@ export default function ProjectChat() {
                 {['youtube', 'instagram', 'both'].map(p => (
                   <button
                     key={p}
-                    onClick={() => { setSelectedPlatforms(p); setActiveTab('captions'); }}
+                    onClick={() => { setError(''); setSelectedPlatforms(p); setActiveTab('captions'); }}
                     className={`p-2.5 rounded-md text-xs font-medium border text-center capitalize ${selectedPlatforms === p ? 'border-accent bg-accent/15 text-foreground font-bold' : 'border-border bg-panel text-muted'}`}
                   >
                     {p}
@@ -687,7 +695,7 @@ export default function ProjectChat() {
                 ].map(s => (
                   <button
                     key={s.id}
-                    onClick={() => { setCaptionStyle(s.id); setActiveTab('clips'); }}
+                    onClick={() => { setError(''); setCaptionStyle(s.id); setActiveTab('clips'); }}
                     className={`p-2.5 rounded-md border text-left ${captionStyle === s.id ? 'border-accent bg-accent/15 text-foreground' : 'border-border bg-panel text-muted'}`}
                   >
                     <b className="text-xs block text-foreground">{s.label}</b>
@@ -714,7 +722,7 @@ export default function ProjectChat() {
                 <select
                   className="input text-xs"
                   value={clipCount}
-                  onChange={e => setClipCount(e.target.value)}
+                  onChange={e => { setError(''); setClipCount(e.target.value); }}
                 >
                   <option value="">Choose clip count…</option>
                   <option value="auto">Auto — choose only strong moments</option>
@@ -725,6 +733,8 @@ export default function ProjectChat() {
               </div>
             </div>
           )}
+
+          {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
           {/* Actions */}
           <div className="pt-3 border-t border-border/60 flex items-center justify-between">
