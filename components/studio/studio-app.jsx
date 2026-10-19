@@ -118,11 +118,15 @@ function StudioWorkspace() {
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
   const [usageLimits,setUsageLimits]=useState({availableCredits:100,dailyVideoMinutes:20});
+  const [workspacePlan,setWorkspacePlan]=useState(demo?'free':'loading');
   useEffect(()=>{
-    if(demo||!workspace?.id)return;
+    if(demo){setWorkspacePlan('free');return}
+    if(!workspace?.id)return;
+    let alive=true;setWorkspacePlan('loading');
     studioApi(`/api/usage?workspace_id=${encodeURIComponent(workspace.id)}`)
-      .then(res=>{if(res)setUsageLimits({availableCredits:res.availableCredits??100,dailyVideoMinutes:res.dailyVideoMinutes??20})})
-      .catch(()=>{});
+      .then(res=>{if(alive&&res){setUsageLimits({availableCredits:res.availableCredits??100,dailyVideoMinutes:res.dailyVideoMinutes??20});setWorkspacePlan(['pro','studio'].includes(String(res.plan||'').toLowerCase())?String(res.plan).toLowerCase():'free')}})
+      .catch(()=>{if(alive)setWorkspacePlan('unknown')});
+    return()=>{alive=false};
   },[demo,workspace?.id]);
   useEffect(()=>{
     document.documentElement.dataset.studioSidebar=collapsed?'collapsed':'expanded';
@@ -135,7 +139,7 @@ function StudioWorkspace() {
   const minutes=Math.round((usage.data||[]).reduce((sum,a)=>sum+(Number(a.duration_seconds)||0),0)/60*10)/10;
   const link=id=>{const p=new URLSearchParams();if(demo)p.set('demo','1');if(id!=='home')p.set('view',id);return '/studio'+(p.size?'?'+p:'')};
   const navItems=NAV.map(([id,label,Icon])=><Link key={id} href={link(id)} className={view===id?'active':''} aria-label={label} title={label} aria-current={view===id?'page':undefined} onClick={()=>setMobile(false)}><Icon size={17}/><span>{label}</span></Link>);
-  const workspaceSelect=<div className="workspace-picker-group"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/><Button size="sm" variant="ghost" className="w-full justify-start mt-2" onClick={()=>{setWorkspaceName('');setWorkspaceError('');setWorkspaceDialog(true)}}><Plus size={14}/>Add workspace <span className="ml-auto text-[10px] text-muted">PRO</span></Button></div>;
+  const workspaceSelect=<div className="workspace-picker-group"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/><Button size="sm" variant="ghost" className="w-full justify-start mt-2" onClick={()=>{if(workspacePlan==='free'||demo){notify('Multiple workspaces are available on Pro and Studio plans.');setUpgrade(true);return}if(workspacePlan==='loading'||workspacePlan==='unknown'){notify('Could not verify your workspace plan. Please try again in a moment.');return}setWorkspaceName('');setWorkspaceError('');setWorkspaceDialog(true)}}><Plus size={14}/>Add workspace <span className="ml-auto text-[10px] text-muted">PRO</span></Button></div>;
   async function createWorkspace(e){
     e.preventDefault();setWorkspaceBusy(true);setWorkspaceError('');
     try{
