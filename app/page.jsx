@@ -2,6 +2,7 @@ import {ArrowRight,AudioLines,CalendarDays,Check,FileText,Film,Focus,Scissors,Sh
 import {ButtonLink,ScoreRing} from '../components/studio/ui';
 import {BeforeAfter,DemoButton,FAQ,FormatsStrip,LazyDemo,MarketingFooter,MarketingNav,PricingCards,UseCases} from '../components/studio/marketing';
 import LandingHero,{FeatureVisual,ScrollAssembly,WorkflowQuality} from '../components/studio/landing-hero';
+import LandingMotion from '../components/studio/landing-motion';
 import AssistantShowcase from '../components/studio/assistant-showcase';
 
 const site=process.env.NEXT_PUBLIC_SITE_URL||'https://alpha-ai-smoky.vercel.app';
@@ -19,7 +20,7 @@ const questions=[
 const schema=[{'@context':'https://schema.org','@type':'SoftwareApplication',name:'Alpha.ai',url:site,applicationCategory:'MultimediaApplication',operatingSystem:'Web',description:metadata.description},
   {'@context':'https://schema.org','@type':'FAQPage',mainEntity:questions.map(([q,a])=>({'@type':'Question',name:q,acceptedAnswer:{'@type':'Answer',text:a}}))}];
 export default function Home(){
-  return <><MarketingNav/><main id="main-content"><div className="landing-container"><LandingHero/><FormatsStrip/>
+  return <><LandingMotion/><MarketingNav/><main id="main-content"><div className="landing-container"><LandingHero/><FormatsStrip/>
     <section className="landing-section" id="product"><div className="section-heading"><span className="eyebrow">FROM FOOTAGE TO FINISHED</span><h2>The good parts are already in there.</h2><p>One connected workflow. You make the final call.</p></div><div className="how-grid">{[
       ['01','Drop a video','Upload a recording or connect a supported source. Keep the original attached to its project.',<div className="how-visual source" key="source"><Upload size={28} className="text-muted"/><span className="text-xs text-muted">podcast-ep-24.mp4</span><span className="status-chip">Source attached</span></div>],
       ['02','Review the best moments','Compare AI scores and the reason behind each pick. Keep complete thoughts, not random snippets.',<div className="how-visual" key="moment"><div className="flex items-center gap-4 px-5"><ScoreRing score={94} size={56}/><span className="text-sm">A question beats<br/>a perfect plan.</span></div></div>],
