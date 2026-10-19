@@ -14,11 +14,12 @@ import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
 import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
 import {MotionToggle} from './motion';
-import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
+import {PublishScreen,InsightsScreen,BrandScreen,SeoScreen,StuffScreen} from './management-screens';
 import {PricingCards} from './marketing';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
+const SettingsScreen=dynamic(()=>import('./management-screens').then(m=>m.SettingsScreen),{ssr:false,loading:()=> <ScreenSkeleton/>});
 
 export const NAV=[['home','Home',Home],['projects','Projects',Folder],['studio','Studio',WandSparkles],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['stuff','Stuff',Archive],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
 const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio',assistant:'studio'};
