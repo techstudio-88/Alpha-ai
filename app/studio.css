@@ -144,3 +144,41 @@
 button[data-state="active"] {
   color: var(--foreground);
 }
+
+
+/* High-contrast overrides for compact editor controls and status copy. */
+.editor-parts > button,
+.editor-parts > button > span,
+.editor-status > span,
+.editor-playback > span,
+.editor-playback > label,
+.pipeline-stepper small,
+.clip-signals .status-chip,
+.clip-icon-actions button,
+.clip-copy a,
+.source-options button,
+.section-label > h2,
+.section-label > button,
+[role="tablist"] [role="tab"],
+[role="tab"][data-state],
+[id^="radix-"][role="tab"],
+[id^="radix-"][role="combobox"],
+.mt-4 > .flex.gap-2 > button {
+  color: var(--foreground) !important;
+}
+.editor-parts > button.bg-accent.text-accent-foreground,
+.editor-parts > button.bg-accent.text-accent-foreground > span,
+.transcript-words button.current,
+.timeline-track button.active,
+.pipeline-stepper .current .step-node,
+.pipeline-stepper .done .step-node {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+[role="status"], p[role="status"] {
+  color: var(--foreground) !important;
+}
+.editor-parts > button:not(.bg-accent) {
+  background-color: var(--panel) !important;
+  border-color: var(--border);
+}
