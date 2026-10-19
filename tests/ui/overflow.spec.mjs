@@ -50,3 +50,37 @@ for (const route of routes) {
     }
   });
 }
+
+
+test("desktop account popover and theme reveal remain operable", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/studio?demo=1", { waitUntil: "domcontentloaded" });
+  const accountButton = page.getByRole("button", { name: "Open account menu" });
+  await expect(accountButton).toBeVisible();
+  await accountButton.click();
+  await expect(page.locator(".account-menu-popover[role='menu']")).toBeVisible();
+
+  const root = page.locator("html");
+  const themeButton = page.getByRole("button", { name: "Switch to light theme" });
+  await themeButton.click();
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(root).toHaveAttribute("data-theme", "dark");
+});
+
+test("mobile account menu opens as a bottom sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/studio?demo=1", { waitUntil: "domcontentloaded" });
+  const accountButton = page.getByRole("button", { name: "Open account menu" });
+  await expect(accountButton).toBeVisible();
+  await accountButton.click();
+  const sheet = page.locator(".dialog-content.account-sheet");
+  await expect(sheet).toBeVisible();
+  const position = await sheet.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { position: style.position, bottom: style.bottom, top: style.top, radius: style.borderTopLeftRadius };
+  });
+  expect(position.position).toBe("fixed");
+  expect(position.bottom).toBe("0px");
+  expect(position.radius).not.toBe("14px");
+});
