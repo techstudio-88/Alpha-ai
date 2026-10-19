@@ -44,7 +44,13 @@ export async function POST(req) {
       await adminClient.from('workspaces').delete().eq('id',created.id).eq('owner_id',user.id);
       throw new Error('create subscription');
     }
-    await adminClient.from('workspace_entitlements').upsert({workspace_id:created.id,plan},{onConflict:'workspace_id'}).catch(()=>{});
+    const {error:entitlementError} = await adminClient.from('workspace_entitlements').upsert({workspace_id:created.id,plan},{onConflict:'workspace_id'});
+    if (entitlementError) {
+      await adminClient.from('subscriptions').delete().eq('workspace_id',created.id);
+      await adminClient.from('workspace_members').delete().eq('workspace_id',created.id).eq('user_id',user.id);
+      await adminClient.from('workspaces').delete().eq('id',created.id).eq('owner_id',user.id);
+      throw new Error('create entitlement');
+    }
     return Response.json({workspace:{...created,role:'owner'},requestId},{status:201,headers:{'Cache-Control':'no-store'}});
   } catch {
     return Response.json({error:'Could not create the workspace. Please retry.',requestId},{status:500});
