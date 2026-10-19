@@ -36,11 +36,12 @@ export default function ProjectChat() {
   const [exported, setExported] = useState(false);
 
   // Requirement 1: Sequential afterUpload popups
-  const [uploadStep, setUploadStep] = useState(0); // 0: closed, 1: Platform choice, 2: Tabs (Platforms, Captions, Clips), 3: Split plan
-  const [activeTab, setActiveTab] = useState('platforms'); // 'platforms' | 'captions' | 'clips'
-  const [selectedPlatforms, setSelectedPlatforms] = useState(preferences.platform || 'both');
-  const [captionStyle, setCaptionStyle] = useState('pop');
-  const [clipPacing, setClipPacing] = useState('auto');
+  const [uploadStep, setUploadStep] = useState(0); // 0: closed, 1: destination, 2: sequential preferences, 3: long-video plan
+  const [activeTab, setActiveTab] = useState('platforms');
+  const [selectedPlatforms, setSelectedPlatforms] = useState('');
+  const [captionStyle, setCaptionStyle] = useState('');
+  const [clipCount, setClipCount] = useState('');
+  const preferencesPromptedRef = useRef(null);
 
   // Requirement 2 & 3: AI Assistant side-panel & streaming
   const [assistantOpen, setAssistantOpen] = useState(assistantParam);
@@ -70,16 +71,18 @@ export default function ProjectChat() {
 
   // Trigger sequential popups after upload
   useEffect(() => {
-    if (afterUpload || job?.status === 'awaiting_preferences') {
-      const durationSec = Number(asset?.duration_seconds || 0);
-      // Split-plan check: if video > 20 min (1200 sec)
-      if (durationSec > 1200) {
-        setUploadStep(3); // Split plan popup
-      } else {
-        setUploadStep(1); // Popup 1: Where should these clips go?
-      }
-    }
-  }, [afterUpload, job?.status, asset?.duration_seconds]);
+    // Show the preference flow once per accepted job. Closing the card must not
+    // reopen it on every status refresh; a genuinely new job can prompt again.
+    if (!(job?.status === 'awaiting_preferences' || (afterUpload && job?.id))) return;
+    if (!job?.id || preferencesPromptedRef.current === job.id) return;
+    preferencesPromptedRef.current = job.id;
+    const durationSec = Number(asset?.duration_seconds || 0);
+    setSelectedPlatforms('');
+    setCaptionStyle('');
+    setClipCount('');
+    setActiveTab('platforms');
+    setUploadStep(durationSec > 1200 ? 3 : 1);
+  }, [afterUpload, job?.id, job?.status, asset?.duration_seconds]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -89,7 +92,10 @@ export default function ProjectChat() {
   }, [chatMessages, isStreaming, assistantOpen]);
 
   const readyClips = (clips.data || []).filter(c => demo || c.clip_versions?.some(v => v.render_status === 'ready' && v.storage_path));
-  const estimatedRange = estimateClipCountRange(asset?.duration_seconds || 1500);
+  const sourceDuration = Number(asset?.duration_seconds || 0);
+  const estimatedRange = sourceDuration > 0 ? estimateClipCountRange(sourceDuration) : 'Available after video analysis';
+  const clipYieldLabel = clipCount === 'auto' ? estimatedRange : clipCount ? `Up to ${clipCount} clips` : estimatedRange;
+  const preferencesComplete = Boolean(selectedPlatforms && captionStyle && clipCount);
 
   // Start processing after popups
   async function confirmProcessingPreferences() {
@@ -98,8 +104,12 @@ export default function ProjectChat() {
     const finalPrefs = {
       ...preferences,
       platform: selectedPlatforms,
-      caption_style: captionStyle,
-      clipPacing
+      captionStyle,
+      captions: captionStyle !== 'none',
+      includeCaptions: captionStyle !== 'none',
+      clipCount,
+      clipPacing: clipCount === '3' ? 'tight' : clipCount === '7' ? 'story' : 'auto',
+      caption_style: captionStyle
     };
     try {
       if (!demo && job?.id) {
@@ -599,7 +609,10 @@ export default function ProjectChat() {
               key={opt.id}
               onClick={() => {
                 setSelectedPlatforms(opt.id);
-                setUploadStep(2); // Advance to Popup 2
+                setCaptionStyle('');
+                setClipCount('');
+                setActiveTab('captions');
+                setUploadStep(2); // Advance to the next preference
               }}
               className={`w-full text-left p-3.5 rounded-lg border transition-all flex items-center justify-between ${selectedPlatforms === opt.id ? 'border-accent bg-accent/10 text-foreground' : 'border-border hover:border-foreground/40 bg-panel'}`}
             >
@@ -651,7 +664,7 @@ export default function ProjectChat() {
                 {['youtube', 'instagram', 'both'].map(p => (
                   <button
                     key={p}
-                    onClick={() => setSelectedPlatforms(p)}
+                    onClick={() => { setSelectedPlatforms(p); setActiveTab('captions'); }}
                     className={`p-2.5 rounded-md text-xs font-medium border text-center capitalize ${selectedPlatforms === p ? 'border-accent bg-accent/15 text-foreground font-bold' : 'border-border bg-panel text-muted'}`}
                   >
                     {p}
@@ -674,7 +687,7 @@ export default function ProjectChat() {
                 ].map(s => (
                   <button
                     key={s.id}
-                    onClick={() => setCaptionStyle(s.id)}
+                    onClick={() => { setCaptionStyle(s.id); setActiveTab('clips'); }}
                     className={`p-2.5 rounded-md border text-left ${captionStyle === s.id ? 'border-accent bg-accent/15 text-foreground' : 'border-border bg-panel text-muted'}`}
                   >
                     <b className="text-xs block text-foreground">{s.label}</b>
@@ -690,7 +703,7 @@ export default function ProjectChat() {
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-panel border border-border/70 space-y-1">
                 <span className="text-xs text-muted">Estimated Clip Yield (Duration-Based):</span>
-                <p className="text-lg font-bold text-accent font-mono">{estimatedRange}</p>
+                <p className="text-lg font-bold text-accent font-mono">{clipYieldLabel}</p>
                 <p className="text-[11px] text-muted">
                   Calculated from your {Math.round((asset?.duration_seconds || 1500) / 60)}-minute video. Sentences with score &gt; 80 will be converted to vertical shorts.
                 </p>
@@ -700,12 +713,14 @@ export default function ProjectChat() {
                 <label className="text-xs font-medium block mb-1.5">Clip Pacing Selection:</label>
                 <select
                   className="input text-xs"
-                  value={clipPacing}
-                  onChange={e => setClipPacing(e.target.value)}
+                  value={clipCount}
+                  onChange={e => setClipCount(e.target.value)}
                 >
-                  <option value="auto">Auto (Best complete thoughts)</option>
-                  <option value="tight">Tight (15s–30s fast pace)</option>
-                  <option value="story">Storyteller (30s–60s context rich)</option>
+                  <option value="">Choose clip count…</option>
+                  <option value="auto">Auto — choose only strong moments</option>
+                  <option value="3">Up to 3 clips</option>
+                  <option value="5">Up to 5 clips</option>
+                  <option value="7">Up to 7 clips</option>
                 </select>
               </div>
             </div>
@@ -713,8 +728,8 @@ export default function ProjectChat() {
 
           {/* Actions */}
           <div className="pt-3 border-t border-border/60 flex items-center justify-between">
-            <span className="text-xs text-muted font-mono">{estimatedRange} expected</span>
-            <Button variant="primary" busy={busy} onClick={confirmProcessingPreferences}>
+            <span className="text-xs text-muted font-mono">{clipYieldLabel} expected</span>
+            <Button variant="primary" busy={busy} disabled={!preferencesComplete || busy} onClick={confirmProcessingPreferences}>
               <Check size={14} />
               Confirm & Start Processing
             </Button>
