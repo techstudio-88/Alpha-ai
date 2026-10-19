@@ -99,7 +99,17 @@ export default function LandingHero() {
     <div className="hero-atmosphere" aria-hidden="true"/>
     <div className="hero-copy">
       <span className="hero-kicker"><i/>THE FOCUSED VIDEO STUDIO</span>
-      <h1>One long video.<br/><span>A week of clips.</span></h1>
+      <h1 aria-label="One long video. A week of clips.">
+        <span className="word-reveal" style={{'--word-index':0}} aria-hidden="true">One</span>{' '}
+        <span className="word-reveal" style={{'--word-index':1}} aria-hidden="true">long</span>{' '}
+        <span className="word-reveal" style={{'--word-index':2}} aria-hidden="true">video.</span><br/>
+        <span className="gradient">
+          <span className="word-reveal" style={{'--word-index':3}} aria-hidden="true">A</span>{' '}
+          <span className="word-reveal" style={{'--word-index':4}} aria-hidden="true">week</span>{' '}
+          <span className="word-reveal" style={{'--word-index':5}} aria-hidden="true">of</span>{' '}
+          <span className="word-reveal" style={{'--word-index':6}} aria-hidden="true">clips.</span>
+        </span>
+      </h1>
       <p>The conversation is yours. Find the moments worth keeping, make a sharper cut, and give each one a place to go.</p>
       <div className="hero-actions">
         <ButtonLink href="/studio?mode=signup">Start free<ArrowRight size={16}/></ButtonLink>
