@@ -124,7 +124,7 @@ function StudioWorkspace() {
   },[]);
   useEffect(()=>{
     if(!account)return;
-    const onPointerDown=e=>{if(!accountMenuRef.current?.contains(e.target))setAccount(false)};
+    const onPointerDown=e=>{if(accountMenuRef.current?.contains(e.target)||e.target.closest?.('.account-sheet'))return;setAccount(false)};
     const onKeyDown=e=>{if(e.key==='Escape')setAccount(false)};
     document.addEventListener('pointerdown',onPointerDown);document.addEventListener('keydown',onKeyDown);
     return()=>{document.removeEventListener('pointerdown',onPointerDown);document.removeEventListener('keydown',onKeyDown)};
