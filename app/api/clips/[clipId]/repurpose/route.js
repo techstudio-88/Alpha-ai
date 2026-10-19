@@ -11,19 +11,19 @@ const secret = process.env.MEDIA_WORKER_SECRET || "";
 
 // Transcript-only fallback keeps SEO tools useful when the optional remote worker is offline.
 function transcriptSeoFallback(clipTitle, transcript) {
-  const clean = String(transcript || "").replace(/\\s+/g, " ").trim();
-  const firstSentence = clean.split(/(?<=[.!?])\\s+/)[0] || clean;
-  const titleSeed = String(clipTitle || firstSentence || "Video highlights").replace(/\\s+/g, " ").trim();
-  const title = (titleSeed.length > 86 ? titleSeed.slice(0, 83).replace(/\\s+\\S*$/, "") + "…" : titleSeed) || "Video highlights";
+  const clean = String(transcript || "").replace(/\s+/g, " ").trim();
+  const firstSentence = clean.split(/(?<=[.!?])\s+/)[0] || clean;
+  const titleSeed = String(clipTitle || firstSentence || "Video highlights").replace(/\s+/g, " ").trim();
+  const title = (titleSeed.length > 86 ? titleSeed.slice(0, 83).replace(/\s+\S*$/, "") + "…" : titleSeed) || "Video highlights";
   const hook = (firstSentence || title).slice(0, 240);
   const caption = clean.slice(0, 1700);
   const stop = new Set("the a an and or but if then so to of in on for with from by is are was were be been being this that these those it its as at we you your our they their i me my he she them have has had do does did not no yes can could would should about into over after before what when why how who which".split(" "));
   const counts = new Map();
-  for (const word of clean.toLowerCase().match(/[\\p{L}\\p{N}]{4,}/gu) || []) if (!stop.has(word)) counts.set(word, (counts.get(word) || 0) + 1);
+  for (const word of clean.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []) if (!stop.has(word)) counts.set(word, (counts.get(word) || 0) + 1);
   const hashtags = [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,6).map(([word])=>"#"+word);
   for (const tag of ["#shorts","#reels"]) if (!hashtags.includes(tag) && hashtags.length < 8) hashtags.push(tag);
-  const social = caption ? caption + "\\n\\nWhat part stood out to you?" : hook;
-  return {hook,title,caption:social.slice(0,2200),hashtags,youtube_description:(caption+"\\n\\nWatch more clips and subscribe for the next one.").slice(0,5000),instagram_caption:social.slice(0,2200),tiktok_caption:social.slice(0,2200),linkedin_caption:caption.slice(0,3000),thumbnail_prompt:"Create a clear, high-contrast thumbnail based on this transcript without adding unsupported claims: "+hook.slice(0,300),_source:"transcript-fallback"};
+  const social = caption ? caption + "\n\nWhat part stood out to you?" : hook;
+  return {hook,title,caption:social.slice(0,2200),hashtags,youtube_description:(caption+"\n\nWatch more clips and subscribe for the next one.").slice(0,5000),instagram_caption:social.slice(0,2200),tiktok_caption:social.slice(0,2200),linkedin_caption:caption.slice(0,3000),thumbnail_prompt:"Create a clear, high-contrast thumbnail based on this transcript without adding unsupported claims: "+hook.slice(0,300),_source:"transcript-fallback"};
 }
 
 async function auth(req) {
