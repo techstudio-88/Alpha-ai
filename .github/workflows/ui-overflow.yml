@@ -1,0 +1,34 @@
+name: UI overflow verification
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "components/**"
+      - "tests/ui/**"
+      - "playwright.config.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ui-overflow.yml"
+  push:
+    branches:
+      - main
+      - "ui/**"
+
+permissions:
+  contents: read
+
+jobs:
+  overflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:ui
