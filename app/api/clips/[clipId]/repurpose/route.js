@@ -189,8 +189,10 @@ export async function POST(req, { params }) {
         .limit(300);
       text = (seg || []).map(x => x.text).join(" ").trim();
     }
-    if (!text) text = String(clip.ai_spec?.summary || "").trim();
-    if (!text) throw new Error("No transcript context is available for this clip. Finish transcription before generating SEO copy.");
+    // Prefer transcript, then a stored AI summary, then the clip title. A title-only
+    // fallback can still create a basic SEO package without inventing video facts.
+    if (!text) text = String(clip.ai_spec?.summary || clip.title || "").trim();
+    if (!text) throw new Error("This clip has no transcript, summary, or title to build SEO copy from.");
 
     const prompt =
       "Create repurposing assets for this real short-form clip. Return ONLY valid JSON with keys hook,title,caption,hashtags,youtube_description,instagram_caption,tiktok_caption,linkedin_caption,thumbnail_prompt. Do not invent facts. YouTube title must be under 100 characters. Instagram caption must be under 2200 characters. 5-10 hashtags. Clip title: " +
