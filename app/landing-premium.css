@@ -118,3 +118,14 @@
 @media (max-width: 600px) { .assembly-section { padding-top: 54px; }.assembly-canvas { min-height: 390px; margin: 10px; }.assembly-lanes { inset-inline: 15px; }.assembly-piece-label { flex-basis: 54px; font-size: 7px; }.assembly-lane { gap: 5px; padding: 7px; }.assembly-lane-video i { width: 17px; height: 23px; }.assembly-lane-video b, .assembly-lane-captions small { display: none; }.assembly-lane-speech em { padding: 5px 6px; font-size: 9px; }.assembly-lane-captions b { font-size: 10px; }.assembly-export-chip { padding: 6px; font-size: 7px; }.assembly-stage-head, .assembly-stage-foot { padding-inline: 11px; font-size: 8px; }.assembly-stage-foot span:last-child { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hero-source-parallax, .hero-demo-dock, .assembly-playhead { transition: none !important; }.assembly-piece { transition: none !important; } }
 :root[data-motion='paused'] .hero-source-parallax, :root[data-motion='paused'] .hero-demo-dock, :root[data-motion='paused'] .assembly-playhead { transition: none !important; }
+
+
+/* Progressive Three.js layer; the existing HTML hero art is the no-WebGL fallback. */
+.hero-stage { isolation: isolate; }
+.landing-scene-canvas { position: absolute; inset: 0; z-index: 0; overflow: hidden; opacity: .32; pointer-events: none; }
+.landing-scene-canvas canvas { display: block; width: 100%; height: 100%; }
+.hero-stage-grid { z-index: 1; }
+.hero-stage > :not(.landing-scene-canvas):not(.hero-stage-grid) { position: relative; z-index: 2; }
+@media (max-width: 760px), (prefers-reduced-motion: reduce) {
+  .landing-scene-canvas { display: none; }
+}
