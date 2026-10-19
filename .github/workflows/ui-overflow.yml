@@ -31,4 +31,4 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: npm run test:ui
+      - run: npx playwright test tests/ui/overflow.spec.mjs
