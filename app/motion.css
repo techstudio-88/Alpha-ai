@@ -6,7 +6,7 @@
 .motion-reveal { opacity: 0; transform: translateY(24px); transition: opacity 650ms var(--reveal-delay,0ms), transform 650ms var(--reveal-delay,0ms); }
 .motion-reveal.motion-seen { opacity: 1; transform: none; }
 .landing-hero { position: relative; isolation: isolate; }
-.hero-atmosphere { position: absolute; inset: -50px -20px; z-index: -1; overflow: hidden; pointer-events: none; }
+.hero-atmosphere { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .hero-atmosphere::before,.hero-atmosphere::after { content: ''; position: absolute; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgb(198 244 50 / 10%), transparent 66%); animation: studio-orbit 18s ease-in-out infinite; }
 .hero-atmosphere::before { top: -160px; left: -130px; }.hero-atmosphere::after { right: -80px; bottom: -170px; animation-delay: -9s; }
 .hero-copy>* { animation: studio-enter 750ms both; }.hero-copy>*:nth-child(2) { animation-delay: 70ms; }.hero-copy>*:nth-child(3) { animation-delay: 140ms; }.hero-copy>*:nth-child(4) { animation-delay: 210ms; }

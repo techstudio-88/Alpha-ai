@@ -124,7 +124,25 @@ export function Calendar({month,items=[],onDay,onReschedule,selectedDay}) {
 export function ThemeToggle() {
   const [theme,setTheme]=useState('dark');
   useEffect(()=>{const sync=()=>setTheme(document.documentElement.dataset.theme||'dark');sync();window.addEventListener('alpha:theme',sync);return()=>window.removeEventListener('alpha:theme',sync)},[]);
-  const change=()=>{const next=theme==='dark'?'light':'dark';setTheme(next);document.documentElement.dataset.theme=next;try{localStorage.setItem('alpha.studio.theme',next)}catch{}window.dispatchEvent(new CustomEvent('alpha:theme'))};
+  const change=(event)=>{
+    const root=document.documentElement;
+    const next=theme==='dark'?'light':'dark';
+    const button=event?.currentTarget;
+    if(button){
+      const rect=button.getBoundingClientRect();
+      root.style.setProperty('--theme-reveal-x',`${rect.left+rect.width/2}px`);
+      root.style.setProperty('--theme-reveal-y',`${rect.top+rect.height/2}px`);
+    }
+    const apply=()=>{
+      root.dataset.theme=next;
+      try{localStorage.setItem('alpha.studio.theme',next)}catch{}
+      setTheme(next);
+      window.dispatchEvent(new CustomEvent('alpha:theme'));
+    };
+    if(typeof document.startViewTransition==='function'&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      try{document.startViewTransition(apply)}catch{apply()}
+    }else apply();
+  };
   return <Button variant="ghost" size="icon" onClick={change} aria-label={`Switch to ${theme==='dark'?'light':'dark'} theme`}>{theme==='dark'?<Sun size={17}/>:<Moon size={17}/>}</Button>;
 }
 export function formatTime(seconds=0) {const n=Math.max(0,Math.floor(Number(seconds)||0));return `${Math.floor(n/60).toString().padStart(2,'0')}:${(n%60).toString().padStart(2,'0')}`}

@@ -2,6 +2,7 @@
 import {useEffect,useRef} from 'react';
 import {ArrowRight,AudioLines,Captions,Check,Clapperboard,CircleDot,Layers3,MousePointer2,ScanLine,Scissors,Sparkles,Upload,Workflow,Youtube} from 'lucide-react';
 import {ButtonLink} from './ui';
+import LandingScene from './landing-scene';
 import {DemoButton,LazyDemo} from './marketing';
 
 const clamp=(value,min=0,max=1)=>Math.min(max,Math.max(min,value));
@@ -115,6 +116,7 @@ export default function LandingHero() {
     <div className="hero-demo-wrap">
       <div className="hero-demo-label"><span>01 / INSIDE ALPHA</span><span>A LITTLE LESS FRICTION.</span></div>
       <div ref={stageRef} className="hero-stage">
+        <LandingScene/>
         <div className="hero-stage-grid" aria-hidden="true"/>
         <SourceToClipsVisual/>
         <div className="hero-demo-dock">
