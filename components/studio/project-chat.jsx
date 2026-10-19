@@ -16,6 +16,7 @@ export default function ProjectChat() {
   const { workspace, user, demo, projectId, jobId, navigate, openImport, notify, afterUpload } = useStudio();
   const searchParams = useSearchParams();
   const assistantParam = searchParams.get('assistant') === '1';
+  const assistantWorkspace = searchParams.get('view') === 'assistant';
 
   const projects = useRows('projects');
   const jobs = useRows('processing_jobs', '*', { projectId, poll: !!projectId });
@@ -44,7 +45,7 @@ export default function ProjectChat() {
   const preferencesPromptedRef = useRef(null);
 
   // Requirement 2 & 3: AI Assistant side-panel & streaming
-  const [assistantOpen, setAssistantOpen] = useState(assistantParam);
+  const [assistantOpen, setAssistantOpen] = useState(assistantParam || assistantWorkspace);
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'assistant',
@@ -322,7 +323,7 @@ export default function ProjectChat() {
         <header className="p-4 border-b border-border/50 flex items-center justify-between flex-wrap gap-3 bg-panel/40 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
             <span className="eyebrow">ALPHA · STUDIO</span>
-            <h1 className="text-xl font-bold truncate">{project?.name || 'Create Shorts, Reels & Clips'}</h1>
+            <h1 className="text-xl font-bold truncate">{assistantWorkspace ? 'AI assistant' : project?.name || 'Create Shorts, Reels & Clips'}</h1>
             {job?.status && (
               <span className={`status-chip ${job.status}`}>
                 <i className="size-1.5 rounded-full bg-current" />
@@ -501,7 +502,7 @@ export default function ProjectChat() {
 
       {/* AI Assistant Right-Side Panel */}
       {assistantOpen && (
-        <aside className="studio-assistant-panel w-96 border-l border-border/60 bg-panel/95 backdrop-blur flex flex-col fixed right-0 top-16 bottom-0 z-20 shadow-xl">
+        <aside className="studio-assistant-panel w-[min(24rem,100vw)] border-l border-border/60 bg-panel/95 backdrop-blur flex flex-col fixed right-0 top-16 bottom-0 z-20 shadow-xl">
           <div className="p-3 border-b border-border/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <WandSparkles size={16} className="text-accent" />
@@ -513,8 +514,31 @@ export default function ProjectChat() {
             </Button>
           </div>
 
+          {/* Select the real clip context before asking for changes. */}
+          <div className="px-3 pt-3">
+            <label className="field text-xs" htmlFor="assistant-context">
+              <span>Assistant context</span>
+              <select
+                id="assistant-context"
+                aria-label="Assistant context"
+                className="input text-xs"
+                value={selectedClipForAi?.id || ''}
+                onChange={e => setSelectedClipForAi(readyClips.find(clip => clip.id === e.target.value) || null)}
+              >
+                <option value="">Use the most relevant clip</option>
+                {readyClips.map(clip => <option key={clip.id} value={clip.id}>{clip.title || 'Untitled clip'}</option>)}
+              </select>
+            </label>
+          </div>
+
           {/* Quick Action Chips */}
           <div className="p-2 border-b border-border/40 flex gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+            <button
+              className="px-2 py-1 rounded-full bg-raised hover:bg-accent/20 text-muted hover:text-foreground shrink-0 border border-border/50 transition-colors"
+              onClick={() => setInputPrompt('Split it in two parts')}
+            >
+              Split it in two parts
+            </button>
             <button
               className="px-2 py-1 rounded-full bg-raised hover:bg-accent/20 text-muted hover:text-foreground shrink-0 border border-border/50 transition-colors"
               onClick={() => sendAssistantMessage('Explain the 4-part score breakdown for the active clip.')}
@@ -592,7 +616,7 @@ export default function ProjectChat() {
               placeholder="Ask to re-cut, rewrite titles, style captions..."
               disabled={isStreaming}
             />
-            <Button size="sm" variant="primary" type="submit" disabled={!inputPrompt.trim() || isStreaming}>
+            <Button size="sm" variant="primary" type="submit" aria-label="Send message" disabled={!inputPrompt.trim() || isStreaming}>
               Send
             </Button>
           </form>
