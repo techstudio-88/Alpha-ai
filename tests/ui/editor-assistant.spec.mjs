@@ -2,19 +2,15 @@ import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 const url='/studio?demo=1&view=editor&project=11111111-1111-4111-8111-111111111111&clip=clip-0';
 
-test('signup reflects enabled providers and offers immediate email signup only when confirmation is disabled',async({page})=>{
-  await page.route('**/api/auth/options',route=>route.fulfill({json:{configured:true,githubEnabled:true,emailEnabled:false,emailConfirmationRequired:true}}));
+test('signup keeps email account creation visible alongside OAuth providers',async({page})=>{
+  await page.route('**/api/auth/options',route=>route.fulfill({json:{configured:true,googleEnabled:false,githubEnabled:true,emailEnabled:true,emailSignupEnabled:true,emailConfirmationRequired:true}}));
   await page.goto('/studio?mode=signup');
   await expect(page.getByRole('button',{name:'Continue with GitHub'})).toBeVisible();
-  await expect(page.getByText('Email sign-in is turned off for this project.',{exact:false})).toBeVisible();
-  await expect(page.getByLabel('Email address')).toHaveCount(0);
-  await page.unroute('**/api/auth/options');
-  await page.route('**/api/auth/options',route=>route.fulfill({json:{configured:true,githubEnabled:true,emailEnabled:true,emailConfirmationRequired:false}}));
-  await page.reload();
+  await expect(page.getByLabel('Your name')).toBeVisible();
   await expect(page.getByLabel('Email address')).toBeVisible();
-  await expect(page.getByText('Your workspace opens immediately after signup.')).toBeVisible();
+  await expect(page.getByLabel('Password')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Create account'})).toBeVisible();
 });
-
 test('selected-clip assistant splits a real draft, supports caption removal, and shares undo/redo with manual controls',async({page})=>{
   await page.goto(url);await page.getByRole('tab',{name:'AI assistant',exact:true}).click();
   await page.getByLabel('What should change?').fill('Split it in two parts and remove captions');

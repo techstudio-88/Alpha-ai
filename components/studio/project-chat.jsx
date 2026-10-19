@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { normalizePreferences } from '../../lib/chat-brief.mjs';
-import { estimateClipCountRange } from '../../lib/clip-intelligence.mjs';
+import { estimateWorkerClipCountRange } from '../../lib/clip-intelligence.mjs';
 import { studioApi, useClipSources, useRows, useStudio } from './data';
 import { Button, EmptyState, Modal, ScreenSkeleton, formatTime } from './ui';
 
@@ -16,6 +16,7 @@ export default function ProjectChat() {
   const { workspace, user, demo, projectId, jobId, navigate, openImport, notify, afterUpload } = useStudio();
   const searchParams = useSearchParams();
   const assistantParam = searchParams.get('assistant') === '1';
+  const assistantWorkspace = searchParams.get('view') === 'assistant';
 
   const projects = useRows('projects');
   const jobs = useRows('processing_jobs', '*', { projectId, poll: !!projectId });
@@ -36,14 +37,15 @@ export default function ProjectChat() {
   const [exported, setExported] = useState(false);
 
   // Requirement 1: Sequential afterUpload popups
-  const [uploadStep, setUploadStep] = useState(0); // 0: closed, 1: Platform choice, 2: Tabs (Platforms, Captions, Clips), 3: Split plan
-  const [activeTab, setActiveTab] = useState('platforms'); // 'platforms' | 'captions' | 'clips'
-  const [selectedPlatforms, setSelectedPlatforms] = useState(preferences.platform || 'both');
-  const [captionStyle, setCaptionStyle] = useState('pop');
-  const [clipPacing, setClipPacing] = useState('auto');
+  const [uploadStep, setUploadStep] = useState(0); // 0: closed, 1: destination, 2: sequential preferences, 3: long-video plan
+  const [activeTab, setActiveTab] = useState('platforms');
+  const [selectedPlatforms, setSelectedPlatforms] = useState('');
+  const [captionStyle, setCaptionStyle] = useState('');
+  const [clipCount, setClipCount] = useState('');
+  const preferencesPromptedRef = useRef(null);
 
   // Requirement 2 & 3: AI Assistant side-panel & streaming
-  const [assistantOpen, setAssistantOpen] = useState(assistantParam);
+  const [assistantOpen, setAssistantOpen] = useState(assistantParam || assistantWorkspace);
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'assistant',
@@ -70,16 +72,18 @@ export default function ProjectChat() {
 
   // Trigger sequential popups after upload
   useEffect(() => {
-    if (afterUpload || job?.status === 'awaiting_preferences') {
-      const durationSec = Number(asset?.duration_seconds || 0);
-      // Split-plan check: if video > 20 min (1200 sec)
-      if (durationSec > 1200) {
-        setUploadStep(3); // Split plan popup
-      } else {
-        setUploadStep(1); // Popup 1: Where should these clips go?
-      }
-    }
-  }, [afterUpload, job?.status, asset?.duration_seconds]);
+    // Show the preference flow once per accepted job. Closing the card must not
+    // reopen it on every status refresh; a genuinely new job can prompt again.
+    if (!(job?.status === 'awaiting_preferences' || (afterUpload && job?.id))) return;
+    if (!job?.id || preferencesPromptedRef.current === job.id) return;
+    preferencesPromptedRef.current = job.id;
+    const durationSec = Number(asset?.duration_seconds || 0);
+    setSelectedPlatforms('');
+    setCaptionStyle('');
+    setClipCount('');
+    setActiveTab('platforms');
+    setUploadStep(durationSec > 1200 ? 3 : 1);
+  }, [afterUpload, job?.id, job?.status, asset?.duration_seconds]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -89,17 +93,31 @@ export default function ProjectChat() {
   }, [chatMessages, isStreaming, assistantOpen]);
 
   const readyClips = (clips.data || []).filter(c => demo || c.clip_versions?.some(v => v.render_status === 'ready' && v.storage_path));
-  const estimatedRange = estimateClipCountRange(asset?.duration_seconds || 1500);
+  const sourceDuration = Number(asset?.duration_seconds || 0);
+  const estimatedRange = sourceDuration > 0 ? estimateWorkerClipCountRange(sourceDuration) : 'Available after video analysis';
+  const clipYieldLabel = clipCount === 'auto' ? estimatedRange : clipCount ? `Up to ${clipCount} clips` : estimatedRange;
+  const preferencesComplete = Boolean(selectedPlatforms && captionStyle && clipCount);
 
   // Start processing after popups
   async function confirmProcessingPreferences() {
+    // Keep this guard server-independent: keyboard submission or a stale click must
+    // never start a job with an incomplete brief.
+    if (busy || !preferencesComplete) return;
+    if (!demo && (!workspace?.id || !projectId || !job?.id)) {
+      setError('Your processing job is still loading. Wait a moment and try again.');
+      return;
+    }
     setBusy(true);
     setError('');
     const finalPrefs = {
       ...preferences,
       platform: selectedPlatforms,
-      caption_style: captionStyle,
-      clipPacing
+      captionStyle,
+      captions: captionStyle !== 'none',
+      includeCaptions: captionStyle !== 'none',
+      clipCount,
+      clipPacing: clipCount === '3' ? 'tight' : clipCount === '7' ? 'story' : 'auto',
+      caption_style: captionStyle
     };
     try {
       if (!demo && job?.id) {
@@ -305,7 +323,7 @@ export default function ProjectChat() {
         <header className="p-4 border-b border-border/50 flex items-center justify-between flex-wrap gap-3 bg-panel/40 backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
             <span className="eyebrow">ALPHA · STUDIO</span>
-            <h1 className="text-xl font-bold truncate">{project?.name || 'Create Shorts, Reels & Clips'}</h1>
+            <h1 className="text-xl font-bold truncate">{assistantWorkspace ? 'AI assistant' : project?.name || 'Create Shorts, Reels & Clips'}</h1>
             {job?.status && (
               <span className={`status-chip ${job.status}`}>
                 <i className="size-1.5 rounded-full bg-current" />
@@ -484,7 +502,7 @@ export default function ProjectChat() {
 
       {/* AI Assistant Right-Side Panel */}
       {assistantOpen && (
-        <aside className="studio-assistant-panel w-96 border-l border-border/60 bg-panel/95 backdrop-blur flex flex-col fixed right-0 top-16 bottom-0 z-20 shadow-xl">
+        <aside className="studio-assistant-panel w-[min(24rem,100vw)] border-l border-border/60 bg-panel/95 backdrop-blur flex flex-col fixed right-0 top-16 bottom-0 z-20 shadow-xl">
           <div className="p-3 border-b border-border/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <WandSparkles size={16} className="text-accent" />
@@ -496,8 +514,31 @@ export default function ProjectChat() {
             </Button>
           </div>
 
+          {/* Select the real clip context before asking for changes. */}
+          <div className="px-3 pt-3">
+            <label className="field text-xs" htmlFor="assistant-context">
+              <span>Assistant context</span>
+              <select
+                id="assistant-context"
+                aria-label="Assistant context"
+                className="input text-xs"
+                value={selectedClipForAi?.id || ''}
+                onChange={e => setSelectedClipForAi(readyClips.find(clip => clip.id === e.target.value) || null)}
+              >
+                <option value="">Use the most relevant clip</option>
+                {readyClips.map(clip => <option key={clip.id} value={clip.id}>{clip.title || 'Untitled clip'}</option>)}
+              </select>
+            </label>
+          </div>
+
           {/* Quick Action Chips */}
-          <div className="p-2 border-b border-border/40 flex gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+          <div className="p-2 border-b border-border/40 flex flex-wrap gap-1.5 text-[11px]">
+            <button
+              className="px-2 py-1 rounded-full bg-raised hover:bg-accent/20 text-muted hover:text-foreground shrink-0 border border-border/50 transition-colors"
+              onClick={() => setInputPrompt('Split it in two parts')}
+            >
+              Split it in two parts
+            </button>
             <button
               className="px-2 py-1 rounded-full bg-raised hover:bg-accent/20 text-muted hover:text-foreground shrink-0 border border-border/50 transition-colors"
               onClick={() => sendAssistantMessage('Explain the 4-part score breakdown for the active clip.')}
@@ -575,7 +616,7 @@ export default function ProjectChat() {
               placeholder="Ask to re-cut, rewrite titles, style captions..."
               disabled={isStreaming}
             />
-            <Button size="sm" variant="primary" type="submit" disabled={!inputPrompt.trim() || isStreaming}>
+            <Button size="sm" variant="primary" type="submit" aria-label="Send message" disabled={!inputPrompt.trim() || isStreaming}>
               Send
             </Button>
           </form>
@@ -598,8 +639,12 @@ export default function ProjectChat() {
             <button
               key={opt.id}
               onClick={() => {
+                setError('');
                 setSelectedPlatforms(opt.id);
-                setUploadStep(2); // Advance to Popup 2
+                setCaptionStyle('');
+                setClipCount('');
+                setActiveTab('captions');
+                setUploadStep(2); // Advance to the next preference
               }}
               className={`w-full text-left p-3.5 rounded-lg border transition-all flex items-center justify-between ${selectedPlatforms === opt.id ? 'border-accent bg-accent/10 text-foreground' : 'border-border hover:border-foreground/40 bg-panel'}`}
             >
@@ -651,7 +696,7 @@ export default function ProjectChat() {
                 {['youtube', 'instagram', 'both'].map(p => (
                   <button
                     key={p}
-                    onClick={() => setSelectedPlatforms(p)}
+                    onClick={() => { setError(''); setSelectedPlatforms(p); setActiveTab('captions'); }}
                     className={`p-2.5 rounded-md text-xs font-medium border text-center capitalize ${selectedPlatforms === p ? 'border-accent bg-accent/15 text-foreground font-bold' : 'border-border bg-panel text-muted'}`}
                   >
                     {p}
@@ -674,7 +719,7 @@ export default function ProjectChat() {
                 ].map(s => (
                   <button
                     key={s.id}
-                    onClick={() => setCaptionStyle(s.id)}
+                    onClick={() => { setError(''); setCaptionStyle(s.id); setActiveTab('clips'); }}
                     className={`p-2.5 rounded-md border text-left ${captionStyle === s.id ? 'border-accent bg-accent/15 text-foreground' : 'border-border bg-panel text-muted'}`}
                   >
                     <b className="text-xs block text-foreground">{s.label}</b>
@@ -690,9 +735,9 @@ export default function ProjectChat() {
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-panel border border-border/70 space-y-1">
                 <span className="text-xs text-muted">Estimated Clip Yield (Duration-Based):</span>
-                <p className="text-lg font-bold text-accent font-mono">{estimatedRange}</p>
+                <p className="text-lg font-bold text-accent font-mono">{clipYieldLabel}</p>
                 <p className="text-[11px] text-muted">
-                  Calculated from your {Math.round((asset?.duration_seconds || 1500) / 60)}-minute video. Sentences with score &gt; 80 will be converted to vertical shorts.
+                  {sourceDuration > 0 ? `Calculated from your ${Math.round(sourceDuration / 60)}-minute video. Final yield depends on complete, high-scoring moments in the transcript.` : 'Upload and analyze a video to estimate usable clips.'}
                 </p>
               </div>
 
@@ -700,21 +745,25 @@ export default function ProjectChat() {
                 <label className="text-xs font-medium block mb-1.5">Clip Pacing Selection:</label>
                 <select
                   className="input text-xs"
-                  value={clipPacing}
-                  onChange={e => setClipPacing(e.target.value)}
+                  value={clipCount}
+                  onChange={e => { setError(''); setClipCount(e.target.value); }}
                 >
-                  <option value="auto">Auto (Best complete thoughts)</option>
-                  <option value="tight">Tight (15s–30s fast pace)</option>
-                  <option value="story">Storyteller (30s–60s context rich)</option>
+                  <option value="">Choose clip count…</option>
+                  <option value="auto">Auto — choose only strong moments</option>
+                  <option value="3">Up to 3 clips</option>
+                  <option value="5">Up to 5 clips</option>
+                  <option value="7">Up to 7 clips</option>
                 </select>
               </div>
             </div>
           )}
 
+          {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
           {/* Actions */}
           <div className="pt-3 border-t border-border/60 flex items-center justify-between">
-            <span className="text-xs text-muted font-mono">{estimatedRange} expected</span>
-            <Button variant="primary" busy={busy} onClick={confirmProcessingPreferences}>
+            <span className="text-xs text-muted font-mono">{clipYieldLabel} expected</span>
+            <Button variant="primary" busy={busy} disabled={!preferencesComplete || busy} onClick={confirmProcessingPreferences}>
               <Check size={14} />
               Confirm & Start Processing
             </Button>

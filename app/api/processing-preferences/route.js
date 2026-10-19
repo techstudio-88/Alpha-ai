@@ -13,7 +13,7 @@ export async function POST(request){
     const job=checked(await admin.from('processing_jobs').select('id,workspace_id,project_id,status,payload').eq('id',jobId).eq('workspace_id',workspaceId).eq('project_id',projectId).maybeSingle());
     if(!job)throw problem('Processing job not found.',404);
     if(job.status!=='awaiting_preferences')throw problem('This job has already started. Refresh the chat to see its progress.',409);
-    const normalized={...normalizePreferences(preferences),effects:'none',hookMode:'first-three-seconds'};
+    const base=normalizePreferences(preferences);const normalized={...base,platform:base.platform,captionStyle:base.captionStyle,clipCount:base.clipCount,captions:base.captions,includeCaptions:base.includeCaptions,caption_style:base.captionStyle,clipPacing:['tight','story','auto'].includes(preferences.clipPacing)?preferences.clipPacing:(base.clipCount==='3'?'tight':base.clipCount==='7'?'story':'auto'),effects:'none',hookMode:'first-three-seconds'};
     const payload={...(job.payload||{}),preferences:normalized,preferencesRequired:false,transcriptOnly:false,retryCount:0};
     const updated=checked(await admin.from('processing_jobs').update({payload,status:'queued',progress:0,current_stage:null,error:null,attempt_count:0,lease_until:null,lease_token:null,updated_at:new Date().toISOString()}).eq('id',job.id).eq('workspace_id',workspaceId).eq('status','awaiting_preferences').select('id,status,payload').maybeSingle());
     if(!updated?.id)throw problem('This job has already started. Refresh the chat to see its progress.',409);

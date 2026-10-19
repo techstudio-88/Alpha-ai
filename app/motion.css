@@ -42,3 +42,72 @@ button[class*='rounded-control']:active,a[class*='rounded-control']:active { tra
 :root[data-motion='paused'] *, :root[data-motion='paused'] *::before, :root[data-motion='paused'] *::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }
 :root[data-motion='paused'] .motion-reveal { opacity: 1; transform: none; }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }.motion-reveal { opacity: 1; transform: none; }}
+
+/* Alpha Studio motion system: crisp, layered, and calm rather than constant movement. */
+@keyframes alpha-copy-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes alpha-gradient-flow { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+:root:not([data-motion='paused']) .studio-view h1,
+:root:not([data-motion='paused']) .studio-view h2,
+:root:not([data-motion='paused']) .studio-view h3,
+:root:not([data-motion='paused']) .studio-view .eyebrow {
+  animation: alpha-copy-enter 520ms cubic-bezier(.2,.75,.25,1) both;
+}
+:root:not([data-motion='paused']) .studio-view .panel,
+:root:not([data-motion='paused']) .studio-view .clip-card,
+:root:not([data-motion='paused']) .studio-view .project-card {
+  transition: transform 260ms cubic-bezier(.2,.75,.25,1), border-color 260ms, box-shadow 260ms, background-color 260ms;
+}
+:root:not([data-motion='paused']) .studio-view .panel:hover,
+:root:not([data-motion='paused']) .studio-view .clip-card:hover,
+:root:not([data-motion='paused']) .studio-view .project-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 16px 44px rgb(64 60 120 / 12%);
+}
+:root:not([data-motion='paused']) .studio-view button:not(:disabled),
+:root:not([data-motion='paused']) .studio-view a {
+  transition: transform 180ms ease, color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+:root:not([data-motion='paused']) .studio-view button:not(:disabled):active { transform: scale(.975); }
+:root:not([data-motion='paused']) .studio-view .status-chip.processing,
+:root:not([data-motion='paused']) .studio-view .status-chip.queued { animation: studio-pulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='paused']) .studio-view h1,
+  :root:not([data-motion='paused']) .studio-view h2,
+  :root:not([data-motion='paused']) .studio-view h3,
+  :root:not([data-motion='paused']) .studio-view .eyebrow { animation: none; }
+}
+
+
+/* Staggered page entry and colorful focus states across Studio views. */
+:root:not([data-motion='paused']) .studio-view > * {
+  animation: alpha-copy-enter 560ms cubic-bezier(.2,.75,.25,1) both;
+}
+:root:not([data-motion='paused']) .studio-view > *:nth-child(2) { animation-delay: 60ms; }
+:root:not([data-motion='paused']) .studio-view > *:nth-child(3) { animation-delay: 120ms; }
+:root:not([data-motion='paused']) .studio-view > *:nth-child(4) { animation-delay: 180ms; }
+:root:not([data-motion='paused']) .studio-view .panel {
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--accent) 3%, transparent), transparent 55%);
+}
+:root:not([data-motion='paused']) .studio-view .panel:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+
+/* Word-by-word entrance for the main headline; individual words remain
+   separately readable visually while the heading exposes one accessible label. */
+@keyframes alpha-word-enter {
+  from { opacity: 0; transform: translate3d(0, .55em, 0) rotateX(-18deg); filter: blur(4px); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) rotateX(0); filter: blur(0); }
+}
+:root:not([data-motion='paused']) .hero-copy h1 .word-reveal {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: alpha-word-enter 620ms cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: calc(var(--word-index, 0) * 65ms);
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-copy h1 .word-reveal { animation: none !important; filter: none !important; transform: none !important; }
+}

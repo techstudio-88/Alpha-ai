@@ -7,6 +7,6 @@ export async function GET(){
     const response=await fetch(url+'/auth/v1/settings',{headers:{apikey:key},cache:'no-store',signal:AbortSignal.timeout(8000)});
     if(!response.ok)throw new Error('settings');
     const settings=await response.json();
-    return Response.json({configured:true,googleEnabled:Boolean(settings.external?.google),githubEnabled:Boolean(settings.external?.github),emailEnabled:Boolean(settings.external?.email),emailConfirmationRequired:settings.mailer_autoconfirm!==true},{headers:{'Cache-Control':'no-store'}});
-  }catch{return Response.json({configured:true,googleEnabled:null,githubEnabled:null,emailConfirmationRequired:null},{headers:{'Cache-Control':'no-store'}})}
+    return Response.json({configured:true,googleEnabled:Boolean(settings.external?.google),githubEnabled:Boolean(settings.external?.github),emailEnabled:true,emailSignupEnabled:settings.disable_signup!==true,emailConfirmationRequired:settings.mailer_autoconfirm!==true},{headers:{'Cache-Control':'no-store'}});
+  }catch{return Response.json({configured:true,googleEnabled:null,githubEnabled:null,emailEnabled:true,emailSignupEnabled:null,emailConfirmationRequired:null},{headers:{'Cache-Control':'no-store'}})}
 }
