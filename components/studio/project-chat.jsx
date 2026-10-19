@@ -705,7 +705,7 @@ export default function ProjectChat() {
                 <span className="text-xs text-muted">Estimated Clip Yield (Duration-Based):</span>
                 <p className="text-lg font-bold text-accent font-mono">{clipYieldLabel}</p>
                 <p className="text-[11px] text-muted">
-                  Calculated from your {Math.round((asset?.duration_seconds || 1500) / 60)}-minute video. Sentences with score &gt; 80 will be converted to vertical shorts.
+                  {sourceDuration > 0 ? `Calculated from your ${Math.round(sourceDuration / 60)}-minute video. Final yield depends on complete, high-scoring moments in the transcript.` : 'Upload and analyze a video to estimate usable clips.'}
                 </p>
               </div>
 
