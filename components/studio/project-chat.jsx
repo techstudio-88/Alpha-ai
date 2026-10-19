@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { normalizePreferences } from '../../lib/chat-brief.mjs';
-import { estimateClipCountRange } from '../../lib/clip-intelligence.mjs';
+import { estimateWorkerClipCountRange } from '../../lib/clip-intelligence.mjs';
 import { studioApi, useClipSources, useRows, useStudio } from './data';
 import { Button, EmptyState, Modal, ScreenSkeleton, formatTime } from './ui';
 
@@ -94,7 +94,7 @@ export default function ProjectChat() {
 
   const readyClips = (clips.data || []).filter(c => demo || c.clip_versions?.some(v => v.render_status === 'ready' && v.storage_path));
   const sourceDuration = Number(asset?.duration_seconds || 0);
-  const estimatedRange = sourceDuration > 0 ? estimateClipCountRange(sourceDuration) : 'Available after video analysis';
+  const estimatedRange = sourceDuration > 0 ? estimateWorkerClipCountRange(sourceDuration) : 'Available after video analysis';
   const clipYieldLabel = clipCount === 'auto' ? estimatedRange : clipCount ? `Up to ${clipCount} clips` : estimatedRange;
   const preferencesComplete = Boolean(selectedPlatforms && captionStyle && clipCount);
 
