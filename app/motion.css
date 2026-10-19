@@ -44,7 +44,7 @@ button[class*='rounded-control']:active,a[class*='rounded-control']:active { tra
 @media(prefers-reduced-motion:reduce){*,*::before,*::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }.motion-reveal { opacity: 1; transform: none; }}
 
 /* Alpha Studio motion system: crisp, layered, and calm rather than constant movement. */
-@keyframes alpha-copy-enter { from { opacity: 0; transform: translateY(9px); filter: blur(3px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes alpha-copy-enter { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes alpha-gradient-flow { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 :root:not([data-motion='paused']) .studio-view h1,
 :root:not([data-motion='paused']) .studio-view h2,
