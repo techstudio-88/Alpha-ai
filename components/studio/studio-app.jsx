@@ -1,6 +1,6 @@
 "use client";
 
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -103,6 +103,7 @@ function StudioWorkspace() {
   const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const accountMenuRef=useRef(null);
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -121,6 +122,13 @@ function StudioWorkspace() {
     const onKey=e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setCommand(v=>!v)}};
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
   },[]);
+  useEffect(()=>{
+    if(!account)return;
+    const onPointerDown=e=>{if(!accountMenuRef.current?.contains(e.target))setAccount(false)};
+    const onKeyDown=e=>{if(e.key==='Escape')setAccount(false)};
+    document.addEventListener('pointerdown',onPointerDown);document.addEventListener('keydown',onKeyDown);
+    return()=>{document.removeEventListener('pointerdown',onPointerDown);document.removeEventListener('keydown',onKeyDown)};
+  },[account]);
   const minutes=Math.round((usage.data||[]).reduce((sum,a)=>sum+(Number(a.duration_seconds)||0),0)/60*10)/10;
   const link=id=>{const p=new URLSearchParams();if(demo)p.set('demo','1');if(id!=='home')p.set('view',id);return '/studio'+(p.size?'?'+p:'')};
   const navItems=NAV.map(([id,label,Icon])=><Link key={id} href={link(id)} className={view===id?'active':''} aria-label={label} title={label} aria-current={view===id?'page':undefined} onClick={()=>setMobile(false)}><Icon size={17}/><span>{label}</span></Link>);
@@ -165,7 +173,15 @@ function StudioWorkspace() {
           <ThemeToggle/>
           <span className="hidden sm:inline-flex"><MotionToggle/></span>
           <Button variant="ghost" size="icon" aria-label="View notifications" onClick={()=>setNotifications(true)}><Bell size={17}/></Button>
-          <Button variant="secondary" size="icon" aria-label="Open account menu" onClick={()=>setAccount(true)}><span className="text-xs">{(user.user_metadata?.full_name||user.email||'A').slice(0,1).toUpperCase()}</span></Button>
+          <div className="account-menu-anchor" ref={accountMenuRef}>
+            <Button variant="secondary" size="icon" aria-label="Open account menu" aria-haspopup="menu" aria-expanded={account} onClick={()=>setAccount(v=>!v)}><span className="text-xs">{(user.user_metadata?.full_name||user.email||'A').slice(0,1).toUpperCase()}</span></Button>
+            {account&&<div className="account-menu-popover" role="menu" aria-label="Account menu">
+              <div className="account-menu-identity"><strong>{user.user_metadata?.full_name||'Your account'}</strong><span>{user.email}</span></div>
+              <div className="account-menu-preference"><MotionToggle/><span>Animation preference</span></div>
+              <button role="menuitem" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</button>
+              <button role="menuitem" onClick={async()=>{setAccount(false);if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</button>
+            </div>}
+          </div>
         </div>
       </header>
       {demo&&<div className="border-b px-6 py-2 text-xs text-muted flex justify-between flex-wrap gap-2"><span>Sample workspace · example content · changes stay in this session</span><a href="/studio?mode=signup" className="underline">Create your own workspace</a></div>}
@@ -186,11 +202,13 @@ function StudioWorkspace() {
     <Modal open={notifications} onOpenChange={setNotifications} title="Pipeline activity" description="Current job status in this workspace.">
       {activity.loading?<ScreenSkeleton/>:activity.error?<ErrorState message={activity.error} onRetry={activity.retry}/>:(activity.data||[]).length?activity.data.map(job=><button key={job.id} className="block w-full text-left border-b py-4" onClick={()=>{setNotifications(false);navigate('project',{project:job.project_id})}}><b className="text-sm">{projects.data?.find(p=>p.id===job.project_id)?.name||'Video project'}</b><p className="text-xs text-muted mt-1">{job.status} · {job.progress}%</p></button>):<EmptyState icon={Bell} title="You’re all caught up." description="Processing activity will appear here after your first import."/>}
     </Modal>
-    <Modal open={account} onOpenChange={setAccount} title={user.user_metadata?.full_name||'Your account'} description={user.email}>
-      <div className="flex items-center gap-3 text-xs text-muted mb-3"><MotionToggle/>Animation preference</div>
-      <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
-      <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
-    </Modal>
+    <div className="account-menu-mobile">
+      <Modal open={account} onOpenChange={setAccount} title={user.user_metadata?.full_name||'Your account'} description={user.email}>
+        <div className="flex items-center gap-3 text-xs text-muted mb-3"><MotionToggle/>Animation preference</div>
+        <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
+        <Button variant="ghost" className="w-full justify-start" onClick={async()=>{setAccount(false);if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
+      </Modal>
+    </div>
     <Modal open={upgrade} onOpenChange={setUpgrade} title="Choose your next step" description="Paid plans are proposed and unavailable for checkout today." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact/></Modal>
   </div>;
 }
