@@ -110,7 +110,7 @@ export default function StudioApp() {
 }
 
 function StudioWorkspace() {
-  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,notify}=useStudio();
+  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,notify,refreshWorkspace}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
   const [workspaceDialog,setWorkspaceDialog]=useState(false),[workspaceName,setWorkspaceName]=useState(''),[workspaceBusy,setWorkspaceBusy]=useState(false),[workspaceError,setWorkspaceError]=useState('');
