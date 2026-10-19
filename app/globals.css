@@ -303,7 +303,7 @@ body{background:#06070b!important}
 @media(max-width:760px){.workflowCard{grid-template-columns:42px 44px 1fr 18px;gap:10px;padding:16px 13px}.workflowCard h3{font-size:15px}.workflowCard p{font-size:12px}}
 
 /* === Full-bleed cinematic hero === */
-html,body{width:100%;max-width:100%;overflow-x:hidden}
+html,body{width:100%;max-width:100%}
 .landing{width:100%;max-width:none;overflow-x:clip}
 .heroLarge{width:100%;max-width:none;margin:0;min-height:900px;overflow:hidden}
 .heroLarge .heroContent{width:min(1120px,100%);padding-left:24px;padding-right:24px;margin:0 auto}
@@ -693,7 +693,6 @@ html[data-theme="dusk"] .themeSwitcher{background:#24243e;border-color:#454666}
   --alpha-radius:18px;
 }
 html,body{min-height:100%;background:var(--alpha-bg)!important;color:var(--alpha-ink)}
-body{overflow-x:hidden}
 .alphaLogo{display:block;width:154px;height:auto;max-height:78px;object-fit:contain;object-position:left center}
 .side .alphaLogo{width:146px}
 .landingNav .alphaLogo{width:142px}
