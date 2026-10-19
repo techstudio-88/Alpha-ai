@@ -251,7 +251,7 @@ export function SeoScreen(){
         });
         if(res.limits)setLimits(res.limits);
       })
-      .catch(()=>{})
+      .catch(err=>notify(err.message||'SEO assets could not be loaded.'))
       .finally(()=>setLoading(false));
   },[activeClip?.id]);
 
@@ -347,7 +347,7 @@ export function SeoScreen(){
           <span className="text-xs text-muted bg-panel px-2.5 py-1 rounded border border-border/60">
             Regenerations: <b className="text-foreground">{limits.titleRegenerations.display}</b>
           </span>
-          <Button size="sm" variant="primary" busy={loading} onClick={()=>regenerate('title_regeneration')}>
+          <Button size="sm" variant="primary" busy={loading} disabled={loading||!activeClip?.id} onClick={()=>regenerate('title_regeneration')}>
             <Sparkles size={13}/>Regenerate Copy
           </Button>
         </div>
