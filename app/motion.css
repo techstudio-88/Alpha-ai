@@ -93,3 +93,21 @@ button[class*='rounded-control']:active,a[class*='rounded-control']:active { tra
   border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
 }
+
+
+/* Word-by-word entrance for the main headline; individual words remain
+   separately readable visually while the heading exposes one accessible label. */
+@keyframes alpha-word-enter {
+  from { opacity: 0; transform: translate3d(0, .55em, 0) rotateX(-18deg); filter: blur(4px); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) rotateX(0); filter: blur(0); }
+}
+:root:not([data-motion='paused']) .hero-copy h1 .word-reveal {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: alpha-word-enter 620ms cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: calc(var(--word-index, 0) * 65ms);
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-copy h1 .word-reveal { animation: none !important; filter: none !important; transform: none !important; }
+}
