@@ -113,6 +113,7 @@ function StudioWorkspace() {
   const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,notify}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const [workspaceDialog,setWorkspaceDialog]=useState(false),[workspaceName,setWorkspaceName]=useState(''),[workspaceBusy,setWorkspaceBusy]=useState(false),[workspaceError,setWorkspaceError]=useState('');
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -134,7 +135,18 @@ function StudioWorkspace() {
   const minutes=Math.round((usage.data||[]).reduce((sum,a)=>sum+(Number(a.duration_seconds)||0),0)/60*10)/10;
   const link=id=>{const p=new URLSearchParams();if(demo)p.set('demo','1');if(id!=='home')p.set('view',id);return '/studio'+(p.size?'?'+p:'')};
   const navItems=NAV.map(([id,label,Icon])=><Link key={id} href={link(id)} className={view===id?'active':''} aria-label={label} title={label} aria-current={view===id?'page':undefined} onClick={()=>setMobile(false)}><Icon size={17}/><span>{label}</span></Link>);
-  const workspaceSelect=<div className="workspace-picker-group"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/><Button size="sm" variant="ghost" className="w-full justify-start mt-2" onClick={()=>{notify('Adding another workspace is a Pro feature. Upgrade your plan to unlock multiple workspaces.');setUpgrade(true)}}><Plus size={14}/>Add workspace <span className="ml-auto text-[10px] text-muted">PRO</span></Button></div>;
+  const workspaceSelect=<div className="workspace-picker-group"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/><Button size="sm" variant="ghost" className="w-full justify-start mt-2" onClick={()=>{setWorkspaceName('');setWorkspaceError('');setWorkspaceDialog(true)}}><Plus size={14}/>Add workspace <span className="ml-auto text-[10px] text-muted">PRO</span></Button></div>;
+  async function createWorkspace(e){
+    e.preventDefault();setWorkspaceBusy(true);setWorkspaceError('');
+    try{
+      const result=await studioApi('/api/workspaces',{method:'POST',body:{name:workspaceName,current_workspace_id:workspace.id}});
+      if(!result?.workspace?.id)throw new Error('Workspace creation returned no workspace.');
+      await refreshWorkspace?.();selectWorkspace(result.workspace.id);setWorkspaceDialog(false);notify('Workspace created.');
+    }catch(err){
+      if(err?.status===402||err?.code==='UPGRADE_REQUIRED'||/Pro feature|Upgrade your workspace/i.test(err.message||'')){setWorkspaceDialog(false);setUpgrade(true);notify('Multiple workspaces are available on Pro and Studio plans.');return;}
+      setWorkspaceError(err.message||'Could not create the workspace.');
+    }finally{setWorkspaceBusy(false)}
+  }
   let screen;
   if(state==='loading')screen=<ScreenSkeleton/>;
   else if(state==='error')screen=<ErrorState message="This sample shows how a failed request is presented. Retry returns to the normal studio." onRetry={()=>navigate(view,{project:projectId,clip:clipId})}/>;
@@ -201,6 +213,7 @@ function StudioWorkspace() {
       <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
       <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
     </Modal>
+    <Modal open={workspaceDialog} onOpenChange={setWorkspaceDialog} title="Create a workspace" description="Create another workspace for a separate project or client."><form onSubmit={createWorkspace} className="space-y-4"><Input label="Workspace name" value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} minLength={2} maxLength={80} required placeholder="e.g. Client Studio"/>{workspaceError&&<p role="alert" className="text-sm text-destructive">{workspaceError}</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={()=>setWorkspaceDialog(false)}>Cancel</Button><Button type="submit" busy={workspaceBusy}>Create workspace</Button></div></form></Modal>
     <Modal open={upgrade} onOpenChange={setUpgrade} title="Choose your next step" description="Paid plans are proposed and unavailable for checkout today." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact/></Modal>
   </div>;
 }
