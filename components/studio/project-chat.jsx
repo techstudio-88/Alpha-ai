@@ -532,7 +532,7 @@ export default function ProjectChat() {
           </div>
 
           {/* Quick Action Chips */}
-          <div className="p-2 border-b border-border/40 flex gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+          <div className="p-2 border-b border-border/40 flex flex-wrap gap-1.5 text-[11px]">
             <button
               className="px-2 py-1 rounded-full bg-raised hover:bg-accent/20 text-muted hover:text-foreground shrink-0 border border-border/50 transition-colors"
               onClick={() => setInputPrompt('Split it in two parts')}
