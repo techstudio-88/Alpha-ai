@@ -104,6 +104,8 @@ function StudioWorkspace() {
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
   const accountMenuRef=useRef(null);
+  const [mobileViewport,setMobileViewport]=useState(false);
+  useEffect(()=>{const media=window.matchMedia('(max-width: 760px)');const sync=()=>setMobileViewport(media.matches);sync();media.addEventListener?.('change',sync);return()=>media.removeEventListener?.('change',sync)},[]);
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -202,13 +204,13 @@ function StudioWorkspace() {
     <Modal open={notifications} onOpenChange={setNotifications} title="Pipeline activity" description="Current job status in this workspace.">
       {activity.loading?<ScreenSkeleton/>:activity.error?<ErrorState message={activity.error} onRetry={activity.retry}/>:(activity.data||[]).length?activity.data.map(job=><button key={job.id} className="block w-full text-left border-b py-4" onClick={()=>{setNotifications(false);navigate('project',{project:job.project_id})}}><b className="text-sm">{projects.data?.find(p=>p.id===job.project_id)?.name||'Video project'}</b><p className="text-xs text-muted mt-1">{job.status} · {job.progress}%</p></button>):<EmptyState icon={Bell} title="You’re all caught up." description="Processing activity will appear here after your first import."/>}
     </Modal>
-    <div className="account-menu-mobile">
+    {mobileViewport&&<div className="account-menu-mobile">
       <Modal open={account} onOpenChange={setAccount} title={user.user_metadata?.full_name||'Your account'} description={user.email} className="account-sheet">
         <div className="flex items-center gap-3 text-xs text-muted mb-3"><MotionToggle/>Animation preference</div>
         <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
         <Button variant="ghost" className="w-full justify-start" onClick={async()=>{setAccount(false);if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
       </Modal>
-    </div>
+    </div>}
     <Modal open={upgrade} onOpenChange={setUpgrade} title="Choose your next step" description="Paid plans are proposed and unavailable for checkout today." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact/></Modal>
   </div>;
 }
