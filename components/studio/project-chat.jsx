@@ -8,12 +8,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { normalizePreferences } from '../../lib/chat-brief.mjs';
-import { estimateClipCountRange } from '../../lib/clip-intelligence.mjs';
+import { estimateClipCountRange } from '../../lib/clip-estimate.mjs';
+import ClipPreferencesCard from './ClipPreferencesCard';
 import { studioApi, useClipSources, useRows, useStudio } from './data';
 import { Button, EmptyState, Modal, ScreenSkeleton, formatTime } from './ui';
 
 export default function ProjectChat() {
-  const { workspace, user, demo, projectId, jobId, navigate, openImport, notify, afterUpload } = useStudio();
+  const { workspace, user, demo, projectId, jobId, navigate, openImport, notify } = useStudio();
   const searchParams = useSearchParams();
   const assistantParam = searchParams.get('assistant') === '1';
 
@@ -35,7 +36,9 @@ export default function ProjectChat() {
   const [error, setError] = useState('');
   const [exported, setExported] = useState(false);
 
-  // Requirement 1: Sequential afterUpload popups
+  const promptedJobs = useRef(new Set());
+
+  // Preferences card flow
   const [uploadStep, setUploadStep] = useState(0); // 0: closed, 1: Platform choice, 2: Tabs (Platforms, Captions, Clips), 3: Split plan
   const [activeTab, setActiveTab] = useState('platforms'); // 'platforms' | 'captions' | 'clips'
   const [selectedPlatforms, setSelectedPlatforms] = useState(preferences.platform || 'both');
@@ -68,18 +71,16 @@ export default function ProjectChat() {
       .catch(() => setUsage(null));
   }, [demo, workspace?.id, job?.status]);
 
-  // Trigger sequential popups after upload
   useEffect(() => {
-    if (afterUpload || job?.status === 'awaiting_preferences') {
-      const durationSec = Number(asset?.duration_seconds || 0);
-      // Split-plan check: if video > 20 min (1200 sec)
-      if (durationSec > 1200) {
-        setUploadStep(3); // Split plan popup
-      } else {
-        setUploadStep(1); // Popup 1: Where should these clips go?
-      }
-    }
-  }, [afterUpload, job?.status, asset?.duration_seconds]);
+    const id = job?.id;
+    if (!id || job.status !== 'awaiting_preferences' || promptedJobs.current.has(id)) return;
+    promptedJobs.current.add(id);
+    if (Number(asset?.duration_seconds || 0) > 1200) setUploadStep(3);
+    else setUploadStep(2);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('afterUpload');
+    window.history.replaceState({}, '', url);
+  }, [job?.id, job?.status, asset?.duration_seconds]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -91,34 +92,36 @@ export default function ProjectChat() {
   const readyClips = (clips.data || []).filter(c => demo || c.clip_versions?.some(v => v.render_status === 'ready' && v.storage_path));
   const estimatedRange = estimateClipCountRange(asset?.duration_seconds || 1500);
 
-  // Start processing after popups
-  async function confirmProcessingPreferences() {
+  async function confirmProcessingPreferences(v) {
     setBusy(true);
     setError('');
     const finalPrefs = {
       ...preferences,
-      platform: selectedPlatforms,
-      caption_style: captionStyle,
-      clipPacing
+      platform: v.platform,
+      captionStyle: v.captionStyle === 'none' ? 'pop' : v.captionStyle,
+      captions: v.captionStyle !== 'none',
+      clipPacing: v.clipPacing
     };
     try {
-      if (!demo && job?.id) {
+      const jid = job?.id || jobId;
+      if (!jid) throw new Error('Processing job not found yet. Wait a moment and try again.');
+      if (!demo) {
         const result = await studioApi('/api/processing-preferences', {
-          body: {
-            workspaceId: workspace.id,
-            projectId,
-            jobId: job.id,
-            preferences: finalPrefs
-          }
+          body: { workspaceId: workspace.id, projectId, jobId: jid, preferences: finalPrefs }
         });
         if (result?.warning) notify(result.warning);
         await supabase.auth.updateUser({ data: { alphaClipPreferences: finalPrefs } }).catch(() => {});
       }
       setUploadStep(0);
       jobs.retry();
-      notify('Preferences saved! Alpha AI is processing your clips with sentence boundary cuts.');
+      notify('Preferences saved. Processing started.');
     } catch (err) {
-      setError(err.message);
+      if (/already started/i.test(err.message || '')) {
+        setUploadStep(0);
+        jobs.retry();
+        return;
+      }
+      setError(err.message || 'Could not save clip preferences. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -582,145 +585,7 @@ export default function ProjectChat() {
         </aside>
       )}
 
-      {/* POPUP 1: "Where should these clips go?" (youtube / instagram / both) */}
-      <Modal
-        open={uploadStep === 1}
-        onOpenChange={open => !open && setUploadStep(0)}
-        title="Where should these clips go?"
-        description="Choose your destination platforms. Alpha AI will optimize 9:16 aspect ratios, duration caps, and social copy for each platform."
-      >
-        <div className="space-y-3 pt-2">
-          {[
-            { id: 'youtube', label: 'YouTube Shorts', desc: 'Max 60s vertical format with high-converting title & tag optimization' },
-            { id: 'instagram', label: 'Instagram Reels', desc: 'Max 90s reels with caption copy & keyword hashtag suggestions' },
-            { id: 'both', label: 'Both YouTube & Instagram', desc: 'Generate tailored copy, tags, and thumbnails for both platforms' }
-          ].map(opt => (
-            <button
-              key={opt.id}
-              onClick={() => {
-                setSelectedPlatforms(opt.id);
-                setUploadStep(2); // Advance to Popup 2
-              }}
-              className={`w-full text-left p-3.5 rounded-lg border transition-all flex items-center justify-between ${selectedPlatforms === opt.id ? 'border-accent bg-accent/10 text-foreground' : 'border-border hover:border-foreground/40 bg-panel'}`}
-            >
-              <div>
-                <b className="text-sm block">{opt.label}</b>
-                <span className="text-xs text-muted mt-0.5 block">{opt.desc}</span>
-              </div>
-              <ArrowRight size={16} className="text-muted shrink-0 ml-3" />
-            </button>
-          ))}
-        </div>
-      </Modal>
-
-      {/* POPUP 2: Three editable tabs [1] Platforms, [2] Captions, [3] Clips */}
-      <Modal
-        open={uploadStep === 2}
-        onOpenChange={open => !open && setUploadStep(0)}
-        title="Clip Generation Preferences"
-        description="Review or adjust your clipping preferences before the pipeline begins."
-      >
-        <div className="space-y-4 pt-2">
-          {/* Tab Navigation */}
-          <div className="flex border-b border-border/60 gap-4 text-xs font-semibold">
-            <button
-              className={`pb-2 transition-colors ${activeTab === 'platforms' ? 'border-b-2 border-accent text-foreground' : 'text-muted hover:text-foreground'}`}
-              onClick={() => setActiveTab('platforms')}
-            >
-              [1] Platforms
-            </button>
-            <button
-              className={`pb-2 transition-colors ${activeTab === 'captions' ? 'border-b-2 border-accent text-foreground' : 'text-muted hover:text-foreground'}`}
-              onClick={() => setActiveTab('captions')}
-            >
-              [2] Captions
-            </button>
-            <button
-              className={`pb-2 transition-colors ${activeTab === 'clips' ? 'border-b-2 border-accent text-foreground' : 'text-muted hover:text-foreground'}`}
-              onClick={() => setActiveTab('clips')}
-            >
-              [3] Clips
-            </button>
-          </div>
-
-          {/* Tab 1: Platforms */}
-          {activeTab === 'platforms' && (
-            <div className="space-y-3">
-              <span className="text-xs text-muted block">Selected Destination:</span>
-              <div className="grid grid-cols-3 gap-2">
-                {['youtube', 'instagram', 'both'].map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setSelectedPlatforms(p)}
-                    className={`p-2.5 rounded-md text-xs font-medium border text-center capitalize ${selectedPlatforms === p ? 'border-accent bg-accent/15 text-foreground font-bold' : 'border-border bg-panel text-muted'}`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Tab 2: Captions */}
-          {activeTab === 'captions' && (
-            <div className="space-y-3">
-              <span className="text-xs text-muted block">Animated .ass Caption Style Preset:</span>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'pop', label: 'Word Pop', desc: 'Dynamic yellow highlight per spoken word' },
-                  { id: 'bold', label: 'Bold Impact', desc: 'Clean high-contrast bold centered subtitle' },
-                  { id: 'minimal', label: 'Minimalist', desc: 'Subtle clean transcript at bottom' },
-                  { id: 'none', label: 'Captions Off', desc: 'Clean raw video with no overlaid text' }
-                ].map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => setCaptionStyle(s.id)}
-                    className={`p-2.5 rounded-md border text-left ${captionStyle === s.id ? 'border-accent bg-accent/15 text-foreground' : 'border-border bg-panel text-muted'}`}
-                  >
-                    <b className="text-xs block text-foreground">{s.label}</b>
-                    <span className="text-[11px] text-muted">{s.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Tab 3: Clips */}
-          {activeTab === 'clips' && (
-            <div className="space-y-3">
-              <div className="p-3 rounded-lg bg-panel border border-border/70 space-y-1">
-                <span className="text-xs text-muted">Estimated Clip Yield (Duration-Based):</span>
-                <p className="text-lg font-bold text-accent font-mono">{estimatedRange}</p>
-                <p className="text-[11px] text-muted">
-                  Calculated from your {Math.round((asset?.duration_seconds || 1500) / 60)}-minute video. Sentences with score &gt; 80 will be converted to vertical shorts.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium block mb-1.5">Clip Pacing Selection:</label>
-                <select
-                  className="input text-xs"
-                  value={clipPacing}
-                  onChange={e => setClipPacing(e.target.value)}
-                >
-                  <option value="auto">Auto (Best complete thoughts)</option>
-                  <option value="tight">Tight (15s–30s fast pace)</option>
-                  <option value="story">Storyteller (30s–60s context rich)</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="pt-3 border-t border-border/60 flex items-center justify-between">
-            <span className="text-xs text-muted font-mono">{estimatedRange} expected</span>
-            <Button variant="primary" busy={busy} onClick={confirmProcessingPreferences}>
-              <Check size={14} />
-              Confirm & Start Processing
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <ClipPreferencesCard open={uploadStep === 2} onClose={() => setUploadStep(0)} estimate={estimateClipCountRange(asset?.duration_seconds)} busy={busy} error={error} onSubmit={confirmProcessingPreferences} />
 
       {/* POPUP 3: Split-Plan Popup (if video exceeds daily 20-min allowance) */}
       <Modal
@@ -744,7 +609,7 @@ export default function ProjectChat() {
               className="w-full justify-start text-xs"
               variant="primary"
               onClick={() => {
-                setUploadStep(1); // Proceed with first 20-min segment
+                setUploadStep(2); // Proceed to preferences for the first 20-min segment
                 notify('Processing first 20-minute segment of your recording.');
               }}
             >
