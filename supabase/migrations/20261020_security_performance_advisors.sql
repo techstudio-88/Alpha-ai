@@ -15,3 +15,6 @@ alter policy "referrals_select_own" on public.referrals
 
 -- Keep the scoped private helper policy and remove the duplicate public SELECT policy.
 drop policy if exists "subscriptions_member_read" on public.subscriptions;
+
+create index if not exists idx_announcements_created_by on public.announcements(created_by);
+create index if not exists idx_feature_flags_updated_by on public.feature_flags(updated_by);
