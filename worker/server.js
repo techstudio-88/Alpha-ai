@@ -17,6 +17,7 @@ import {decryptCredential} from '../lib/credential-cipher.mjs';
 import {runPublishQueue} from './publish.js';
 import {aiFailure} from '../lib/ai-failures.mjs';
 import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
+import {clipLimitForDuration,maxClipDurationForPacing} from '../lib/clip-estimate.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_KEY_RING=createGeminiKeyRing(),GEMINI_KEYS=GEMINI_KEY_RING.keys,GEMINI_API_KEY=GEMINI_KEY_RING.current()?.key||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const nextGeminiApiKey=()=>GEMINI_KEY_RING.next()?.key||"";
@@ -732,7 +733,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
   const preferences=p.preferences||{};
-  candidates=distinctMoments(candidates,Math.min(8,Math.max(1,Number(preferences.clipCount)||8)));
+  candidates=distinctMoments(candidates,clipLimitForDuration(safeDuration,{clipCount:preferences.clipCount}));
   if(!candidates.length)throw new Error('No complete spoken moments were found. Review the transcript before retrying.');
   const captions=preferences.captions!==false;
   const captionStyle=["pop","bold","minimal"].includes(preferences.captionStyle)?preferences.captionStyle:"pop";
@@ -740,7 +741,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   for(let i=0;i<candidates.length;i++){
     const candidate=candidateHook(candidates[i],segments);
     const start=Math.max(0,Math.min(safeDuration,Number(candidate.start_seconds)||0));
-    const end=Math.max(start,Math.min(safeDuration,start+45,Number(candidate.end_seconds)||start));
+    const end=Math.max(start,Math.min(safeDuration,start+maxClipDurationForPacing(preferences.clipPacing),Number(candidate.end_seconds)||start));
     if(end<=start)continue;
     const key=start.toFixed(3);
     let clip=existingByStart.get(key);
