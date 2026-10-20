@@ -1,0 +1,27 @@
+name: Apply staged Alpha patch
+on:
+  push:
+    branches:
+      - feat/upi-admin-polish
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Apply patch and remove transport files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/alpha-patch/part_* > /tmp/alpha.patch.b64
+          base64 --decode /tmp/alpha.patch.b64 | gzip --decompress > /tmp/alpha.patch
+          git apply --binary /tmp/alpha.patch
+          git rm -r .github/alpha-patch .github/workflows/apply-alpha-patch.yml
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: apply Alpha.ai billing, admin and studio polish"
+          git push origin HEAD:feat/upi-admin-polish
