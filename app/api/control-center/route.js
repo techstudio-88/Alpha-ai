@@ -120,10 +120,9 @@ export async function POST(request){
   const{user,admin,role}=await guard(request);
   const body=await request.json(),action=String(body.action||"");
   if(role!=="admin" && action!=="record_impersonation")return Response.json({error:"Not found."},{status:404});
-  const token=(request.headers.get("authorization")||"").replace(/^Bearer\s+/i,"");
-  const parts=token.split(".");let issuedAt=0;try{issuedAt=Number(JSON.parse(Buffer.from(parts[1],"base64url").toString("utf8")).iat||0)}catch{}
+  const lastSignInAt=Date.parse(user.last_sign_in_at||"");
   const requiresRecent=["approve_upi_order","reject_upi_order","subscription_change","subscription_cancel","subscription_extend","adjust_credits","delete_user_data","suspend_user","unsuspend_user"].includes(action);
-  if(requiresRecent&&(!issuedAt||Date.now()/1000-issuedAt>900))return Response.json({error:"For security, sign in again before this sensitive action."},{status:401});
+  if(requiresRecent&&(!Number.isFinite(lastSignInAt)||Date.now()-lastSignInAt>900000))return Response.json({error:"For security, sign in again before this sensitive action."},{status:401});
   if(action==="suspend_user"||action==="unsuspend_user"){
    const targetUserId=String(body.userId||"");if(!/^[0-9a-f-]{36}$/i.test(targetUserId))return Response.json({error:"Choose a valid user."},{status:400});
    const{data:updated,error}=await admin.auth.admin.updateUserById(targetUserId,{ban_duration:action==="suspend_user"?"876000h":"none"});if(error)throw error;
