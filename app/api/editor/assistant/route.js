@@ -7,7 +7,8 @@ export const runtime='nodejs';
 export const maxDuration=30;
 export async function POST(request){
   try{
-    const body=await request.json();
+    const body=await request.json().catch(()=>null);
+    if(!body||typeof body!=='object'||Array.isArray(body))throw problem('Send a valid JSON request.',400);
     const {admin}=await authorizeWorkflow(request,body.workspaceId);
     const {asset}=await mediaContext(admin,body.workspaceId,body.projectId,body.mediaAssetId);
     const prompt=String(body.prompt||'').trim();
@@ -25,9 +26,13 @@ export async function POST(request){
     if(!selected.length)throw problem('Wait for the timed transcript before requesting content-aware edits.',409);
     if(selected.length>1800)throw problem('Choose a shorter clip for interactive AI editing. Long-video analysis runs in the project pipeline.',409);
     await requireWorkerCapability('editor-assistant');
-    const worker=(process.env.MEDIA_WORKER_URL||'https://alpha-ai-media-worker.onrender.com').replace(/\/$/,'');
+    const configuredWorker=process.env.MEDIA_WORKER_URL||process.env.WORKER_URL;
+    if(!configuredWorker)throw problem('AI editing is not configured yet. Set MEDIA_WORKER_URL in the server environment and retry.',503);
+    let worker;
+    try{worker=new URL(configuredWorker)}catch{throw problem('AI editing service configuration is invalid. Contact support with error ID AI_WORKER_CONFIG.',503)}
+    if(worker.protocol!=='https:'&&worker.hostname!=='localhost'&&worker.hostname!=='127.0.0.1')throw problem('AI editing service configuration is invalid. Contact support with error ID AI_WORKER_CONFIG.',503);
     let response;
-    try{response=await fetch(worker+'/editor/plan',{method:'POST',headers:{'content-type':'application/json','x-worker-secret':process.env.MEDIA_WORKER_SECRET||''},body:JSON.stringify({prompt,words:selected,draft,duration:Number(asset.duration_seconds)}),signal:AbortSignal.timeout(23000)})}
+    try{response=await fetch(new URL('/editor/plan',worker),{method:'POST',headers:{'content-type':'application/json',...(process.env.MEDIA_WORKER_SECRET?{'x-worker-secret':process.env.MEDIA_WORKER_SECRET}:{})},body:JSON.stringify({prompt,words:selected,draft,duration:Number(asset.duration_seconds)}),signal:AbortSignal.timeout(23000),cache:'no-store'})}
     catch(error){const failure=aiFailure(error);throw problem(failure.error,failure.status)}
     const result=await response.json().catch(()=>({}));
     if(!response.ok){
