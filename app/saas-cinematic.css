@@ -136,3 +136,77 @@ button, a { transition-timing-function: cubic-bezier(.2,.8,.2,1); }
 @media(prefers-reduced-motion:reduce) {
  *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important; }
 }
+
+
+/* Final reference-match pass: no lime palette; airy lavender surfaces and coral/violet motion. */
+:root, :root[data-theme='light'] {
+  --accent: #ff704f;
+  --accent-foreground: #ffffff;
+}
+:root[data-theme='light'] .premium-hero .hero-copy h1 span,
+:root[data-theme='light'] .premium-hero .hero-details svg,
+:root[data-theme='light'] .hero-source-topline svg,
+:root[data-theme='light'] .hero-clip-frame svg,
+:root[data-theme='light'] .hero-float-tag svg { color: #ff704f !important; }
+:root[data-theme='light'] .hero-stage,
+:root[data-theme='light'] .assembly-stage,
+:root[data-theme='light'] .quality-board {
+  background: radial-gradient(ellipse at 70% 8%, rgba(255,112,79,.12), transparent 45%),
+              radial-gradient(ellipse at 20% 95%, rgba(143,111,225,.12), transparent 48%),
+              linear-gradient(140deg, #ffffff, #f5f1fb 68%, #fff5f0) !important;
+  border-color: rgba(92,72,128,.15);
+  box-shadow: 0 26px 75px rgba(68,49,97,.12), inset 0 1px rgba(255,255,255,.85);
+}
+:root[data-theme='light'] .hero-source-card,
+:root[data-theme='light'] .hero-clip-card {
+  background: linear-gradient(145deg, #ffffff, #f1eafb) !important;
+  color: #302a40;
+  border-color: rgba(92,72,128,.18);
+  box-shadow: 0 18px 35px rgba(68,49,97,.14), inset 0 1px #fff;
+}
+:root[data-theme='light'] .hero-source-art,
+:root[data-theme='light'] .hero-clip-frame {
+  background: radial-gradient(ellipse at 55% 75%, #f2b7a8, transparent 48%),
+              linear-gradient(135deg, #d9d0f3, #f8e8e5 70%) !important;
+}
+:root[data-theme='light'] .hero-source-person,
+:root[data-theme='light'] .hero-clip-frame::after {
+  background: #d49c91;
+  box-shadow: 0 32px 0 17px #b8a9d8;
+}
+:root[data-theme='light'] .hero-source-topline,
+:root[data-theme='light'] .hero-source-footer,
+:root[data-theme='light'] .hero-clip-copy small,
+:root[data-theme='light'] .hero-float-tag {
+  color: #6f6680;
+}
+:root[data-theme='light'] .hero-float-tag {
+  border-color: rgba(92,72,128,.16);
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 7px 20px rgba(68,49,97,.12);
+}
+:root[data-theme='light'] .hero-source-art i,
+:root[data-theme='light'] .hero-signal-path i,
+:root[data-theme='light'] .hero-signal-dot,
+:root[data-theme='light'] .quality-connector i {
+  background: #ff704f;
+  box-shadow: 0 0 10px rgba(255,112,79,.45);
+}
+:root[data-theme='light'] .assembly-glow { background: rgba(143,111,225,.18); }
+:root[data-theme='light'] .assembly-lane {
+  background: rgba(255,255,255,.88);
+  border-color: rgba(92,72,128,.13);
+  box-shadow: 0 9px 24px rgba(68,49,97,.08);
+}
+:root[data-theme='light'] .assembly-lane-video i { background: linear-gradient(145deg, #f2b7a8, #b8a9d8); }
+:root[data-theme='light'] .assembly-playhead,
+:root[data-theme='light'] .assembly-playhead i { background: #ff704f; box-shadow: 0 0 14px rgba(255,112,79,.4); }
+@media (prefers-reduced-motion: no-preference) {
+  .landing .landing-nav, .landing .landing-hero .hero-copy, .landing .hero-stage,
+  .landing .landing-section, .studio-shell .screen-heading {
+    animation: alpha-rise .65s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .landing .landing-section:nth-of-type(2) { animation-delay: 80ms; }
+  .landing .landing-section:nth-of-type(3) { animation-delay: 140ms; }
+  .landing .landing-section:nth-of-type(4) { animation-delay: 200ms; }
+}
