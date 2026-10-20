@@ -26,6 +26,6 @@ async function checkWorker() {
 
 export async function GET() {
   const [supabase, worker] = await Promise.all([checkSupabase(), checkWorker()]);
-  const ok = supabase.status === "ok" && ["ok", "not_configured"].includes(worker.status);
-  return NextResponse.json({ ok, status: ok ? (worker.status === "not_configured" ? "degraded" : "ok") : "degraded", service: "alpha.ai", timestamp: new Date().toISOString(), dependencies: { supabase, worker } }, { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
+  const ok = ["ok", "not_configured"].includes(supabase.status) && ["ok", "not_configured"].includes(worker.status);
+  return NextResponse.json({ ok, status: ok && supabase.status === "ok" && worker.status === "ok" ? "ok" : "degraded", service: "alpha.ai", timestamp: new Date().toISOString(), dependencies: { supabase, worker } }, { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }
