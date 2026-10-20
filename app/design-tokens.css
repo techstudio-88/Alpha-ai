@@ -27,6 +27,10 @@
   --radius-card: 14px;
   --motion-fast: 120ms;
   --motion-normal: 180ms;
+  --gradient-violet-blue: linear-gradient(120deg,#8b5cf6 0%,#3b82f6 100%);
+  --gradient-blue-cyan: linear-gradient(120deg,#3b82f6 0%,#06b6d4 100%);
+  --gradient-pink-orange: linear-gradient(120deg,#ec4899 0%,#f97316 100%);
+  --gradient-green-teal: linear-gradient(120deg,#22c55e 0%,#14b8a6 100%);
 }
 :root[data-theme='light'] {
   color-scheme: light;

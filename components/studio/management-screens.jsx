@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {Archive,AlertTriangle,CalendarDays,Check,CheckCircle2,ChevronLeft,ChevronRight,Clock,Copy,Download,Film,Folder,Instagram,KeyRound,Link2,Plus,RefreshCw,Scissors,Share2,Sparkles,TrendingUp,Upload,Users,X,Youtube} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import {studioApi,unwrap,useResource,useRows,useStudio} from './data';
@@ -227,6 +227,7 @@ export function SeoScreen(){
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
   const [saving,setSaving]=useState(false);
+  const [seoError,setSeoError]=useState('');
   const [limits,setLimits]=useState({titleRegenerations:{remaining:3,max:3,display:'3 of 3 left'},coverRotations:{remaining:1,max:1,display:'1 of 1 left'}});
 
   const activeClip=(clips.data||[]).find(c=>c.id===activeClipId)||(clips.data||[])[0];
@@ -237,23 +238,17 @@ export function SeoScreen(){
     }
   },[clips.data,activeClipId]);
 
-  useEffect(()=>{
+  const retrySeo=useCallback(async()=>{
     if(!activeClip?.id)return;
-    setLoading(true);
-    studioApi(`/api/clips/${activeClip.id}/repurpose`)
-      .then(res=>{
-        setData(res.asset||{
-          title:activeClip.title||'',
-          hook:'',
-          caption:'',
-          social_copy:{youtube:'',instagram:''},
-          hashtags:[]
-        });
-        if(res.limits)setLimits(res.limits);
-      })
-      .catch(()=>{})
-      .finally(()=>setLoading(false));
-  },[activeClip?.id]);
+    setLoading(true);setSeoError('');
+    try{
+      const res=await studioApi('/api/clips/'+activeClip.id+'/repurpose');
+      setData(res.asset||{title:activeClip.title||'',hook:'',caption:'',social_copy:{youtube:'',instagram:''},hashtags:[]});
+      if(res.limits)setLimits(res.limits);
+    }catch(err){setSeoError(err.message||'Could not load SEO assets. Retry.');}
+    finally{setLoading(false);}
+  },[activeClip?.id,activeClip?.title]);
+  useEffect(()=>{if(activeClip?.id)retrySeo()},[activeClip?.id,retrySeo]);
 
   // Debounced autosave
   const saveTimer=useRef(null);
@@ -264,8 +259,8 @@ export function SeoScreen(){
       saveTimer.current=setTimeout(()=>{
         setSaving(true);
         studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'PATCH',body:next})
-          .then(()=>setSaving(false))
-          .catch(()=>setSaving(false));
+          .then(()=>{setSaving(false);setSeoError('')})
+          .catch(err=>{setSaving(false);setSeoError(err.message||'Could not save SEO changes. Retry.')});
       },800);
       return next;
     });
@@ -278,8 +273,8 @@ export function SeoScreen(){
       saveTimer.current=setTimeout(()=>{
         setSaving(true);
         studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'PATCH',body:next})
-          .then(()=>setSaving(false))
-          .catch(()=>setSaving(false));
+          .then(()=>{setSaving(false);setSeoError('')})
+          .catch(err=>{setSaving(false);setSeoError(err.message||'Could not save SEO changes. Retry.')});
       },800);
       return next;
     });
@@ -290,7 +285,7 @@ export function SeoScreen(){
       notify('You have reached today’s limit of 3 title regenerations on the Free plan.');
       return;
     }
-    setLoading(true);
+    setLoading(true);setSeoError('');
     try{
       const res=await studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'POST',body:{feature}});
       if(res.asset)setData(res.asset);
@@ -298,6 +293,7 @@ export function SeoScreen(){
       const updated=await studioApi(`/api/clips/${activeClip.id}/repurpose`);
       if(updated.limits)setLimits(updated.limits);
     }catch(err){
+      setSeoError(err.message||'SEO generation failed. Retry.');
       notify(err.message);
     }finally{
       setLoading(false);
@@ -337,6 +333,7 @@ export function SeoScreen(){
 
     {/* Main SEO Editor */}
     <div className="flex-1 space-y-6">
+      {seoError&&<div role="alert" className="panel p-4 border border-danger/30 bg-danger/5 flex items-start justify-between gap-3"><p className="text-sm text-danger">{seoError}</p><Button size="sm" variant="secondary" onClick={retrySeo}>Retry</Button></div>}
       <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-border/50">
         <div>
           <span className="eyebrow">SEO & SOCIAL REPURPOSING</span>
@@ -550,18 +547,22 @@ export function BrandScreen(){
 }
 
 export function SettingsScreen(){
-  const {user,workspace,demo,notify,state,refreshWorkspace}=useStudio();const [tab,setTab]=useState('profile'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(user.user_metadata?.full_name||''),[workspaceName,setWorkspaceName]=useState(workspace.name);
+  const {user,workspace,demo,notify,state,refreshWorkspace}=useStudio();const [tab,setTab]=useState('profile'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(user.user_metadata?.full_name||''),[workspaceName,setWorkspaceName]=useState(workspace.name),[preferences,setPreferences]=useState({language:'en',timezone:'UTC',notifications:{job_completed:{in_app:true,email:false},job_failed:{in_app:true,email:false},payment_approved:{in_app:true,email:false},payment_rejected:{in_app:true,email:false},plan_expiring:{in_app:true,email:false}}}),[shortcutsOpen,setShortcutsOpen]=useState(false);
   const members=useRows('workspace_members','user_id,role,created_at');
   const connections=useRows('publish_connections','id,platform,status,created_at');
   const keys=useResource(async()=>demo?[]:(await studioApi('/api/v1/keys?workspace_id='+encodeURIComponent(workspace.id))).keys,[workspace.id,demo]);
   const billing=useResource(async()=>{if(demo)return {subscription:null,plan:'free',invoices:[]};const [sub,ent,inv]=await Promise.all([supabase.from('subscriptions').select('plan,status,provider,current_period_end,billing_interval').eq('workspace_id',workspace.id).maybeSingle(),supabase.from('workspace_entitlements').select('plan').eq('workspace_id',workspace.id).maybeSingle(),supabase.from('billing_invoices').select('id,plan,amount_paise,currency,status,description,created_at,provider_invoice_id').eq('workspace_id',workspace.id).order('created_at',{ascending:false}).limit(20)]);if(sub.error)throw sub.error;if(ent.error)throw ent.error;if(inv.error)throw inv.error;return {subscription:sub.data,plan:sub.data?.plan||ent.data?.plan||'free',invoices:inv.data||[]}},[workspace.id,demo]);
   const [keyName,setKeyName]=useState(''),[newKey,setNewKey]=useState(''),[keyOpen,setKeyOpen]=useState(false);
-  async function save(e){e.preventDefault();setError('');setBusy(true);try{if(!demo){if(tab==='profile'){const {error}=await supabase.auth.updateUser({data:{full_name:name}});if(error)throw error}else {const changed=unwrap(await supabase.from('workspaces').update({name:workspaceName}).eq('id',workspace.id).select('id'));if(!changed.length)throw new Error('You do not have permission to rename this workspace.');refreshWorkspace()}}notify(demo?'Sample preferences saved for this preview.':'Your settings are saved.')}catch(err){setError(err.message)}finally{setBusy(false)}}
+  useEffect(()=>{let active=true;if(demo||!user?.id)return;supabase.from('profiles').select('preferences').eq('id',user.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){setError('Could not load preferences.');return}if(data?.preferences)setPreferences(old=>({...old,...data.preferences,notifications:{...old.notifications,...(data.preferences.notifications||{})}}))});return()=>{active=false}},[user?.id,demo]);
+  const timezones=typeof Intl.supportedValuesOf==='function'?Intl.supportedValuesOf('timeZone'):['UTC','Asia/Kolkata','America/New_York','Europe/London'];
+
+  async function save(e){e.preventDefault();setError('');setBusy(true);try{if(!demo){if(tab==='profile'){const {error}=await supabase.auth.updateUser({data:{full_name:name}});if(error)throw error}else if(tab==='preferences'){const saved=unwrap(await supabase.from('profiles').update({preferences}).eq('id',user.id).select('id'));if(!saved.length)throw new Error('Could not save your preferences. Refresh and try again.')}else {const changed=unwrap(await supabase.from('workspaces').update({name:workspaceName}).eq('id',workspace.id).select('id'));if(!changed.length)throw new Error('You do not have permission to rename this workspace.');refreshWorkspace()}}notify(demo?'Sample preferences saved for this preview.':'Your settings are saved.')}catch(err){setError(err.message)}finally{setBusy(false)}}
   async function createKey(e){e.preventDefault();setBusy(true);setError('');try{if(demo)return notify('API credentials are not created in the sample workspace.');const result=await studioApi('/api/v1/keys',{body:{workspace_id:workspace.id,name:keyName}});setNewKey(result.key);keys.retry()}catch(err){setError(err.message)}finally{setBusy(false)}}
   async function revoke(id){try{await studioApi('/api/v1/keys',{method:'DELETE',body:{id}});keys.retry();notify('API key revoked.')}catch(err){setError(err.message)}}
   const resource=tab==='members'?members:tab==='integrations'?connections:tab==='keys'?keys:null;
-  const tabs=[['profile','Profile'],['workspace','Workspace'],['members','Members & roles'],['keys','API keys'],['integrations','Integrations'],['billing','Billing'],['danger','Danger zone']];
+  const tabs=[['profile','Profile'],['preferences','Preferences'],['workspace','Workspace'],['members','Members & roles'],['keys','API keys'],['integrations','Integrations'],['billing','Billing'],['danger','Danger zone']];
   return <><Heading title="Settings" description="A workspace that fits the way you work."/><div className="settings-layout"><nav className="settings-nav" aria-label="Settings sections">{tabs.map(([id,label])=><button key={id} className={tab===id?'active':''} aria-current={tab===id?'page':undefined} onClick={()=>{setTab(id);setError('')}}>{label}</button>)}</nav><section className="panel settings-panel"><h2>{tabs.find(([id])=>id===tab)?.[1]}</h2>{error&&<div className="mb-5"><ErrorState message={error} onRetry={()=>setError('')}/></div>}{resource?.loading?<ScreenSkeleton/>:resource?.error?<ErrorState message={resource.error} onRetry={resource.retry}/>:<>
+    {tab==='preferences'&&<div className="panel p-5 space-y-5"><form onSubmit={save} className="space-y-5"><div><label className="block text-sm font-medium mb-2" htmlFor="settings-language">Language</label><select id="settings-language" className="input w-full" value={preferences.language||'en'} onChange={e=>setPreferences(old=>({...old,language:e.target.value}))}><option value="en">English</option><option value="hi">Hindi</option><option value="es">Spanish</option><option value="pt">Portuguese</option><option value="fr">French</option></select></div><div><label className="block text-sm font-medium mb-2" htmlFor="settings-timezone">Timezone</label><select id="settings-timezone" className="input w-full" value={preferences.timezone||'UTC'} onChange={e=>setPreferences(old=>({...old,timezone:e.target.value}))}>{[...new Set([preferences.timezone||'UTC',...timezones])].map(zone=><option key={zone} value={zone}>{zone}</option>)}</select></div><div><h3 className="font-semibold mb-2">Notifications</h3><p className="text-sm text-muted mb-3">Choose where to receive each event. Email delivery requires email notifications to be configured.</p><div className="space-y-3">{[['job_completed','Job completed'],['job_failed','Job failed'],['payment_approved','Payment approved'],['payment_rejected','Payment rejected'],['plan_expiring','Plan expiring in 3 days']].map(([key,label])=><div key={key} className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3"><span className="text-sm">{label}</span><div className="flex gap-4"><label className="text-sm flex items-center gap-2"><input type="checkbox" checked={preferences.notifications?.[key]?.in_app!==false} onChange={e=>setPreferences(old=>({...old,notifications:{...old.notifications,[key]:{...old.notifications?.[key],in_app:e.target.checked}}}))}/>In-app</label><label className="text-sm flex items-center gap-2"><input type="checkbox" checked={Boolean(preferences.notifications?.[key]?.email)} onChange={e=>setPreferences(old=>({...old,notifications:{...old.notifications,[key]:{...old.notifications?.[key],email:e.target.checked}}}))}/>Email</label></div></div>)}</div></div><Button type="submit" variant="primary" busy={busy}>Save preferences</Button></form><div className="border-t border-border pt-4"><h3 className="font-semibold">Keyboard shortcuts</h3><p className="text-sm text-muted mb-3">Quick navigation and editing shortcuts.</p><Button variant="secondary" onClick={()=>setShortcutsOpen(true)}>View shortcuts</Button></div><Modal open={shortcutsOpen} onOpenChange={setShortcutsOpen} title="Keyboard shortcuts"><ul className="space-y-2 text-sm"><li><kbd>J</kbd> / <kbd>K</kbd> — next / previous clip</li><li><kbd>A</kbd> — approve selected clip</li><li><kbd>E</kbd> — open editor</li><li><kbd>P</kbd> — publish view</li><li><kbd>⌘ K</kbd> — open command search</li></ul></Modal></div>}
     {tab==='profile'&&<form onSubmit={save}><Input label="Full name" value={name} onChange={e=>setName(e.target.value)} required/><Input label="Email" type="email" value={user.email||''} disabled/><Button type="submit" variant="primary" busy={busy} className="self-start">Save profile</Button><Button className="self-start" onClick={async()=>{if(demo)return notify('Sign in to manage your real password.');const {error}=await supabase.auth.resetPasswordForEmail(user.email,{redirectTo:window.location.origin+'/auth/update-password'});if(error)setError(error.message);else notify('Password reset sent. Check your inbox.')}}>Send password reset</Button></form>}
     {tab==='workspace'&&<form onSubmit={save}><Input label="Workspace name" value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} required/><p className="text-xs text-muted">Changes are subject to your workspace role and database permissions.</p><Button type="submit" variant="primary" busy={busy} className="self-start">Save workspace</Button></form>}
     {tab==='members'&&((members.data||[]).length&&state!=='empty'?<><div className="table-scroll"><table className="data-table"><thead><tr><th>Member</th><th>Role</th><th>Joined</th></tr></thead><tbody>{members.data.map(m=><tr key={m.user_id}><td>{m.user_id===user.id?user.user_metadata?.full_name||'You':`Member ${m.user_id.slice(0,8)}`}</td><td>{m.role}</td><td>{new Date(m.created_at).toLocaleDateString()}</td></tr>)}</tbody></table></div><p className="text-xs text-muted mt-5">Membership is read from your workspace. Invitation delivery and role-management workflows need an administrative integration.</p></>:<EmptyState icon={Users} title="A place for your team." description="Workspace members appear here when they are added."/>)}

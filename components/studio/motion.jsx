@@ -15,6 +15,30 @@ export function useMotionPreference(){
   return enabled;
 }
 
+export function useReveal({ threshold = 0.12, once = true } = {}) {
+  const [refVisible, setRefVisible] = useState(false);
+  const [node, setNode] = useState(null);
+  useEffect(() => {
+    if (!node) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || document.documentElement.dataset.motion === 'paused' || !('IntersectionObserver' in window)) {
+      setRefVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          setRefVisible(true);
+          if (once) observer.unobserve(entry.target);
+        } else if (!once) setRefVisible(false);
+      }
+    }, { threshold });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node, threshold, once]);
+  return { ref: setNode, revealed: refVisible, className: refVisible ? 'motion-reveal motion-seen' : 'motion-reveal' };
+}
+
 export function MotionToggle(){
   const [paused,setPaused]=useState(false);
   useEffect(()=>{const sync=()=>setPaused(document.documentElement.dataset.motion==='paused');sync();window.addEventListener('alpha:motion',sync);return()=>window.removeEventListener('alpha:motion',sync)},[]);

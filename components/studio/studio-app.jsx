@@ -17,12 +17,13 @@ import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
 import {PricingCards} from './marketing';
 import UpiCheckout from './upi-checkout';
+import AssistantScreen from './assistant-screen';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
 
 export const NAV=[['home','Home',Home],['projects','Projects',Folder],['studio','Studio',WandSparkles],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['stuff','Stuff',Archive],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
-const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio',assistant:'studio'};
+const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio'};
 
 export default function StudioApp() {
   const params=useSearchParams(),router=useRouter(),demo=params.get('demo')==='1';
@@ -33,13 +34,18 @@ export default function StudioApp() {
   useEffect(()=>{
     if(demo||!supabase){setReady(true);return}
     let alive=true;
-    const timeout=setTimeout(()=>{if(alive){setAuthError('Your session could not be restored. Check your connection and retry.');setReady(true)}},12000);
+    const timeout=setTimeout(()=>{if(alive){setAuthError('Your session could not be restored after two attempts. Check your connection and retry.');setReady(true)}},26000);
     (async()=>{
       try {
         const url=new URL(window.location.href),code=url.searchParams.get('code');
         if(url.searchParams.get('error'))throw new Error('OAuth authorization did not finish.');
         // detectSessionInUrl owns the PKCE exchange; a second exchange reuses a one-time code.
-        const response=await supabase.auth.getSession();
+        const readSession=async()=>Promise.race([
+          supabase.auth.getSession(),
+          new Promise(resolve=>setTimeout(()=>resolve({error:new Error('Session restore timed out.'),data:{session:null}}),12000))
+        ]);
+        let response=await readSession();
+        if(response.error){await new Promise(resolve=>setTimeout(resolve,350));response=await readSession()}
         if(response.error)throw response.error;
         let session=response.data?.session||null;
         // Supabase normally exchanges the PKCE code during client initialization.
@@ -113,6 +119,9 @@ export default function StudioApp() {
 function StudioWorkspace() {
   const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,refreshWorkspace,notify}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
+  const [announcement,setAnnouncement]=useState(null),[announcementDismissed,setAnnouncementDismissed]=useState(false);
+  useEffect(()=>{let alive=true;if(demo||!supabase)return;supabase.from('announcements').select('id,title,body').eq('active',true).order('created_at',{ascending:false}).limit(1).maybeSingle().then(({data})=>{if(!alive||!data)return;try{if(localStorage.getItem('alpha.announcement.dismissed')===data.id)return}catch{}setAnnouncement(data)}).catch(()=>{});return()=>{alive=false}},[demo,workspace.id]);
+
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[upiSelection,setUpiSelection]=useState(null),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
   const [workspaceModal,setWorkspaceModal]=useState(false),[workspaceName,setWorkspaceName]=useState(''),[workspaceBusy,setWorkspaceBusy]=useState(false),[workspaceError,setWorkspaceError]=useState('');
   const projects=useRows('projects');
@@ -146,10 +155,10 @@ function StudioWorkspace() {
   else if(view==='home')screen=<HomeScreen projects={projects}/>;
   else if(view==='projects')screen=<ProjectsScreen resource={projects}/>;
   else if(view==='project')screen=projects.loading?<ScreenSkeleton/>:projects.error?<ErrorState message={projects.error} onRetry={projects.retry}/>:<ProjectScreen projects={projects.data||[]} projectId={projectId}/>;
-  else if(view==='studio'||view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='studio'||view==='chat')screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
-  else if(view==='assistant')screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='assistant')screen=<AssistantScreen/>;
   else if(view==='publish')screen=<PublishScreen/>;
   else if(view==='seo')screen=<SeoScreen clipId={clipId} projectId={projectId}/>;
   else if(view==='stuff')screen=<StuffScreen/>;
@@ -168,6 +177,7 @@ function StudioWorkspace() {
       </div>
     </aside>
     <div className="min-w-0">
+      {announcement&&!announcementDismissed&&<div role="status" className="mx-4 mt-3 flex items-start justify-between gap-3 rounded-xl border border-border bg-raised p-3"><div><strong className="text-sm">{announcement.title}</strong><p className="text-sm text-muted mt-1">{announcement.body}</p></div><button aria-label="Dismiss announcement" className="shrink-0 rounded-md p-1" onClick={()=>{setAnnouncementDismissed(true);try{localStorage.setItem('alpha.announcement.dismissed',announcement.id)}catch{}}}>×</button></div>}
       <header className="studio-topbar">
         <div className="flex items-center gap-3 min-w-0">
           <Button className="mobile-menu" size="icon" variant="ghost" aria-label="Open studio navigation" onClick={()=>setMobile(true)}><Menu size={20}/></Button>

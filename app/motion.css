@@ -42,3 +42,25 @@ button[class*='rounded-control']:active,a[class*='rounded-control']:active { tra
 :root[data-motion='paused'] *, :root[data-motion='paused'] *::before, :root[data-motion='paused'] *::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }
 :root[data-motion='paused'] .motion-reveal { opacity: 1; transform: none; }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after { animation: none!important; transition: none!important; scroll-behavior: auto!important; }.motion-reveal { opacity: 1; transform: none; }}
+
+/* Reusable motion affordances; reduced motion remains opt-out and OS-aware. */
+.studio-view { animation: studio-enter 200ms ease-out both; }
+.studio-card,.pricing-card,.stat-card { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
+.studio-card:hover,.pricing-card:hover,.stat-card:hover { transform: translateY(-3px); box-shadow: 0 14px 34px rgb(59 130 246 / 12%); }
+button:active,.button:active { transform: scale(.985); }
+.button-primary,.btn-primary { background-image: var(--gradient-violet-blue); background-size: 160% 160%; transition: background-position 220ms ease, transform 150ms ease; }
+.button-primary:hover,.btn-primary:hover { background-position: 100% 0; }
+.motion-stagger > * { animation: studio-enter 350ms ease-out both; }
+.motion-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.motion-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.motion-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.progress-fill { transition: width 320ms ease-out; }
+.skeleton-shimmer { background: linear-gradient(100deg,var(--raised) 20%,color-mix(in srgb,var(--foreground) 10%,var(--raised)) 40%,var(--raised) 60%); background-size: 220% 100%; animation: studio-shimmer 1.5s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .studio-view,.motion-reveal,.motion-stagger > *, .skeleton-shimmer { animation: none !important; transition: none !important; transform: none !important; }
+  .studio-card:hover,.pricing-card:hover,.stat-card:hover { transform: none; box-shadow: none; }
+}
+:root[data-motion='paused'] .studio-view,
+:root[data-motion='paused'] .motion-reveal,
+:root[data-motion='paused'] .motion-stagger > *,
+:root[data-motion='paused'] .skeleton-shimmer { animation: none !important; transition: none !important; transform: none !important; opacity: 1; }

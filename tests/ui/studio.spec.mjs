@@ -15,7 +15,8 @@ test('landing has clear hierarchy, truthful pricing, structured data and a worki
   expect((await picture.body()).byteLength).toBeLessThan(200*1024);
   const schemas=await page.locator('script[type="application/ld+json"]').allTextContents();
   expect(schemas.join(' ')).toContain('FAQPage');expect(schemas.join(' ')).toContain('SoftwareApplication');
-  await expect(page.getByText('Proposed plan · not on sale').first()).toBeAttached();
+  await expect(page.getByText('₹799', {exact:false}).first()).toBeAttached();
+  await expect(page.getByText('₹1,499', {exact:false}).first()).toBeAttached();
   await noOverflow(page);expect(errors).toEqual([]);
   const accessibility=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   expect(accessibility.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)}))).toEqual([]);

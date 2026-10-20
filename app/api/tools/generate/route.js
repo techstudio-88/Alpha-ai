@@ -36,7 +36,8 @@ export async function POST(request){
       const ip=request.headers.get("x-real-ip")||request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||"unknown";
       await enforceApiRateLimit(db(),"anonymous:"+ip,"/api/tools/generate",20,60,ip);
     }
-    const worker=(process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com").replace(/\/$/,"");
+    const worker=(process.env.MEDIA_WORKER_URL||"").replace(/\/$/,"");
+    if (!worker) throw new Error("Media worker is not configured. Set MEDIA_WORKER_URL to enable remote processing.");
     const response=await fetch(worker+"/assistant",{
       method:"POST",
       headers:{"content-type":"application/json","x-worker-secret":process.env.MEDIA_WORKER_SECRET||""},
