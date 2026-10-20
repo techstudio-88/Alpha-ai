@@ -28,7 +28,7 @@ export default function AdminPage(){
  const exportUserConsent=u=>exportRows("alpha-user-consent",consents.filter(x=>x.user_id===u.id),["id","user_id","consent_type","policy_version","granted","source","created_at"]);
  const preview=async w=>{try{await action("record_impersonation",{workspaceId:w.id});setImpersonate(w)}catch(e){setToast(e.message)}};
  if(loading)return <div className="adminLoading"><ShieldCheck size={30}/><span>Loading private control center…</span></div>;
- if(error)return <div className="adminDenied"><ShieldAlert size={30}/><h2>Private admin area</h2><p>{error}</p><button className="btn" onClick={()=>location.href="/"}>Back to Alpha.ai</button></div>;
+ if(error)return <div className="adminDenied"><ShieldAlert size={30}/><h2>Private admin area</h2><p>{error}</p><div className="adminHeaderActions"><button className="btn primary" onClick={load}><RefreshCw size={15}/> Retry loading</button><button className="btn" onClick={()=>location.href="/auth"}>Sign in</button><button className="btn" onClick={()=>location.href="/"}>Back to Alpha.ai</button></div></div>;
  return <div className="adminShell">
   <header className="adminHeader"><div><div className="eyebrow">ALPHA.AI · PRIVATE CONTROL CENTER</div><h1>Platform administration</h1><p>Operational visibility, access control, audit history and security signals.</p></div><div className="adminHeaderActions"><button className="btn" onClick={load}><RefreshCw size={15}/> Refresh</button><button className="btn" onClick={()=>location.href="/"}><ArrowLeft size={15}/> Workspace</button></div></header>
   {toast&&<div className="adminToast">{toast}<button onClick={()=>setToast("")}><X size={14}/></button></div>}
