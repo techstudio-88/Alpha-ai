@@ -1,4 +1,5 @@
 "use client";
+import "./admin.css";
 import{useEffect,useMemo,useState}from"react";
 import{Activity,AlertTriangle,ArrowLeft,BarChart3,Check,ChevronRight,Download,Filter,FolderKanban,Lock,RefreshCw,RotateCcw,Search,ShieldAlert,ShieldCheck,SquareX,UserPlus,Users,X}from"lucide-react";
 import{supabase}from"../../../lib/supabase";
