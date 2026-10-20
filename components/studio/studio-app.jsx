@@ -16,6 +16,7 @@ import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-scr
 import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
 import {PricingCards} from './marketing';
+import UpiCheckout from './upi-checkout';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
@@ -112,7 +113,7 @@ export default function StudioApp() {
 function StudioWorkspace() {
   const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
-  const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[upiSelection,setUpiSelection]=useState(null),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -159,7 +160,7 @@ function StudioWorkspace() {
       <div className="sidebar-bottom">
         {workspaceSelect}
         <div className="usage-meter"><strong>{usageLimits.availableCredits} credits · {usageLimits.dailyVideoMinutes}m daily</strong><span className="block mt-1">{minutes} min source media in workspace</span><span className="block mt-1">Free daily allowance</span></div>
-        <Button size="sm" className="w-full" onClick={()=>setUpgrade(true)} aria-label="View planned upgrades">View planned upgrades</Button>
+        <Button size="sm" className="w-full" onClick={()=>setUpgrade(true)} aria-label="View plans">View plans</Button>
       </div>
     </aside>
     <div className="min-w-0">
@@ -201,6 +202,6 @@ function StudioWorkspace() {
       <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
       <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
     </Modal>
-    <Modal open={upgrade} onOpenChange={setUpgrade} title="Choose your next step" description="Paid plans are proposed and unavailable for checkout today." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact/></Modal>
+    <Modal open={upgrade && !upiSelection} onOpenChange={setUpgrade} title="Choose your plan" description="Pay with UPI. Plans activate only after payment verification." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact onSelectPlan={(plan,interval)=>setUpiSelection({plan,interval})}/></Modal><Modal open={Boolean(upiSelection)} onOpenChange={open=>{if(!open)setUpiSelection(null)}} title="Pay with UPI" description="Your plan activates after we verify the payment."><UpiCheckout workspaceId={workspace?.id} plan={upiSelection?.plan} interval={upiSelection?.interval} onClose={()=>setUpiSelection(null)} onDone={()=>{setUpiSelection(null);setUpgrade(false)}}/></Modal>
   </div>;
 }
