@@ -14,3 +14,42 @@
 .adminModal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:#14182a78;backdrop-filter:blur(7px)}.adminModalCard{position:relative;width:min(540px,100%);max-height:min(85vh,900px);overflow:auto;padding:27px;background:#fff;border:1px solid #e1e4ef;border-radius:20px;box-shadow:0 28px 90px #10142b40;color:#20263a}.adminModalCard.wide{width:min(760px,100%)}.adminModalCard .eyebrow{display:inline-flex;color:#7057d9;background:#f0edff;border-radius:999px;padding:6px 9px;font-size:9px;font-weight:850;letter-spacing:.1em}.adminModalCard h2{font-size:24px;letter-spacing:-.04em;margin:14px 0 5px}.adminModalCard h3{font-size:14px;margin:24px 0 9px}.adminModalCard p{font-size:12px;color:#7c8497;overflow-wrap:anywhere}.modalClose{position:absolute;right:15px;top:15px;width:32px;height:32px;display:grid;place-items:center;border:1px solid #e4e7ef;border-radius:10px;background:#fff;color:#737b8e}.detailGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}.detailGrid>div{min-width:0;padding:13px;border:1px solid #eceef5;border-radius:11px;background:#fafbff}.detailGrid b{display:block;color:#7d8599;font-size:10px;margin-bottom:5px}.detailGrid span{display:block;color:#252b40;font-size:11px;overflow-wrap:anywhere}.detailRow span{flex:1;overflow-wrap:anywhere}.adminLoading,.adminDenied{min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;text-align:center;color:#4b5268;padding:30px}.adminLoading svg{color:#7057e8;animation:adminSpin 1.3s linear infinite}.adminDenied h2{margin:0;font-size:24px}.adminDenied p{color:#747d91;font-size:13px}@keyframes adminSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.adminShell *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 @media(max-width:1050px){.adminStats{grid-template-columns:repeat(3,minmax(0,1fr))}.adminSpan8,.adminPanel:not(.adminSpan8):not(.adminSpan12){grid-column:span 12}.adminGrid{grid-template-columns:repeat(6,minmax(0,1fr))}.adminGrid>.adminPanel{grid-column:span 6!important}}
 @media(max-width:680px){.adminShell{padding:17px 12px 35px}.adminHeader{align-items:flex-start;flex-direction:column}.adminHeaderActions{width:100%}.adminHeaderActions .btn{flex:1}.adminStats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.adminStat{padding:14px 12px;border-radius:13px}.adminStat>svg{width:17px;height:17px;padding:7px}.adminToolbar{padding:9px}.adminSearch{flex-basis:100%}.adminToolbar select,.adminToolbar input[type=date]{flex:1;min-width:0}.adminTabs{margin-left:-2px;margin-right:-2px}.adminTabs button{padding:10px 12px}.adminPanel{padding:13px;border-radius:14px}.panelHead h2{font-size:16px}.panelHead{align-items:flex-start}.panelFilters{width:100%}.adminTable{min-width:620px}.activityRow{align-items:flex-start;flex-wrap:wrap}.activityRow time{margin-left:26px}.adminPager{flex-wrap:wrap}.detailGrid{grid-template-columns:1fr}.flagCard{flex-wrap:wrap}.flagMain{flex-basis:70%}.adminModal{padding:10px}.adminModalCard{padding:22px 16px;border-radius:16px}}
+
+
+/* Motion and visual polish pass — admin-only, respects reduced-motion settings */
+@keyframes adminRiseIn{from{opacity:0;transform:translate3d(0,16px,0) scale(.99)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@keyframes adminFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes adminGlow{0%,100%{box-shadow:0 7px 24px #7057e80b}50%{box-shadow:0 12px 34px #7057e81c}}
+@keyframes adminGradientShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.adminShell{isolation:isolate;background-size:180% 180%;animation:adminFadeIn .45s ease both}
+.adminHeader{animation:adminRiseIn .48s cubic-bezier(.2,.7,.2,1) both}
+.adminHeader .eyebrow{animation:adminRiseIn .5s .04s both}
+.adminHeader h1{animation:adminRiseIn .52s .08s both}
+.adminHeader p{animation:adminRiseIn .52s .12s both}
+.adminHeaderActions{animation:adminRiseIn .52s .15s both}
+.adminStats .adminStat{animation:adminRiseIn .5s cubic-bezier(.2,.7,.2,1) both;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+.adminStats .adminStat:nth-child(1){animation-delay:.04s}.adminStats .adminStat:nth-child(2){animation-delay:.09s}.adminStats .adminStat:nth-child(3){animation-delay:.14s}.adminStats .adminStat:nth-child(4){animation-delay:.19s}.adminStats .adminStat:nth-child(5){animation-delay:.24s}
+.adminStat:hover{transform:translateY(-4px);border-color:#d2c9ff;box-shadow:0 15px 34px #3b2a8012}
+.adminStat:after{transition:transform .35s ease,background .35s ease}.adminStat:hover:after{transform:scale(1.35);background:#e9e4ff}
+.adminToolbar{animation:adminRiseIn .45s .12s both}
+.adminTabs{animation:adminRiseIn .45s .16s both}
+.adminTabs button{transition:background .2s ease,color .2s ease,transform .2s ease,box-shadow .2s ease}
+.adminTabs button:hover{transform:translateY(-1px)}
+.adminTabs button.active{background-size:180% 180%;animation:adminGradientShift 5s ease infinite}
+.adminContent>.adminGrid>.adminPanel,.adminContent>.adminPanel{animation:adminRiseIn .45s cubic-bezier(.2,.7,.2,1) both}
+.adminContent .adminPanel:nth-child(2){animation-delay:.05s}.adminContent .adminPanel:nth-child(3){animation-delay:.1s}.adminContent .adminPanel:nth-child(4){animation-delay:.15s}
+.adminPanel{transition:box-shadow .22s ease,border-color .22s ease,transform .22s ease}
+.adminPanel:hover{border-color:#d9d3f7;box-shadow:0 12px 34px #27335a0c}
+.adminTable tbody tr{transition:background .16s ease}
+.adminTable tbody tr:hover{background:#f5f3ff}
+.adminTable th{position:sticky;top:0;z-index:2}
+.adminShell .btn:active,.adminTabs button:active,.rowActions button:active{transform:scale(.98)}
+.adminToast{animation:adminRiseIn .25s ease both}
+.adminModal{animation:adminFadeIn .18s ease both}
+.adminModalCard{animation:adminRiseIn .24s cubic-bezier(.2,.7,.2,1) both}
+.adminLoading{animation:adminFadeIn .25s ease both}
+.adminLoading svg{transform-origin:center}
+.adminShell .statusPill{transition:filter .2s ease,transform .2s ease}
+.adminShell .statusPill:hover{filter:saturate(1.2);transform:translateY(-1px)}
+.adminShell :where(button,input,select,textarea){transition-duration:.18s}
+@media(prefers-reduced-motion:reduce){.adminShell,.adminShell *,.adminShell *::before,.adminShell *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
