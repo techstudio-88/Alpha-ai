@@ -24,7 +24,8 @@ export async function POST(request){
   const project=await supabase.from("projects").insert({workspace_id:workspaceId,owner_id:user.id,name,status:"uploading"}).select().single();if(project.error)throw project.error;
   const source=await supabase.from("project_sources").insert({workspace_id:workspaceId,project_id:project.data.id,source_type:"google_photos",source_url:sourceUrl,external_id:externalId,file_name:mediaFile.filename||null,status:"queued",metadata:{provider:"google_photos",media_id:externalId,mime_type:mediaFile.mimeType,base_url_expires_in:"60m"}}).select().single();if(source.error)throw source.error;
    const job=await supabase.from("processing_jobs").insert({workspace_id:workspaceId,project_id:project.data.id,job_type:"ingest",status:"queued",progress:0,payload:{workspaceId,projectId:project.data.id,requestedBy:user.id,sourceType:"google_photos",sourceId:source.data.id,url:sourceUrl,googlePhotosBaseUrl:sourceUrl,photosCredential:encryptCredential(accessToken,secret),googlePhotosMediaId:externalId,file_name:mediaFile.filename||null}}).select().single();if(job.error)throw job.error;
-   const worker=process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com";
+   const worker=process.env.MEDIA_WORKER_URL||"";
+    if (!worker) throw new Error("Media worker is not configured. Set MEDIA_WORKER_URL to enable remote processing.");
    const wr=await fetch(worker.replace(/\/$/,"")+"/process",{method:"POST",headers:{"content-type":"application/json","x-worker-secret":secret},body:JSON.stringify({workspaceId,projectId:project.data.id,jobId:job.data.id,requestedBy:user.id}),signal:AbortSignal.timeout(10000)}).catch(()=>null);
    const wd=await wr?.json().catch(()=>({}));if(wr&&[401,403].includes(wr.status))throw new Error(wd.error||"Media worker authorization failed.");
   return Response.json({ok:true,projectId:project.data.id,jobId:job.data.id,file:mediaFile});

@@ -56,7 +56,8 @@ export async function POST(req){
     const buffer=Buffer.from(await imageResponse.arrayBuffer());
     if(buffer.byteLength>1200000)throw problem("Thumbnail is too large. Use an image under 1.2 MB.",413);
     const prompt="Analyze this video thumbnail for short-form creator content. Return JSON with overall_score,mobile_readability,clarity,curiosity,contrast,emotion,text_readability,topic_clarity,benchmark_percentile and an analysis object containing strengths,weaknesses,improvements. Do not claim this is a true market percentile; use a heuristic benchmark.";
-    const worker=(process.env.MEDIA_WORKER_URL||"https://alpha-ai-media-worker.onrender.com").replace(/\/$/,"");
+    const worker=(process.env.MEDIA_WORKER_URL||"").replace(/\/$/,"");
+    if (!worker) throw new Error("Media worker is not configured. Set MEDIA_WORKER_URL to enable remote processing.");
     const response=await fetch(worker+"/assistant",{
       method:"POST",
       headers:{"content-type":"application/json","x-worker-secret":process.env.MEDIA_WORKER_SECRET||""},

@@ -143,7 +143,8 @@ export async function POST(request) {
       return Response.json({ text: cached.text, actions: cached.actions, cached: true });
     }
 
-    const workerUrl = (process.env.MEDIA_WORKER_URL || 'https://alpha-ai-media-worker.onrender.com').replace(/\/$/, '');
+    const workerUrl = (process.env.MEDIA_WORKER_URL || '').replace(/\/$/, '');
+    if (!workerUrl) throw new Error("Media worker is not configured. Set MEDIA_WORKER_URL to enable remote processing.");
     const workerRes = await fetch(`${workerUrl}/assistant`, {
       method: 'POST',
       headers: {

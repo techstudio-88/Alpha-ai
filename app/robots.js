@@ -8,6 +8,8 @@ export default function robots(){
       disallow:[
         "/api/",
         "/adminishere/",
+        "/hq-7k2p9x",
+        "/hq-7k2p9x/",
         "/control-center/",
         "/editor/",
         "/shares/",

@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import {Archive,AlertTriangle,CalendarDays,Check,CheckCircle2,ChevronLeft,ChevronRight,Clock,Copy,Download,Film,Folder,Instagram,KeyRound,Link2,Plus,RefreshCw,Scissors,Share2,Sparkles,TrendingUp,Upload,Users,X,Youtube} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import {studioApi,unwrap,useResource,useRows,useStudio} from './data';
@@ -227,6 +227,7 @@ export function SeoScreen(){
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(false);
   const [saving,setSaving]=useState(false);
+  const [seoError,setSeoError]=useState('');
   const [limits,setLimits]=useState({titleRegenerations:{remaining:3,max:3,display:'3 of 3 left'},coverRotations:{remaining:1,max:1,display:'1 of 1 left'}});
 
   const activeClip=(clips.data||[]).find(c=>c.id===activeClipId)||(clips.data||[])[0];
@@ -237,23 +238,17 @@ export function SeoScreen(){
     }
   },[clips.data,activeClipId]);
 
-  useEffect(()=>{
+  const retrySeo=useCallback(async()=>{
     if(!activeClip?.id)return;
-    setLoading(true);
-    studioApi(`/api/clips/${activeClip.id}/repurpose`)
-      .then(res=>{
-        setData(res.asset||{
-          title:activeClip.title||'',
-          hook:'',
-          caption:'',
-          social_copy:{youtube:'',instagram:''},
-          hashtags:[]
-        });
-        if(res.limits)setLimits(res.limits);
-      })
-      .catch(()=>{})
-      .finally(()=>setLoading(false));
-  },[activeClip?.id]);
+    setLoading(true);setSeoError('');
+    try{
+      const res=await studioApi('/api/clips/'+activeClip.id+'/repurpose');
+      setData(res.asset||{title:activeClip.title||'',hook:'',caption:'',social_copy:{youtube:'',instagram:''},hashtags:[]});
+      if(res.limits)setLimits(res.limits);
+    }catch(err){setSeoError(err.message||'Could not load SEO assets. Retry.');}
+    finally{setLoading(false);}
+  },[activeClip?.id,activeClip?.title]);
+  useEffect(()=>{if(activeClip?.id)retrySeo()},[activeClip?.id,retrySeo]);
 
   // Debounced autosave
   const saveTimer=useRef(null);
@@ -264,8 +259,8 @@ export function SeoScreen(){
       saveTimer.current=setTimeout(()=>{
         setSaving(true);
         studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'PATCH',body:next})
-          .then(()=>setSaving(false))
-          .catch(()=>setSaving(false));
+          .then(()=>{setSaving(false);setSeoError('')})
+          .catch(err=>{setSaving(false);setSeoError(err.message||'Could not save SEO changes. Retry.')});
       },800);
       return next;
     });
@@ -278,8 +273,8 @@ export function SeoScreen(){
       saveTimer.current=setTimeout(()=>{
         setSaving(true);
         studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'PATCH',body:next})
-          .then(()=>setSaving(false))
-          .catch(()=>setSaving(false));
+          .then(()=>{setSaving(false);setSeoError('')})
+          .catch(err=>{setSaving(false);setSeoError(err.message||'Could not save SEO changes. Retry.')});
       },800);
       return next;
     });
@@ -290,7 +285,7 @@ export function SeoScreen(){
       notify('You have reached today’s limit of 3 title regenerations on the Free plan.');
       return;
     }
-    setLoading(true);
+    setLoading(true);setSeoError('');
     try{
       const res=await studioApi(`/api/clips/${activeClip.id}/repurpose`,{method:'POST',body:{feature}});
       if(res.asset)setData(res.asset);
@@ -298,6 +293,7 @@ export function SeoScreen(){
       const updated=await studioApi(`/api/clips/${activeClip.id}/repurpose`);
       if(updated.limits)setLimits(updated.limits);
     }catch(err){
+      setSeoError(err.message||'SEO generation failed. Retry.');
       notify(err.message);
     }finally{
       setLoading(false);
@@ -337,6 +333,7 @@ export function SeoScreen(){
 
     {/* Main SEO Editor */}
     <div className="flex-1 space-y-6">
+      {seoError&&<div role="alert" className="panel p-4 border border-danger/30 bg-danger/5 flex items-start justify-between gap-3"><p className="text-sm text-danger">{seoError}</p><Button size="sm" variant="secondary" onClick={retrySeo}>Retry</Button></div>}
       <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-border/50">
         <div>
           <span className="eyebrow">SEO & SOCIAL REPURPOSING</span>
@@ -530,13 +527,15 @@ function Chart({title,points,suffix=''}){
 }
 
 export function InsightsScreen(){
-  const {navigate,state}=useStudio();const performance=useRows('content_performance','*',{order:'captured_at'});
+  const {navigate,state,workspace,demo,notify}=useStudio();const performance=useRows('content_performance','*',{order:'captured_at'});
+  const [syncing,setSyncing]=useState(false);
+  const syncYoutube=async()=>{if(demo){notify('Connect a workspace to sync real YouTube analytics.');return}if(!workspace?.id){notify('Choose a workspace before syncing analytics.');return}setSyncing(true);try{const {data}=await supabase.auth.getSession();if(!data.session?.access_token)throw new Error('Sign in again to sync YouTube analytics.');const response=await fetch('/api/analytics/youtube?workspace_id='+encodeURIComponent(workspace.id),{method:'POST',headers:{Authorization:'Bearer '+data.session.access_token}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'YouTube analytics could not be synced.');notify(payload.synced?'Synced metrics for '+payload.synced+' YouTube video(s).':payload.message||'YouTube analytics are up to date.');await performance.retry()}catch(error){notify(error.message||'YouTube analytics could not be synced.')}finally{setSyncing(false)}};
   const rows=state==='empty'?[]:performance.data||[];
   if(performance.loading)return <ScreenSkeleton/>;if(performance.error)return <ErrorState message={performance.error} onRetry={performance.retry}/>;
   const latest=new Map();for(const p of rows)if(!latest.has(p.clip_id))latest.set(p.clip_id,p);
   const days=new Map();for(const p of rows){const day=new Date(p.captured_at).toLocaleDateString();if(!days.has(day))days.set(day,[]);const entries=days.get(day);if(!entries.some(e=>e.clip_id===p.clip_id))entries.push(p)}
   const points=[...days].reverse().slice(-14).map(([day,entries])=>({day,views:entries.reduce((sum,p)=>sum+(Number(p.views)||0),0),retention:entries.reduce((sum,p)=>sum+(Number(p.retention)||0),0)/entries.length,engagement:entries.reduce((sum,p)=>sum+(Number(p.likes)||0)+(Number(p.comments)||0)+(Number(p.shares)||0),0)}));
-  return <><Heading title="Insights" description="Learn from the results, not a promise of them." action={<Button size="sm" onClick={performance.retry}><RefreshCw size={14}/>Refresh</Button>}/>{!rows.length?<EmptyState icon={TrendingUp} title="Your first results are still ahead." description="Published performance snapshots will appear here when they are synced. We don’t invent views or engagement." action={<Button variant="primary" onClick={()=>navigate('publish')}>Open publishing</Button>}/>:<><div className="chart-grid mb-8">{[['Views','views',''],['Average retention','retention','%'],['Engagement','engagement','']].map(([title,key,suffix])=><Chart key={key} title={title} suffix={suffix} points={points.map(p=>({day:p.day,value:p[key]}))}/>)}</div><div className="panel table-scroll" tabIndex={0} role="region" aria-label="Clip performance table"><table className="data-table"><caption className="sr-only">Latest performance snapshot per clip</caption><thead><tr><th>Clip</th><th>Views</th><th>Retention</th><th>Likes</th><th>Comments</th><th>Captured</th></tr></thead><tbody>{[...latest.values()].map(p=><tr key={p.id}><td>{p.title||p.platform+' clip'}</td><td>{Number(p.views||0).toLocaleString()}</td><td>{p.retention??'—'}%</td><td>{p.likes||0}</td><td>{p.comments||0}</td><td>{new Date(p.captured_at).toLocaleDateString()}</td></tr>)}</tbody></table></div></>}</>;
+  return <><Heading title="Insights" description="Learn from the results, not a promise of them." action={<div className="flex flex-wrap gap-2"><Button size="sm" busy={syncing} onClick={syncYoutube}><Youtube size={14}/>Sync YouTube</Button><Button size="sm" onClick={performance.retry}><RefreshCw size={14}/>Refresh</Button></div>}/>{!rows.length?<EmptyState icon={TrendingUp} title="Your first results are still ahead." description="Published performance snapshots will appear here when they are synced. We don’t invent views or engagement." action={<Button variant="primary" onClick={()=>navigate('publish')}>Open publishing</Button>}/>:<><div className="chart-grid mb-8">{[['Views','views',''],['Average retention','retention','%'],['Engagement','engagement','']].map(([title,key,suffix])=><Chart key={key} title={title} suffix={suffix} points={points.map(p=>({day:p.day,value:p[key]}))}/>)}</div><div className="panel table-scroll" tabIndex={0} role="region" aria-label="Clip performance table"><table className="data-table"><caption className="sr-only">Latest performance snapshot per clip</caption><thead><tr><th>Clip</th><th>Views</th><th>Retention</th><th>Likes</th><th>Comments</th><th>Captured</th></tr></thead><tbody>{[...latest.values()].map(p=><tr key={p.id}><td>{p.metadata?.title||p.title||p.platform+' clip'}</td><td>{Number(p.views||0).toLocaleString()}</td><td>{p.retention??'—'}%</td><td>{p.likes||0}</td><td>{p.comments||0}</td><td>{new Date(p.captured_at).toLocaleDateString()}</td></tr>)}</tbody></table></div></>}</>;
 }
 
 export function BrandScreen(){
@@ -550,23 +549,28 @@ export function BrandScreen(){
 }
 
 export function SettingsScreen(){
-  const {user,workspace,demo,notify,state,refreshWorkspace}=useStudio();const [tab,setTab]=useState('profile'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(user.user_metadata?.full_name||''),[workspaceName,setWorkspaceName]=useState(workspace.name);
+  const {user,workspace,demo,notify,state,refreshWorkspace}=useStudio();const [tab,setTab]=useState('profile'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(user.user_metadata?.full_name||''),[workspaceName,setWorkspaceName]=useState(workspace.name),[preferences,setPreferences]=useState({language:'en',timezone:'UTC',notifications:{job_completed:{in_app:true,email:false},job_failed:{in_app:true,email:false},payment_approved:{in_app:true,email:false},payment_rejected:{in_app:true,email:false},plan_expiring:{in_app:true,email:false}}}),[shortcutsOpen,setShortcutsOpen]=useState(false);
   const members=useRows('workspace_members','user_id,role,created_at');
   const connections=useRows('publish_connections','id,platform,status,created_at');
   const keys=useResource(async()=>demo?[]:(await studioApi('/api/v1/keys?workspace_id='+encodeURIComponent(workspace.id))).keys,[workspace.id,demo]);
+  const billing=useResource(async()=>{if(demo)return {subscription:null,plan:'free',invoices:[]};const [sub,ent,inv]=await Promise.all([supabase.from('subscriptions').select('plan,status,provider,current_period_end,billing_interval').eq('workspace_id',workspace.id).maybeSingle(),supabase.from('workspace_entitlements').select('plan').eq('workspace_id',workspace.id).maybeSingle(),supabase.from('billing_invoices').select('id,plan,amount_paise,currency,status,description,created_at,provider_invoice_id').eq('workspace_id',workspace.id).order('created_at',{ascending:false}).limit(20)]);if(sub.error)throw sub.error;if(ent.error)throw ent.error;if(inv.error)throw inv.error;return {subscription:sub.data,plan:sub.data?.plan||ent.data?.plan||'free',invoices:inv.data||[]}},[workspace.id,demo]);
   const [keyName,setKeyName]=useState(''),[newKey,setNewKey]=useState(''),[keyOpen,setKeyOpen]=useState(false);
-  async function save(e){e.preventDefault();setError('');setBusy(true);try{if(!demo){if(tab==='profile'){const {error}=await supabase.auth.updateUser({data:{full_name:name}});if(error)throw error}else {const changed=unwrap(await supabase.from('workspaces').update({name:workspaceName}).eq('id',workspace.id).select('id'));if(!changed.length)throw new Error('You do not have permission to rename this workspace.');refreshWorkspace()}}notify(demo?'Sample preferences saved for this preview.':'Your settings are saved.')}catch(err){setError(err.message)}finally{setBusy(false)}}
+  useEffect(()=>{let active=true;if(demo||!user?.id)return;supabase.from('profiles').select('preferences').eq('id',user.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){setError('Could not load preferences.');return}if(data?.preferences)setPreferences(old=>({...old,...data.preferences,notifications:{...old.notifications,...(data.preferences.notifications||{})}}))});return()=>{active=false}},[user?.id,demo]);
+  const timezones=typeof Intl.supportedValuesOf==='function'?Intl.supportedValuesOf('timeZone'):['UTC','Asia/Kolkata','America/New_York','Europe/London'];
+
+  async function save(e){e.preventDefault();setError('');setBusy(true);try{if(!demo){if(tab==='profile'){const {error}=await supabase.auth.updateUser({data:{full_name:name}});if(error)throw error}else if(tab==='preferences'){const saved=unwrap(await supabase.from('profiles').update({preferences}).eq('id',user.id).select('id'));if(!saved.length)throw new Error('Could not save your preferences. Refresh and try again.')}else {const changed=unwrap(await supabase.from('workspaces').update({name:workspaceName}).eq('id',workspace.id).select('id'));if(!changed.length)throw new Error('You do not have permission to rename this workspace.');refreshWorkspace()}}notify(demo?'Sample preferences saved for this preview.':'Your settings are saved.')}catch(err){setError(err.message)}finally{setBusy(false)}}
   async function createKey(e){e.preventDefault();setBusy(true);setError('');try{if(demo)return notify('API credentials are not created in the sample workspace.');const result=await studioApi('/api/v1/keys',{body:{workspace_id:workspace.id,name:keyName}});setNewKey(result.key);keys.retry()}catch(err){setError(err.message)}finally{setBusy(false)}}
   async function revoke(id){try{await studioApi('/api/v1/keys',{method:'DELETE',body:{id}});keys.retry();notify('API key revoked.')}catch(err){setError(err.message)}}
   const resource=tab==='members'?members:tab==='integrations'?connections:tab==='keys'?keys:null;
-  const tabs=[['profile','Profile'],['workspace','Workspace'],['members','Members & roles'],['keys','API keys'],['integrations','Integrations'],['billing','Billing'],['danger','Danger zone']];
+  const tabs=[['profile','Profile'],['preferences','Preferences'],['workspace','Workspace'],['members','Members & roles'],['keys','API keys'],['integrations','Integrations'],['billing','Billing'],['danger','Danger zone']];
   return <><Heading title="Settings" description="A workspace that fits the way you work."/><div className="settings-layout"><nav className="settings-nav" aria-label="Settings sections">{tabs.map(([id,label])=><button key={id} className={tab===id?'active':''} aria-current={tab===id?'page':undefined} onClick={()=>{setTab(id);setError('')}}>{label}</button>)}</nav><section className="panel settings-panel"><h2>{tabs.find(([id])=>id===tab)?.[1]}</h2>{error&&<div className="mb-5"><ErrorState message={error} onRetry={()=>setError('')}/></div>}{resource?.loading?<ScreenSkeleton/>:resource?.error?<ErrorState message={resource.error} onRetry={resource.retry}/>:<>
+    {tab==='preferences'&&<div className="panel p-5 space-y-5"><form onSubmit={save} className="space-y-5"><div><label className="block text-sm font-medium mb-2" htmlFor="settings-language">Language</label><select id="settings-language" className="input w-full" value={preferences.language||'en'} onChange={e=>setPreferences(old=>({...old,language:e.target.value}))}><option value="en">English</option><option value="hi">Hindi</option><option value="es">Spanish</option><option value="pt">Portuguese</option><option value="fr">French</option></select></div><div><label className="block text-sm font-medium mb-2" htmlFor="settings-timezone">Timezone</label><select id="settings-timezone" className="input w-full" value={preferences.timezone||'UTC'} onChange={e=>setPreferences(old=>({...old,timezone:e.target.value}))}>{[...new Set([preferences.timezone||'UTC',...timezones])].map(zone=><option key={zone} value={zone}>{zone}</option>)}</select></div><div><h3 className="font-semibold mb-2">Notifications</h3><p className="text-sm text-muted mb-3">Choose where to receive each event. Email delivery requires email notifications to be configured.</p><div className="space-y-3">{[['job_completed','Job completed'],['job_failed','Job failed'],['payment_approved','Payment approved'],['payment_rejected','Payment rejected'],['plan_expiring','Plan expiring in 3 days']].map(([key,label])=><div key={key} className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3"><span className="text-sm">{label}</span><div className="flex gap-4"><label className="text-sm flex items-center gap-2"><input type="checkbox" checked={preferences.notifications?.[key]?.in_app!==false} onChange={e=>setPreferences(old=>({...old,notifications:{...old.notifications,[key]:{...old.notifications?.[key],in_app:e.target.checked}}}))}/>In-app</label><label className="text-sm flex items-center gap-2"><input type="checkbox" checked={Boolean(preferences.notifications?.[key]?.email)} onChange={e=>setPreferences(old=>({...old,notifications:{...old.notifications,[key]:{...old.notifications?.[key],email:e.target.checked}}}))}/>Email</label></div></div>)}</div></div><Button type="submit" variant="primary" busy={busy}>Save preferences</Button></form><div className="border-t border-border pt-4"><h3 className="font-semibold">Keyboard shortcuts</h3><p className="text-sm text-muted mb-3">Quick navigation and editing shortcuts.</p><Button variant="secondary" onClick={()=>setShortcutsOpen(true)}>View shortcuts</Button></div><Modal open={shortcutsOpen} onOpenChange={setShortcutsOpen} title="Keyboard shortcuts"><ul className="space-y-2 text-sm"><li><kbd>J</kbd> / <kbd>K</kbd> — next / previous clip</li><li><kbd>A</kbd> — approve selected clip</li><li><kbd>E</kbd> — open editor</li><li><kbd>P</kbd> — publish view</li><li><kbd>⌘ K</kbd> — open command search</li></ul></Modal></div>}
     {tab==='profile'&&<form onSubmit={save}><Input label="Full name" value={name} onChange={e=>setName(e.target.value)} required/><Input label="Email" type="email" value={user.email||''} disabled/><Button type="submit" variant="primary" busy={busy} className="self-start">Save profile</Button><Button className="self-start" onClick={async()=>{if(demo)return notify('Sign in to manage your real password.');const {error}=await supabase.auth.resetPasswordForEmail(user.email,{redirectTo:window.location.origin+'/auth/update-password'});if(error)setError(error.message);else notify('Password reset sent. Check your inbox.')}}>Send password reset</Button></form>}
     {tab==='workspace'&&<form onSubmit={save}><Input label="Workspace name" value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} required/><p className="text-xs text-muted">Changes are subject to your workspace role and database permissions.</p><Button type="submit" variant="primary" busy={busy} className="self-start">Save workspace</Button></form>}
     {tab==='members'&&((members.data||[]).length&&state!=='empty'?<><div className="table-scroll"><table className="data-table"><thead><tr><th>Member</th><th>Role</th><th>Joined</th></tr></thead><tbody>{members.data.map(m=><tr key={m.user_id}><td>{m.user_id===user.id?user.user_metadata?.full_name||'You':`Member ${m.user_id.slice(0,8)}`}</td><td>{m.role}</td><td>{new Date(m.created_at).toLocaleDateString()}</td></tr>)}</tbody></table></div><p className="text-xs text-muted mt-5">Membership is read from your workspace. Invitation delivery and role-management workflows need an administrative integration.</p></>:<EmptyState icon={Users} title="A place for your team." description="Workspace members appear here when they are added."/>)}
     {tab==='keys'&&<><p className="text-sm text-muted mb-5">Read project clips from your own tools. Keys are shown once when created; existing secrets are never returned.</p><Button size="sm" onClick={()=>{setNewKey('');setKeyOpen(true)}}><Plus size={14}/>Create API key</Button>{(keys.data||[]).length?keys.data.map(k=><div key={k.id} className="flex gap-4 justify-between items-center border-b py-4"><div><b className="text-sm">{k.name}</b><p className="font-mono text-xs text-muted mt-1">{k.key_prefix}… · {k.revoked_at?'Revoked':'Active'}</p></div><Button size="sm" variant="danger" onClick={()=>revoke(k.id)} disabled={!!k.revoked_at}>Revoke</Button></div>):<EmptyState icon={KeyRound} title="No API keys yet." description="Create a key when you’re ready to connect your own tools."/>}<ButtonLink href="/api-docs" variant="ghost" className="mt-4">Read API documentation</ButtonLink></>}
     {tab==='integrations'&&<><div className="flex gap-4 items-center border-b pb-5"><Youtube size={24}/><div className="flex-1"><h3 className="text-base">YouTube</h3><p className="text-xs text-muted mt-1">{connections.data?.find(c=>c.platform==='youtube')?.status||'Not connected'}</p></div><Button size="sm" onClick={()=>window.location.href=demo?'/studio?demo=1&view=publish':'/studio?view=publish'}>Manage</Button></div><div className="flex gap-4 items-center border-b py-5"><Instagram size={24}/><div className="flex-1"><h3 className="text-base">Instagram</h3><p className="text-xs text-muted mt-1">{connections.data?.find(c=>c.platform==='instagram')?.status||'Not connected'}</p></div><Button size="sm" onClick={()=>window.location.href=demo?'/studio?demo=1&view=publish':'/studio?view=publish'}>Manage</Button></div>{['Google Drive','Google Photos'].map(source=><div key={source} className="border-b py-5"><h3 className="text-base">{source}</h3><p className="text-xs text-muted mt-2">Authorize selected files in the import picker. Source credentials are not displayed here.</p></div>)}<p className="text-xs text-muted mt-5">Other publishing destinations are not connected. Export MP4 files for those platforms.</p></>}
-    {tab==='billing'&&<><div className="panel p-5 mb-6"><span className="eyebrow">CURRENT ACCESS</span><h3 className="text-2xl mt-3">Pilot workspace</h3><p className="text-sm text-muted mt-3">Subscriptions, metered credits, and invoice delivery are not connected. No payment method is on file in Alpha.ai.</p></div><PricingCards compact/><div className="mt-8"><EmptyState icon={Download} title="No invoices to download." description="Invoices will appear after a billing provider is connected and a paid purchase is made."/></div></>}
+    {tab==='billing'&&<><div className="panel p-5 mb-6"><span className="eyebrow">CURRENT PLAN</span><h3 className="text-2xl mt-3">{billing.data?.plan==='pro'?'Creator':billing.data?.plan==='studio'?'Studio':'Free'}</h3><p className="text-sm text-muted mt-2">Status: {billing.data?.subscription?.status||'free'}</p><p className="text-sm text-muted mt-1">{billing.data?.subscription?.current_period_end?'Renews or expires '+new Date(billing.data.subscription.current_period_end).toLocaleDateString('en-IN',{dateStyle:'medium'}):'No paid renewal date for this workspace.'}</p>{billing.error&&<p role="alert" className="text-sm text-danger mt-3">Could not load billing details. Retry this section.</p>}<Button variant="secondary" size="sm" onClick={billing.retry} className="mt-3">Refresh billing</Button></div><h3 className="text-lg font-semibold mb-3">Invoices</h3>{billing.loading?<ScreenSkeleton/>:billing.data?.invoices?.length?<div className="space-y-2 mb-8">{billing.data.invoices.map(invoice=><div key={invoice.id} className="panel p-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">{invoice.description||invoice.plan+' plan'}</p><p className="text-xs text-muted">{new Date(invoice.created_at).toLocaleDateString('en-IN')} · {invoice.status}</p></div><p className="font-semibold tabular-nums">₹{(Number(invoice.amount_paise||0)/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>)}</div>:<EmptyState icon={Download} title="No invoices yet" description="Verified and approved payments will appear here."/>}<PricingCards compact/></>}
     {tab==='danger'&&<><div className="border border-destructive/30 rounded-card p-5"><h3 className="text-base text-destructive">Delete your account and data</h3><p className="text-sm text-muted mt-3 mb-5">A complete deletion needs to cover shared workspace ownership, source storage, and connected services. Use a data-deletion request while that cleanup workflow is being completed.</p><ButtonLink href="/contact" variant="danger">Request data deletion</ButtonLink></div></>}
     </>}</section></div><Modal open={keyOpen} onOpenChange={v=>{setKeyOpen(v);if(!v)setNewKey('')}} title={newKey?'Save your new key securely.':'Create an API key'} description={newKey?'This value is shown only once. Closing this dialog clears it from the screen.':'A key grants access to the project-clips API for this workspace.'}>{newKey?<><input className="input font-mono text-xs" type="password" value={newKey} readOnly aria-label="New API key"/><Button className="mt-4" onClick={async()=>{await navigator.clipboard.writeText(newKey);notify('Key copied. Keep it private.')}}><Copy size={14}/>Copy key</Button></>:<form onSubmit={createKey} className="space-y-5"><Input label="Key name" value={keyName} onChange={e=>setKeyName(e.target.value)} required/><Button variant="primary" type="submit" busy={busy}>Create key</Button>{error&&<p role="alert" className="text-destructive text-sm">{error}</p>}</form>}</Modal></>;
 }

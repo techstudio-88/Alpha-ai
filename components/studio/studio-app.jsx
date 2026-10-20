@@ -4,24 +4,26 @@ import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive} from 'lucide-react';
+import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive,Lock,Plus} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
 import AuthScreen from './auth-screen';
 import ImportVideo from './import-video';
 import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
-import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
+import {Button,EmptyState,ErrorState,Input,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
 import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
 import {PricingCards} from './marketing';
+import UpiCheckout from './upi-checkout';
+import AssistantScreen from './assistant-screen';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
 
 export const NAV=[['home','Home',Home],['projects','Projects',Folder],['studio','Studio',WandSparkles],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['stuff','Stuff',Archive],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
-const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio',assistant:'studio'};
+const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio'};
 
 export default function StudioApp() {
   const params=useSearchParams(),router=useRouter(),demo=params.get('demo')==='1';
@@ -32,13 +34,18 @@ export default function StudioApp() {
   useEffect(()=>{
     if(demo||!supabase){setReady(true);return}
     let alive=true;
-    const timeout=setTimeout(()=>{if(alive){setAuthError('Your session could not be restored. Check your connection and retry.');setReady(true)}},12000);
+    const timeout=setTimeout(()=>{if(alive){setAuthError('Your session could not be restored after two attempts. Check your connection and retry.');setReady(true)}},26000);
     (async()=>{
       try {
         const url=new URL(window.location.href),code=url.searchParams.get('code');
         if(url.searchParams.get('error'))throw new Error('OAuth authorization did not finish.');
         // detectSessionInUrl owns the PKCE exchange; a second exchange reuses a one-time code.
-        const response=await supabase.auth.getSession();
+        const readSession=async()=>Promise.race([
+          supabase.auth.getSession(),
+          new Promise(resolve=>setTimeout(()=>resolve({error:new Error('Session restore timed out.'),data:{session:null}}),12000))
+        ]);
+        let response=await readSession();
+        if(response.error){await new Promise(resolve=>setTimeout(resolve,350));response=await readSession()}
         if(response.error)throw response.error;
         let session=response.data?.session||null;
         // Supabase normally exchanges the PKCE code during client initialization.
@@ -110,9 +117,13 @@ export default function StudioApp() {
 }
 
 function StudioWorkspace() {
-  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace}=useStudio();
+  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,refreshWorkspace,notify}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
-  const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const [announcement,setAnnouncement]=useState(null),[announcementDismissed,setAnnouncementDismissed]=useState(false);
+  useEffect(()=>{let alive=true;if(demo||!supabase)return;supabase.from('announcements').select('id,title,body').eq('active',true).order('created_at',{ascending:false}).limit(1).maybeSingle().then(({data})=>{if(!alive||!data)return;try{if(localStorage.getItem('alpha.announcement.dismissed')===data.id)return}catch{}setAnnouncement(data)}).catch(()=>{});return()=>{alive=false}},[demo,workspace.id]);
+
+  const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[upiSelection,setUpiSelection]=useState(null),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const [workspaceModal,setWorkspaceModal]=useState(false),[workspaceName,setWorkspaceName]=useState(''),[workspaceBusy,setWorkspaceBusy]=useState(false),[workspaceError,setWorkspaceError]=useState('');
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -132,19 +143,22 @@ function StudioWorkspace() {
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
   },[]);
   const minutes=Math.round((usage.data||[]).reduce((sum,a)=>sum+(Number(a.duration_seconds)||0),0)/60*10)/10;
+  async function createWorkspace(event){event.preventDefault();setWorkspaceError('');setWorkspaceBusy(true);try{const result=await studioApi('/api/workspaces',{method:'POST',body:{name:workspaceName}});setWorkspaceModal(false);selectWorkspace(result.workspace.id);await refreshWorkspace?.();notify('Workspace created.')}catch(err){setWorkspaceError(err.message||'Could not create workspace.');}finally{setWorkspaceBusy(false)}}
   const link=id=>{const p=new URLSearchParams();if(demo)p.set('demo','1');if(id!=='home')p.set('view',id);return '/studio'+(p.size?'?'+p:'')};
   const navItems=NAV.map(([id,label,Icon])=><Link key={id} href={link(id)} className={view===id?'active':''} aria-label={label} title={label} aria-current={view===id?'page':undefined} onClick={()=>setMobile(false)}><Icon size={17}/><span>{label}</span></Link>);
-  const workspaceSelect=<Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/>;
+  const planRank={free:0,pro:1,studio:2};
+  const highestPlan=workspaces.reduce((best,w)=>(planRank[w.plan||'free']||0)>(planRank[best]||0)?(w.plan||'free'):best,'free');
+  const workspaceSelect=<div className="flex items-end gap-2"><div className="min-w-0 flex-1"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/></div><Button size="sm" variant="secondary" className="shrink-0" onClick={()=>{if(demo){notify('Sign up to create your own workspace.');return;}if(highestPlan==='free'){notify('Upgrade to Creator to add more workspaces.');setUpgrade(true);return;}setWorkspaceError('');setWorkspaceName('');setWorkspaceModal(true)}} aria-label="Add workspace">{highestPlan==='free'?<Lock size={14}/>:<Plus size={14}/>} Add workspace</Button></div>;
   let screen;
   if(state==='loading')screen=<ScreenSkeleton/>;
   else if(state==='error')screen=<ErrorState message="This sample shows how a failed request is presented. Retry returns to the normal studio." onRetry={()=>navigate(view,{project:projectId,clip:clipId})}/>;
   else if(view==='home')screen=<HomeScreen projects={projects}/>;
   else if(view==='projects')screen=<ProjectsScreen resource={projects}/>;
   else if(view==='project')screen=projects.loading?<ScreenSkeleton/>:projects.error?<ErrorState message={projects.error} onRetry={projects.retry}/>:<ProjectScreen projects={projects.data||[]} projectId={projectId}/>;
-  else if(view==='studio'||view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='studio'||view==='chat')screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
-  else if(view==='assistant')screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='assistant')screen=<AssistantScreen/>;
   else if(view==='publish')screen=<PublishScreen/>;
   else if(view==='seo')screen=<SeoScreen clipId={clipId} projectId={projectId}/>;
   else if(view==='stuff')screen=<StuffScreen/>;
@@ -159,10 +173,11 @@ function StudioWorkspace() {
       <div className="sidebar-bottom">
         {workspaceSelect}
         <div className="usage-meter"><strong>{usageLimits.availableCredits} credits · {usageLimits.dailyVideoMinutes}m daily</strong><span className="block mt-1">{minutes} min source media in workspace</span><span className="block mt-1">Free daily allowance</span></div>
-        <Button size="sm" className="w-full" onClick={()=>setUpgrade(true)} aria-label="View planned upgrades">View planned upgrades</Button>
+        <Button size="sm" className="w-full" onClick={()=>setUpgrade(true)} aria-label="View plans">View plans</Button>
       </div>
     </aside>
     <div className="min-w-0">
+      {announcement&&!announcementDismissed&&<div role="status" className="mx-4 mt-3 flex items-start justify-between gap-3 rounded-xl border border-border bg-raised p-3"><div><strong className="text-sm">{announcement.title}</strong><p className="text-sm text-muted mt-1">{announcement.body}</p></div><button aria-label="Dismiss announcement" className="shrink-0 rounded-md p-1" onClick={()=>{setAnnouncementDismissed(true);try{localStorage.setItem('alpha.announcement.dismissed',announcement.id)}catch{}}}>×</button></div>}
       <header className="studio-topbar">
         <div className="flex items-center gap-3 min-w-0">
           <Button className="mobile-menu" size="icon" variant="ghost" aria-label="Open studio navigation" onClick={()=>setMobile(true)}><Menu size={20}/></Button>
@@ -201,6 +216,7 @@ function StudioWorkspace() {
       <Button variant="ghost" className="w-full justify-start" onClick={()=>{setAccount(false);navigate('settings')}}><User size={16}/>Profile and workspace</Button>
       <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
     </Modal>
-    <Modal open={upgrade} onOpenChange={setUpgrade} title="Choose your next step" description="Paid plans are proposed and unavailable for checkout today." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact/></Modal>
+    <Modal open={upgrade && !upiSelection} onOpenChange={setUpgrade} title="Choose your plan" description="Pay with UPI. Plans activate only after payment verification." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact onSelectPlan={(plan,interval)=>setUpiSelection({plan,interval})}/></Modal><Modal open={Boolean(upiSelection)} onOpenChange={open=>{if(!open)setUpiSelection(null)}} title="Pay with UPI" description="Your plan activates after we verify the payment."><UpiCheckout workspaceId={workspace?.id} plan={upiSelection?.plan} interval={upiSelection?.interval} onClose={()=>setUpiSelection(null)} onDone={()=>{setUpiSelection(null);setUpgrade(false)}}/></Modal>
+    <Modal open={workspaceModal} onOpenChange={setWorkspaceModal} title="Add workspace" description="Create another workspace for a channel or project."><form onSubmit={createWorkspace} className="space-y-4"><label className="block text-sm font-medium" htmlFor="new-workspace-name">Workspace name</label><Input id="new-workspace-name" value={workspaceName} onChange={e=>setWorkspaceName(e.target.value.slice(0,80))} minLength={2} maxLength={80} required placeholder="e.g. Client Studio"/>{workspaceError&&<p role="alert" className="text-sm text-danger">{workspaceError}</p>}<div className="flex justify-end gap-2"><Button variant="secondary" type="button" onClick={()=>setWorkspaceModal(false)}>Cancel</Button><Button variant="primary" type="submit" busy={workspaceBusy} disabled={workspaceBusy||workspaceName.trim().length<2}>Create workspace</Button></div></form></Modal>
   </div>;
 }

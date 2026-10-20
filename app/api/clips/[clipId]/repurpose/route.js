@@ -1,12 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
-import { reserveWorkspaceFeatureUsage, finishWorkspaceFeatureUsage } from "../../../../../lib/workflow-server";
+import { reserveWorkspaceFeatureUsage, finishWorkspaceFeatureUsage, enforceApiRateLimit } from "../../../../../lib/workflow-server";
+import { parseSeoModelResponse } from "../../../../../lib/seo-assets.mjs";
 
 export const runtime = "nodejs";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-const worker = (process.env.MEDIA_WORKER_URL || "https://alpha-ai-media-worker.onrender.com").replace(/\/$/, "");
+const worker = (process.env.MEDIA_WORKER_URL || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_WORKER_SECRET || "";
 
 async function auth(req) {
@@ -154,6 +155,9 @@ export async function POST(req, { params }) {
       return Response.json({ ok: true, asset: saved });
     }
 
+    const ip = req.headers.get("x-real-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+    await enforceApiRateLimit(svc, "user:" + user.id, "/api/clips/:id/repurpose", 12, 60, ip);
+
     // Server-side enforcement of title regeneration quota (Free: 3 max)
     const featureKey = body.feature === "cover_rotation" ? "cover_rotation" : "title_regeneration";
     const requestId = crypto.randomUUID();
@@ -173,26 +177,33 @@ export async function POST(req, { params }) {
       text = (seg || []).map(x => x.text).join(" ").trim();
     }
     if (!text) text = String(clip.ai_spec?.summary || "").trim();
-    if (!text) return Response.json({ error: "No transcript context is available for this clip." }, { status: 409 });
-    if (!secret) return Response.json({ error: "AI worker is not configured." }, { status: 503 });
-
-    const prompt =
-      "Create repurposing assets for this real short-form clip. Return ONLY valid JSON with keys hook,title,caption,hashtags,youtube_description,instagram_caption,tiktok_caption,linkedin_caption,thumbnail_prompt. Do not invent facts. YouTube title must be under 100 characters. Instagram caption must be under 2200 characters. 5-10 hashtags. Clip title: " +
-      JSON.stringify(clip.title || "") +
-      "\nTranscript:\n" +
-      text.slice(0, 12000);
-
-    const wr = await fetch(worker + "/assistant", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-worker-secret": secret },
-      body: JSON.stringify({ prompt, context: "Alpha.ai clip repurposing request" }),
-    });
-    const wo = await wr.json().catch(() => ({}));
-    if (!wr.ok) throw new Error(wo.error || "AI repurposing failed.");
-
-    const raw = String(wo.text || "").match(/\{[\s\S]*\}/)?.[0];
-    if (!raw) throw new Error("AI returned no structured repurposing package.");
-    const data = JSON.parse(raw);
+    if (!text) {
+      await finishWorkspaceFeatureUsage(svc, usageReservation.id, false).catch(() => {});
+      usageReservation = null;
+      return Response.json({ error: "No transcript context is available for this clip. Transcribe the source first, then retry SEO generation." }, { status: 409 });
+    }
+    const prompt = "Create repurposing assets for this real short-form clip. Return ONLY valid JSON with keys hook,title,caption,hashtags,youtube_description,instagram_caption,tiktok_caption,linkedin_caption,thumbnail_prompt. Do not invent facts. YouTube title must be under 100 characters. Instagram caption must be under 2200 characters. 5-10 hashtags. Clip title: " + JSON.stringify(clip.title || "") + "\nTranscript:\n" + text.slice(0, 12000);
+    let modelResponse = null;
+    if (worker && secret) {
+      const wr = await fetch(worker + "/assistant", { method: "POST", headers: { "content-type": "application/json", "x-worker-secret": secret }, body: JSON.stringify({ prompt, context: "Alpha.ai clip repurposing request" }), signal: AbortSignal.timeout(25000) });
+      const wo = await wr.json().catch(() => ({}));
+      if (!wr.ok) throw Object.assign(new Error(wr.status === 429 ? "AI service is busy. Retry in a moment." : "SEO generation failed at the AI service. Retry generation."), { status: wr.status === 429 ? 503 : 502 });
+      modelResponse = wo;
+    } else {
+      const keys = [process.env.GEMINI_API_KEY, ...(process.env.GEMINI_API_KEYS || "").split(","), ...Object.keys(process.env).filter(k => /^GEMINI_API_KEY_\d+$/.test(k)).sort().map(k => process.env[k])].map(k => String(k || "").trim()).filter(Boolean);
+      if (!keys.length) throw Object.assign(new Error("SEO generation is not configured. Set MEDIA_WORKER_URL with MEDIA_WORKER_SECRET or add GEMINI_API_KEY(s) as server-only Vercel environment variables."), { status: 503 });
+      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      let response = null, responseBody = null;
+      for (const key of keys) {
+        response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } }), signal: AbortSignal.timeout(25000) });
+        responseBody = await response.json().catch(() => ({}));
+        if (response.ok) break;
+        if (response.status !== 429 && response.status < 500) break;
+      }
+      if (!response?.ok) throw Object.assign(new Error(response?.status === 429 ? "Gemini is rate-limited. Retry in a moment." : "Gemini could not generate SEO assets. Check the server-side API key and model configuration."), { status: response?.status === 429 ? 503 : 502 });
+      modelResponse = responseBody;
+    }
+    const data = parseSeoModelResponse(modelResponse, clip.title || "");
 
     const row = {
       workspace_id: project.workspace_id,
@@ -231,7 +242,8 @@ export async function POST(req, { params }) {
     }
     console.error("clip repurpose error:", e);
     const message = e.message || "Repurposing failed.";
-    const status = /limit reached|Upgrade your plan/i.test(message) ? 402 : 500;
-    return Response.json({ error: message, error_id: crypto.randomUUID() }, { status });
+    const status = Number(e.status) || (/limit reached|Upgrade your plan/i.test(message) ? 402 : 500);
+    const safeMessage = [402, 409, 502, 503].includes(status) ? message : "SEO generation failed. Retry, and contact support if it continues.";
+    return Response.json({ error: safeMessage, error_id: crypto.randomUUID() }, { status });
   }
 }

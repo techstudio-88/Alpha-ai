@@ -10,6 +10,8 @@ import {pipeline} from "node:stream/promises";
 import {createGeminiKeyRing} from "./gemini-keyring.js";
 import {classifyWorkerFailure} from "./retry-policy.js";
 import{GoogleGenAI,createUserContent,createPartFromUri}from"@google/genai";
+import {createClient} from "@supabase/supabase-js";
+import {sendPreferenceEmail} from "../lib/email.mjs";
 import {runChatPlan,generateChatPlan,planTranscript,generateGeminiWithRetry} from "./chat.js";
 import {publicDownload,MAX_DOWNLOAD_BYTES,byteLimit} from "./download.js";
 import {allPages,captionEvents,sourceUrl,retainedRanges,youtubeVideoUrl} from "../lib/video-workflow.mjs";
@@ -17,6 +19,7 @@ import {decryptCredential} from '../lib/credential-cipher.mjs';
 import {runPublishQueue} from './publish.js';
 import {aiFailure} from '../lib/ai-failures.mjs';
 import {sentenceMoments,distinctMoments} from '../lib/clip-intelligence.mjs';
+import {clipLimitForDuration,maxClipDurationForPacing} from '../lib/clip-estimate.mjs';
 const app=express();app.use(express.json({limit:"2mb"}));
 const PORT=Number(process.env.PORT||8080),SUPA=process.env.SUPABASE_URL,GEMINI_KEY_RING=createGeminiKeyRing(),GEMINI_KEYS=GEMINI_KEY_RING.keys,GEMINI_API_KEY=GEMINI_KEY_RING.current()?.key||"",GEMINI_MODEL=process.env.GEMINI_MODEL||"gemini-2.5-flash",KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY,PUBLIC_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.SUPABASE_ANON_KEY||"",SECRET=process.env.MEDIA_WORKER_SECRET||"";
 const nextGeminiApiKey=()=>GEMINI_KEY_RING.next()?.key||"";
@@ -347,6 +350,7 @@ async function applyEditInstructionWithGemini(filePath,sourceDuration,selectedSt
   return {start_seconds:start,end_seconds:end,title:String(parsed.title||"AI edited clip").slice(0,180),reason:String(parsed.reason||"").slice(0,500),action:String(parsed.action||"").slice(0,300)};
 }
 async function patchJob(id,body){const rows=await db("processing_jobs",{params:{id:"eq."+id,select:"status"}});if(rows[0]?.status==="cancelled")throw new Error("Job cancelled.");return db("processing_jobs",{method:"PATCH",params:{id:"eq."+id,status:"neq.cancelled"},body})}
+async function sendJobEmail(p,event,errorId=null){if(!p?.requestedBy||!SUPA||!KEY||!process.env.RESEND_API_KEY||!process.env.EMAIL_FROM)return;try{const admin=createClient(SUPA,KEY,{auth:{persistSession:false,autoRefreshToken:false}});const site=(process.env.NEXT_PUBLIC_SITE_URL||"https://alpha-ai-techstudio7808-4455.vercel.app").replace(/\/$/,"");const completed=event==="job_completed";const subject=completed?"Your Alpha.ai video job is ready":"Your Alpha.ai video job needs attention";const message=completed?"Your video job has completed. Open Alpha.ai Studio to review your clips: "+site+"/studio?view=clips":"Your video job could not be completed. Error reference: "+String(errorId||"unavailable")+". Open Alpha.ai Studio to review the job and retry: "+site+"/studio?view=projects";await sendPreferenceEmail(admin,p.requestedBy,event,subject,message,"alpha-job-"+String(p.jobId)+"-"+event);}catch{console.warn("Job notification email could not be sent.");}}
 async function setStage(job,stageKey,status,progress,error=null){try{await db("processing_stages",{method:"POST",body:{job_id:job.jobId,workspace_id:job.workspaceId,stage_key:stageKey,status,progress:Math.max(0,Math.min(100,Number(progress)||0)),attempt_count:Number(job.retryCount||0)+1,started_at:status==="running"?new Date().toISOString():null,completed_at:status==="completed"?new Date().toISOString():null,heartbeat_at:new Date().toISOString(),error,metadata:{}}}).catch(async()=>{await db("processing_stages",{method:"PATCH",params:{job_id:"eq."+job.jobId,stage_key:"eq."+stageKey},body:{status,progress:Math.max(0,Math.min(100,Number(progress)||0)),heartbeat_at:new Date().toISOString(),completed_at:status==="completed"?new Date().toISOString():null,error}})});await patchJob(job.jobId,{current_stage:stageKey})}catch(e){console.warn("stage checkpoint failed",stageKey,e.message)}}
 async function upload(file,storagePath,mime="video/mp4"){const stat=fs.statSync(file);const url=SUPA+"/storage/v1/object/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const r=await fetch(url,{method:"POST",headers:{...(authStore.getStore()?{apikey:PUBLIC_KEY,Authorization:"Bearer "+authStore.getStore()}:baseAuth),"Content-Type":mime,"x-upsert":"true"},body:fs.createReadStream(file),duplex:"half"});if(!r.ok)throw new Error("Storage upload failed: "+await r.text());return stat.size}
 async function downloadStored(storagePath,out){const url=SUPA+"/storage/v1/object/authenticated/media/"+storagePath.split("/").map(encodeURIComponent).join("/");const scoped=authStore.getStore();const r=await fetch(url,{headers:scoped?{apikey:PUBLIC_KEY,Authorization:"Bearer "+scoped}:{apikey:KEY||PUBLIC_KEY,Authorization:"Bearer "+(KEY||PUBLIC_KEY)}});if(!r.ok)throw new Error("Could not download stored source.");await pipeline(r.body,byteLimit(),fs.createWriteStream(out))}
@@ -616,7 +620,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
     const renderedVersion=(await db("clip_versions",{params:{clip_id:"eq."+clip.id,"edit_data->>render_job_id":"eq."+p.jobId,render_status:"eq.ready",select:"version,storage_path",limit:1}}))[0];
     if(renderedVersion?.storage_path){
       await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:renderedVersion.storage_path,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180)}});
-      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:renderedVersion.version}});
+      await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id,clipVersion:renderedVersion.version}});await sendJobEmail(p,"job_completed");
       console.log("editor render reused existing job version",p.jobId,clip.id,renderedVersion.version);
       return;
     }
@@ -630,7 +634,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
     await db("clip_versions",{method:"POST",body:{clip_id:clip.id,version:nextVersion,render_status:"ready",storage_path:storagePath,edit_data:editData}});
     await setStage(p,"export","completed",100);
     await db("clips",{method:"PATCH",params:{id:"eq."+clip.id},body:{status:"ready",render_path:storagePath,start_seconds:start,end_seconds:end,title:String(p.title||clip.title||"Edited clip").slice(0,180),ai_spec:{...(clip.ai_spec||{}),...editData},caption_config:{style:p.captionStyle||"pop",color:p.captionColor||"#ffffff"},reframe_config:{aspect:p.aspect||"9:16"}}});
-    await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});
+    await patchJob(p.jobId,{status:"completed",progress:100,payload:{...p,clipId:clip.id}});await sendJobEmail(p,"job_completed");
     console.log("editor render completed",p.jobId,clip.id);
     return;
   }
@@ -732,7 +736,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   const existingClips=await db("clips",{params:{project_id:"eq."+p.projectId,media_asset_id:"eq."+asset.id,select:"id,start_seconds,end_seconds,status"}});
   const existingByStart=new Map((existingClips||[]).map(x=>[Number(x.start_seconds).toFixed(3),x]));
   const preferences=p.preferences||{};
-  candidates=distinctMoments(candidates,Math.min(8,Math.max(1,Number(preferences.clipCount)||8)));
+  candidates=distinctMoments(candidates,clipLimitForDuration(safeDuration,{clipCount:preferences.clipCount}));
   if(!candidates.length)throw new Error('No complete spoken moments were found. Review the transcript before retrying.');
   const captions=preferences.captions!==false;
   const captionStyle=["pop","bold","minimal"].includes(preferences.captionStyle)?preferences.captionStyle:"pop";
@@ -740,7 +744,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   for(let i=0;i<candidates.length;i++){
     const candidate=candidateHook(candidates[i],segments);
     const start=Math.max(0,Math.min(safeDuration,Number(candidate.start_seconds)||0));
-    const end=Math.max(start,Math.min(safeDuration,start+45,Number(candidate.end_seconds)||start));
+    const end=Math.max(start,Math.min(safeDuration,start+maxClipDurationForPacing(preferences.clipPacing),Number(candidate.end_seconds)||start));
     if(end<=start)continue;
     const key=start.toFixed(3);
     let clip=existingByStart.get(key);
@@ -787,7 +791,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
     }});
     await patchJob(p.jobId,{progress:Math.min(98,64+Math.round(((i+1)/Math.max(1,candidates.length))*34)),payload:{...p,transcriptId:transcript.id,transcribeChunk:chunkCount,clipEngine:GEMINI_API_KEY?"gemini":"deterministic"}});
   }
-  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(e=>console.warn("video usage finalization failed:",e.message));await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed",error:null,error_id:null,failure_type:null,next_retry_at:null,dead_lettered_at:null});if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:"completed",decided_at:new Date().toISOString(),updated_at:new Date().toISOString()}}).catch(()=>{});const partParentId=p.parentJobId||p.jobId;const outstandingParts=await db("pending_processing_parts",{params:{parent_job_id:"eq."+partParentId,status:"in.(pending,approved,queued,processing)",select:"id",limit:"1"}}).catch(()=>[]);await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:outstandingParts?.length?"processing":"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
+  await setStage(p,"clip_render","completed",100);await setStage(p,"export","completed",100);await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:true}}).catch(e=>console.warn("video usage finalization failed:",e.message));await patchJob(p.jobId,{status:"completed",progress:100,current_stage:"completed",error:null,error_id:null,failure_type:null,next_retry_at:null,dead_lettered_at:null});await sendJobEmail(p,"job_completed");if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:"completed",decided_at:new Date().toISOString(),updated_at:new Date().toISOString()}}).catch(()=>{});const partParentId=p.parentJobId||p.jobId;const outstandingParts=await db("pending_processing_parts",{params:{parent_job_id:"eq."+partParentId,status:"in.(pending,approved,queued,processing)",select:"id",limit:"1"}}).catch(()=>[]);await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:outstandingParts?.length?"processing":"ready"}});if(p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"processed"}}).catch(()=>{});console.log("completed",p.jobId)
 }catch(e){
   const cancelled=(await db("processing_jobs",{params:{id:"eq."+p.jobId,select:"status"}}).catch(()=>[]))[0]?.status==="cancelled";
   if(cancelled)return;
@@ -803,7 +807,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
   if(providerUnavailable&&p.sessionId&&p.requestedBy)await db("rpc/release_job_credits_for_provider_pause",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_reason:"Temporary credit release while Gemini is unavailable",p_idempotency_key:"job:"+p.jobId+":provider_pause:"+providerPauseCount}}).catch(error=>console.warn("provider-pause credit release needs review:",safeErrorMessage(error)));
   const accountingPatch=providerUnavailable?{attempt_count:Math.max(0,Number(p.retryCount||1)-1)}:{};
   await patchJob(p.jobId,{status:terminal?"failed":"queued",error:safeError,error_id:errorId,failure_type:failureType,next_retry_at:nextRetryAt,dead_lettered_at:terminal?new Date().toISOString():null,...accountingPatch,payload:{...checkpoint,retryCount,errorId,failureType,providerPauseCount}}).catch(()=>{});
-  if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:terminal?"failed":"queued",updated_at:new Date().toISOString()}}).catch(()=>{});if(terminal){await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});if(p.requestedBy)await db("rpc/refund_failed_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_reason:"Automatic refund after terminal job failure",p_idempotency_key:"job:"+p.jobId+":refund:"+Number(checkpoint.creditResumeCount||0)}}).catch(error=>console.warn("credit refund needs review:",safeErrorMessage(error)));}
+  if(p.scheduledPartId)await db("pending_processing_parts",{method:"PATCH",params:{id:"eq."+p.scheduledPartId},body:{status:terminal?"failed":"queued",updated_at:new Date().toISOString()}}).catch(()=>{});if(terminal){await sendJobEmail({...p,jobId:p.jobId},"job_failed",errorId);await db("rpc/finish_video_usage_for_job",{method:"POST",body:{p_job_id:p.jobId,p_succeeded:false}}).catch(()=>{});if(p.requestedBy)await db("rpc/refund_failed_job_credits",{method:"POST",body:{p_workspace_id:p.workspaceId,p_job_id:p.jobId,p_user_id:p.requestedBy,p_reason:"Automatic refund after terminal job failure",p_idempotency_key:"job:"+p.jobId+":refund:"+Number(checkpoint.creditResumeCount||0)}}).catch(error=>console.warn("credit refund needs review:",safeErrorMessage(error)));}
   if(p.operation!=="render_edit"&&p.operation!=="ai_chat_plan")await db("projects",{method:"PATCH",params:{id:"eq."+p.projectId},body:{status:terminal?"processing_failed":"processing"}}).catch(()=>{});
    if(terminal&&p.sourceId)await db("project_sources",{method:"PATCH",params:{id:"eq."+p.sourceId},body:{status:"failed"}}).catch(()=>{})}finally{clearInterval(heartbeat);jobDirs.delete(dir);await patchJob(p.jobId,{heartbeat_at:new Date().toISOString(),lease_until:null}).catch(()=>{});await cleanupGeminiFiles(dir);fs.rmSync(dir,{recursive:true,force:true})}}
 app.get("/health",(_q,res)=>{res.json({ok:true,service:"alpha-ai-media-worker",version:"2.1",release:process.env.RENDER_GIT_COMMIT?.slice(0,12)||null,transcriptionMode:process.env.TRANSCRIPTION_PROVIDER==="browser"||!GEMINI_API_KEY?"browser":"server",publishingConfigured:Boolean(KEY&&SECRET&&process.env.YOUTUBE_CLIENT_ID&&process.env.YOUTUBE_CLIENT_SECRET),capabilities:["encrypted-credentials","transcript-cuts","server-transcription","streamed-publishing","editor-assistant","editor-batch-render","caption-corrections","gemini-key-rotation"],geminiKeyCount:GEMINI_KEYS.length});setImmediate(()=>resumeQueuedJobs());});
