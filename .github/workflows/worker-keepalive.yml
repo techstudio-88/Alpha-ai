@@ -8,10 +8,21 @@ on:
 jobs:
   ping-worker:
     runs-on: ubuntu-latest
+    env:
+      MEDIA_WORKER_URL: ${{ vars.MEDIA_WORKER_URL }}
     steps:
       - name: Wake and trigger queue recovery
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          if [[ -z "${MEDIA_WORKER_URL:-}" ]]; then
+            echo "MEDIA_WORKER_URL is not configured; skipping worker keepalive."
+            exit 0
+          fi
+          case "$MEDIA_WORKER_URL" in
+            https://*) ;;
+            *) echo "MEDIA_WORKER_URL must use HTTPS"; exit 1 ;;
+          esac
           curl --fail --show-error --silent --max-time 120 \
             -H "Cache-Control: no-cache" \
-            https://alpha-ai-media-worker.onrender.com/health
+            "${MEDIA_WORKER_URL%/}/health"
