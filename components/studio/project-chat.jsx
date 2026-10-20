@@ -11,7 +11,7 @@ import { normalizePreferences } from '../../lib/chat-brief.mjs';
 import { estimateClipCountRange } from '../../lib/clip-estimate.mjs';
 import ClipPreferencesCard from './ClipPreferencesCard';
 import { studioApi, useClipSources, useRows, useStudio } from './data';
-import { Button, EmptyState, ScreenSkeleton, formatTime } from './ui';
+import { Button, EmptyState, Modal, ScreenSkeleton, formatTime } from './ui';
 
 export default function ProjectChat() {
   const { workspace, user, demo, projectId, jobId, navigate, openImport, notify } = useStudio();
