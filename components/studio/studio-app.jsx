@@ -4,14 +4,14 @@ import {useCallback,useEffect,useState} from 'react';
 import {useRouter,useSearchParams} from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive} from 'lucide-react';
+import {Bell,CalendarDays,Clapperboard,Folder,Home,LogOut,Menu,PanelLeftClose,PanelLeftOpen,Palette,Search,Settings,TrendingUp,User,WandSparkles,Archive,Lock,Plus} from 'lucide-react';
 import {supabase} from '../../lib/supabase';
 import BrowserTranscriber from '../BrowserTranscriber';
 import Brand from './brand';
 import AuthScreen from './auth-screen';
 import ImportVideo from './import-video';
 import {StudioContext,studioApi,useResource,useRows,useStudio} from './data';
-import {Button,EmptyState,ErrorState,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
+import {Button,EmptyState,ErrorState,Input,Modal,ScreenSkeleton,Select,ThemeToggle,Toast} from './ui';
 import {HomeScreen,ProjectsScreen,ClipsScreen,ProjectScreen} from './project-screens';
 import {MotionToggle} from './motion';
 import {PublishScreen,InsightsScreen,BrandScreen,SettingsScreen,SeoScreen,StuffScreen} from './management-screens';
@@ -111,9 +111,10 @@ export default function StudioApp() {
 }
 
 function StudioWorkspace() {
-  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace}=useStudio();
+  const {view,workspace,workspaces,user,demo,navigate,projectId,clipId,state,selectWorkspace,refreshWorkspace,notify}=useStudio();
   const [command,setCommand]=useState(false),[query,setQuery]=useState(''),[mobile,setMobile]=useState(false);
   const [notifications,setNotifications]=useState(false),[upgrade,setUpgrade]=useState(false),[upiSelection,setUpiSelection]=useState(null),[account,setAccount]=useState(false),[collapsed,setCollapsed]=useState(false);
+  const [workspaceModal,setWorkspaceModal]=useState(false),[workspaceName,setWorkspaceName]=useState(''),[workspaceBusy,setWorkspaceBusy]=useState(false),[workspaceError,setWorkspaceError]=useState('');
   const projects=useRows('projects');
   const usage=useRows('media_assets','id,duration_seconds');
   const activity=useRows('processing_jobs','id,project_id,status,progress,current_stage,error,created_at',{poll:true});
@@ -133,9 +134,12 @@ function StudioWorkspace() {
     window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
   },[]);
   const minutes=Math.round((usage.data||[]).reduce((sum,a)=>sum+(Number(a.duration_seconds)||0),0)/60*10)/10;
+  async function createWorkspace(event){event.preventDefault();setWorkspaceError('');setWorkspaceBusy(true);try{const result=await studioApi('/api/workspaces',{method:'POST',body:{name:workspaceName}});setWorkspaceModal(false);selectWorkspace(result.workspace.id);await refreshWorkspace?.();notify('Workspace created.')}catch(err){setWorkspaceError(err.message||'Could not create workspace.');}finally{setWorkspaceBusy(false)}}
   const link=id=>{const p=new URLSearchParams();if(demo)p.set('demo','1');if(id!=='home')p.set('view',id);return '/studio'+(p.size?'?'+p:'')};
   const navItems=NAV.map(([id,label,Icon])=><Link key={id} href={link(id)} className={view===id?'active':''} aria-label={label} title={label} aria-current={view===id?'page':undefined} onClick={()=>setMobile(false)}><Icon size={17}/><span>{label}</span></Link>);
-  const workspaceSelect=<Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/>;
+  const planRank={free:0,pro:1,studio:2};
+  const highestPlan=workspaces.reduce((best,w)=>(planRank[w.plan||'free']||0)>(planRank[best]||0)?(w.plan||'free'):best,'free');
+  const workspaceSelect=<div className="flex items-end gap-2"><div className="min-w-0 flex-1"><Select label="Workspace" value={workspace.id} onValueChange={selectWorkspace} options={workspaces.map(w=>({value:w.id,label:w.name}))}/></div><Button size="sm" variant="secondary" className={highestPlan==='free'?'shrink-0 opacity-60':'shrink-0'} onClick={()=>{if(demo){notify('Sign up to create your own workspace.');return;}if(highestPlan==='free'){notify('Upgrade to Creator to add more workspaces.');setUpgrade(true);return;}setWorkspaceError('');setWorkspaceName('');setWorkspaceModal(true)}} aria-label="Add workspace">{highestPlan==='free'?<Lock size={14}/>:<Plus size={14}/>} Add workspace</Button></div>;
   let screen;
   if(state==='loading')screen=<ScreenSkeleton/>;
   else if(state==='error')screen=<ErrorState message="This sample shows how a failed request is presented. Retry returns to the normal studio." onRetry={()=>navigate(view,{project:projectId,clip:clipId})}/>;
@@ -203,5 +207,6 @@ function StudioWorkspace() {
       <Button variant="ghost" className="w-full justify-start" onClick={async()=>{if(demo)window.location.href='/';else{await supabase.auth.signOut();window.location.href='/studio'}}}><LogOut size={16}/>{demo?'Leave sample':'Sign out'}</Button>
     </Modal>
     <Modal open={upgrade && !upiSelection} onOpenChange={setUpgrade} title="Choose your plan" description="Pay with UPI. Plans activate only after payment verification." className="max-w-[1080px] w-[calc(100%-32px)]"><PricingCards compact onSelectPlan={(plan,interval)=>setUpiSelection({plan,interval})}/></Modal><Modal open={Boolean(upiSelection)} onOpenChange={open=>{if(!open)setUpiSelection(null)}} title="Pay with UPI" description="Your plan activates after we verify the payment."><UpiCheckout workspaceId={workspace?.id} plan={upiSelection?.plan} interval={upiSelection?.interval} onClose={()=>setUpiSelection(null)} onDone={()=>{setUpiSelection(null);setUpgrade(false)}}/></Modal>
+    <Modal open={workspaceModal} onOpenChange={setWorkspaceModal} title="Add workspace" description="Create another workspace for a channel or project."><form onSubmit={createWorkspace} className="space-y-4"><label className="block text-sm font-medium" htmlFor="new-workspace-name">Workspace name</label><Input id="new-workspace-name" value={workspaceName} onChange={e=>setWorkspaceName(e.target.value.slice(0,80))} minLength={2} maxLength={80} required placeholder="e.g. Client Studio"/>{workspaceError&&<p role="alert" className="text-sm text-danger">{workspaceError}</p>}<div className="flex justify-end gap-2"><Button variant="secondary" type="button" onClick={()=>setWorkspaceModal(false)}>Cancel</Button><Button variant="primary" type="submit" busy={workspaceBusy} disabled={workspaceBusy||workspaceName.trim().length<2}>Create workspace</Button></div></form></Modal>
   </div>;
 }
