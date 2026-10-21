@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-const worker = (process.env.MEDIA_WORKER_URL || "https://alpha-ai-media-worker.onrender.com").replace(/\/$/, "");
+const worker = (process.env.MEDIA_WORKER_URL || process.env.WORKER_URL || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_WORKER_SECRET || "";
 
 async function auth(req) {
@@ -154,7 +154,7 @@ export async function POST(req, { params }) {
       return Response.json({ ok: true, asset: saved });
     }
 
-    // Server-side enforcement of title regeneration quota (Free: 3 max)
+    if (!worker || !secret) return Response.json({ error: "AI generation is temporarily unavailable because the media worker is not configured.", error_id: crypto.randomUUID() }, { status: 503 });\n\n    // Server-side enforcement of title regeneration quota (Free: 3 max)
     const featureKey = body.feature === "cover_rotation" ? "cover_rotation" : "title_regeneration";
     const requestId = crypto.randomUUID();
     usageReservation = await reserveWorkspaceFeatureUsage(svc, project.workspace_id, user.id, featureKey, requestId);
@@ -174,7 +174,7 @@ export async function POST(req, { params }) {
     }
     if (!text) text = String(clip.ai_spec?.summary || "").trim();
     if (!text) return Response.json({ error: "No transcript context is available for this clip." }, { status: 409 });
-    if (!secret) return Response.json({ error: "AI worker is not configured." }, { status: 503 });
+
 
     const prompt =
       "Create repurposing assets for this real short-form clip. Return ONLY valid JSON with keys hook,title,caption,hashtags,youtube_description,instagram_caption,tiktok_caption,linkedin_caption,thumbnail_prompt. Do not invent facts. YouTube title must be under 100 characters. Instagram caption must be under 2200 characters. 5-10 hashtags. Clip title: " +
