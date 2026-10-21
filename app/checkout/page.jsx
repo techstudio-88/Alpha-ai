@@ -36,7 +36,8 @@ function CheckoutContent() {
     return () => { active = false; data?.subscription?.unsubscribe(); };
   }, []);
 
-  const upiUri = order?.upiUri || "";\n  const payeeVpa = order?.vpa || VPA;
+  const upiUri = order?.upiUri || "";
+  const payeeVpa = order?.vpa || VPA;
   const qrUrl = useMemo(() => upiUri ? "https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&format=png&data=" + encodeURIComponent(upiUri) : "", [upiUri]);
 
   async function createOrder() {
