@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { enforceApiRateLimit } from "../../../../lib/workflow-server";
+import { enforceApiRateLimit } from "../../../../../lib/workflow-server";
 
 export const runtime = "nodejs";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
