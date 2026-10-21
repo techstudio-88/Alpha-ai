@@ -49,6 +49,14 @@ test("planner analyzes the end of a long transcript before global selection",asy
     }});
   assert.equal(calls,4);assert.deepEqual(windows,[[0,3],[1,3],[2,3]]);assert.equal(plan.clips[0].startSeconds,1376);
 });
+test("planner enforces requested clip count, aspect ratio and caption preferences",async()=>{
+  const words=Array.from({length:40},(_,i)=>({word:`word${i}`,start_ms:i*1000,end_ms:i*1000+700}));
+  const plan=await planTranscript({words,duration:40,prompt:"Find moments",history:[],onProgress:()=>{},
+    preferences:{clipCount:"3",aspect:"1:1",captions:false,platform:"both"},
+    generate:async()=>({summary:"Planned",clips:[0,1,2,3,4].map(i=>({a:i*5,b:i*5+2,title:`Moment ${i}`,score:90}))})});
+  assert.equal(plan.clips.length,3);
+  assert.ok(plan.clips.every(clip=>clip.aspect==="1:1"&&clip.captions===false&&clip.captionStyle==="none"));
+});
 test("unsupported instructions fail without a fabricated result",async()=>{
   await assert.rejects(planTranscript({words:[{word:"real",start_ms:0,end_ms:1000}],duration:1,prompt:"Add music",history:[],onProgress:()=>{},
     generate:async()=>({unsupportedReason:"Adding music is not supported",clips:[]})}),error=>error.unsupported===true&&/not supported/.test(error.message));
