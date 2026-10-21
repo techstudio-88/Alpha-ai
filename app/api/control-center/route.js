@@ -128,9 +128,9 @@ export async function POST(request){
   }
   if(action==="cancel_job"){
    const id=String(body.jobId||"");const{data:job}=await admin.from("processing_jobs").select("id,workspace_id,project_id,status").eq("id",id).maybeSingle();if(!job)return Response.json({error:"Job not found."},{status:404});
-   if(["completed","failed","cancelled"].includes(job.status))return Response.json({error:"That job is already terminal."},{status:400});
-   const{error}=await admin.from("processing_jobs").update({status:"cancelled",error:"Cancelled by control center.",updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;
-   await writeAudit(admin,user,"processing_job_cancelled",{job_id:id},job.workspace_id,job.project_id);return Response.json({ok:true});
+   if(["completed","failed","cancelled","dead_letter"].includes(job.status))return Response.json({error:"That job is already terminal."},{status:409});
+   const{data:changed,error}=await admin.from("processing_jobs").update({status:"cancelled",error:"Cancelled by control center.",lease_until:null,lease_token:null,cancel_requested_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",id).eq("status",job.status).select("id").maybeSingle();if(error)throw error;if(!changed)return Response.json({error:"The job changed before cancellation. Refresh and retry."},{status:409});
+   await writeAudit(admin,user,"processing_job_cancelled",{job_id:id,previous_status:job.status},job.workspace_id,job.project_id);return Response.json({ok:true});
   }
   if(action==="notify_bulk"){
    const ids=Array.isArray(body.userIds)?body.userIds.map(String).slice(0,100):[];const title=String(body.title||"Alpha.ai notification").slice(0,160),message=String(body.message||"").slice(0,2000);if(!ids.length||!message)return Response.json({error:"Select at least one user and write a message."},{status:400});
