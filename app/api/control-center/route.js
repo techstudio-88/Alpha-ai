@@ -13,6 +13,10 @@ async function guard(request){
  const client=createClient(url,anon,{auth:{persistSession:false,autoRefreshToken:false}});
  const{data:{user},error}=await client.auth.getUser(token);
  if(error||!user)throw new Error("Authentication expired.");
+ // Privileged console actions require a recently authenticated session (15 minutes).
+ let authTime=0;
+ try{authTime=Number(JSON.parse(Buffer.from(token.split(".")[1]||"","base64url").toString("utf8")).auth_time)||0;}catch{}
+ if(!authTime||Date.now()/1000-authTime>900)throw Object.assign(new Error("Please sign in again before using the admin console."),{status:401});
  const admin=adminClient(),email=(user.email||"").toLowerCase();
  const allow=(process.env.ALPHA_CONTROL_ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
  const{data:member}=await admin.from("control_center_members").select("id,role,active").eq("email",email).eq("active",true).maybeSingle();
