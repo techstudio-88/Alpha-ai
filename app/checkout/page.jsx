@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, LockKeyhole, CreditCard } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LockKeyhole } from "lucide-react";
 import { Suspense } from "react";
 
 function CheckoutContent() {
@@ -37,7 +37,7 @@ function CheckoutContent() {
             <div className="flex items-center gap-2 font-medium"><LockKeyhole size={17} /> Payment status</div>
             <p className="text-sm text-muted mt-2">Online payments are not enabled yet. No money will be charged on this page. We need to connect and verify the payment provider before enabling a real payment button.</p>
           </div>
-          <Link href="/contact?topic=billing" className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 font-medium">Contact us about this plan <CreditCard size={16} /></Link>
+          <div className="mt-6 rounded-lg border px-4 py-3 text-center text-sm font-medium text-muted" role="status">Checkout is ready for plan review, but payments are not enabled yet.</div>
         </section>
         <aside className="panel p-6 md:p-8 h-fit">
           <h2 className="text-lg font-semibold">Order summary</h2>
