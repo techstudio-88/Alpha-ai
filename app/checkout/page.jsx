@@ -79,7 +79,7 @@ export default function CheckoutPage(){
       </div>
       <p style={{fontSize:30,fontWeight:700,marginTop:22}}>{plan==="pro"?(interval==="monthly"?"₹499 / month":"₹4,999 / year"):(interval==="monthly"?"₹1,499 / month":"₹14,999 / year")}</p>
       <p style={{fontSize:13,marginTop:8}}>Workspace: {workspace?.name||"Loading workspace…"}</p>
-      <button disabled={!session||!workspace||busy} onClick={createOrder} style={{marginTop:20,padding:"12px 18px",borderRadius:12,fontWeight:700,background:"var(--foreground)",color:"var(--background)",opacity:busy?.65:1}}>{busy?"Creating order…":"Create UPI payment"}</button>
+      <button disabled={!session||!workspace||busy} onClick={createOrder} style={{marginTop:20,padding:"12px 18px",borderRadius:12,fontWeight:700,background:"var(--foreground)",color:"var(--background)",opacity:busy ? 0.65 : 1}}>{busy?"Creating order…":"Create UPI payment"}</button>
       {!session&&<p style={{marginTop:14}}> <Link href="/studio" style={{textDecoration:"underline"}}>Sign in to continue</Link></p>}
     </section>:<section style={{marginTop:28,padding:24,border:"1px solid var(--border)",borderRadius:20}}>
       <p style={{fontSize:13}}>Order reference: <strong>{order.reference}</strong></p>
