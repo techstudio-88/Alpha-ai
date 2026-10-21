@@ -25,10 +25,14 @@ export async function POST(request){
     const payload={...(job.payload||{}),preferences:normalized,preferencesRequired:false,transcriptOnly:false,retryCount:0};
     const updated=checked(await admin.from('processing_jobs').update({payload,status:'queued',progress:0,current_stage:null,error:null,attempt_count:0,lease_until:null,lease_token:null,updated_at:new Date().toISOString()}).eq('id',job.id).eq('workspace_id',workspaceId).eq('project_id',projectId).eq('status','awaiting_preferences').select('id,status,payload').maybeSingle());
     if(!updated?.id)throw problem('This job has already started. Refresh the chat to see its progress.',409);
-    const charge=await admin.rpc('consume_processing_tokens',{p_workspace_id:workspaceId,p_user_id:user.id,p_job_id:job.id,p_processing_minutes:durationSeconds/60});
+    const credits=Math.max(1,Math.ceil(durationSeconds/60));
+    const charge=await admin.rpc('reserve_job_credits',{
+      p_workspace_id:workspaceId,p_job_id:job.id,p_user_id:user.id,p_amount:credits,
+      p_reason:'Accepted video processing',p_idempotency_key:'processing:'+job.id+':reserve'
+    });
     if(charge.error){
       await admin.from('processing_jobs').update({status:'awaiting_preferences',payload:job.payload,error:null,attempt_count:0,updated_at:new Date().toISOString()}).eq('id',job.id).eq('workspace_id',workspaceId).eq('project_id',projectId).eq('status','queued');
-      if(/allowance|token/i.test(charge.error.message||''))throw problem('Your daily 100-token allowance is used. Wait for tomorrow or upgrade to continue processing.',402);
+      if(/INSUFFICIENT_CREDITS|credit/i.test(charge.error.message||''))throw problem('Not enough processing credits for this video. Upgrade your plan or add credits to continue.',402);
       throw charge.error;
     }
     const warning=await wakeWorker({...payload,jobId:job.id,workspaceId,projectId},token);
