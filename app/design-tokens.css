@@ -1,17 +1,17 @@
 :root {
-  color-scheme: light;
-  --background: #fbfaff;
-  --panel: #ffffff;
-  --raised: #f2effb;
-  --foreground: #25213a;
-  --muted: #716b86;
-  --subtle: #8d86a0;
-  --border: rgb(91 75 130 / 14%);
-  --accent: #ff704f;
-  --accent-foreground: #ffffff;
-  --success: #24865a;
-  --warning: #a86616;
-  --destructive: #c63f51;
+  color-scheme: dark;
+  --background: #0b0c0f;
+  --panel: #12141a;
+  --raised: #1a1d26;
+  --foreground: #f4f5f7;
+  --muted: #a4a8b5;
+  --subtle: #8b91a0;
+  --border: rgb(255 255 255 / 8%);
+  --accent: #c6f432;
+  --accent-foreground: #182000;
+  --success: #83dca6;
+  --warning: #efbc68;
+  --destructive: #ff9595;
   --font-body: 'Inter Variable', Inter, system-ui, sans-serif;
   --font-heading: var(--font-geist-sans), var(--font-body);
   --font-code: var(--font-geist-mono), monospace;
@@ -23,28 +23,25 @@
   --text-2xl: 28px;
   --text-3xl: 40px;
   --space-unit: 4px;
-  --radius-control: 10px;
-  --radius-card: 18px;
-  --motion-fast: 160ms;
-  --motion-normal: 240ms;
-}
-:root[data-theme='dark'] {
-  color-scheme: light;
+  --radius-control: 8px;
+  --radius-card: 14px;
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
 }
 :root[data-theme='light'] {
   color-scheme: light;
-  --background: #fbfaff;
+  --background: #f5f6f7;
   --panel: #ffffff;
-  --raised: #f2effb;
-  --foreground: #25213a;
-  --muted: #716b86;
-  --subtle: #8d86a0;
-  --border: rgb(91 75 130 / 14%);
-  --accent: #ff704f;
-  --accent-foreground: #ffffff;
-  --success: #24865a;
-  --warning: #a86616;
-  --destructive: #c63f51;
+  --raised: #eceef1;
+  --foreground: #171a22;
+  --muted: #535c6e;
+  --subtle: #626a79;
+  --border: rgb(13 19 32 / 13%);
+  --accent: #c6f432;
+  --accent-foreground: #182000;
+  --success: #166534;
+  --warning: #895305;
+  --destructive: #b42332;
 }
 @theme inline {
   --color-background: var(--background);
@@ -61,8 +58,8 @@
   --font-sans: var(--font-body);
   --font-display: var(--font-heading);
   --font-mono: var(--font-code);
-  --radius-control: 10px;
-  --radius-card: 18px;
+  --radius-control: 8px;
+  --radius-card: 14px;
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
