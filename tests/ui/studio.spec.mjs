@@ -99,7 +99,7 @@ for(const mode of ['signin','signup','reset']){
 test('settings subsections and onboarding show real empty states, not fake connections',async({page})=>{
   test.setTimeout(60000); // Five separate axe scans plus onboarding in a constrained WSL browser.
   await page.goto('/studio?demo=1&view=settings');
-  for(const name of ['Members & roles','API keys','Integrations','Billing','Danger zone']){
+  for(const name of ['Members & roles','API keys','Integrations','Notifications','Billing','Danger zone']){
     await page.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name,exact:true}).click();
     await noOverflow(page);
     const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
