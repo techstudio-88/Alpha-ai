@@ -18,7 +18,7 @@ async function authenticate(request) {
   return { user: data.user, token, admin: adminDb() };
 }
 
-const PLAN_KEYS = new Set(["starter", "creator", "pro", "studio"]);
+const PLAN_KEYS = new Set(["pro", "studio"]);
 function priceFor(plan, interval) {
   const suffix = interval === "yearly" ? "YEARLY" : "MONTHLY";
   const raw = process.env[`UPI_PRICE_${plan.toUpperCase()}_${suffix}_PAISE`];
