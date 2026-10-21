@@ -6,6 +6,7 @@
 @import "./alpha-chat.css";
 @import "./landing-premium.css";
 @import "./theme-global.css";
+@import "./brain-background.css";
 
 @font-face {
   font-family: 'Inter Variable'; font-style: normal; font-weight: 100 900; font-display: swap;
