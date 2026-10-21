@@ -16,7 +16,7 @@ function clients() {
 export async function POST(request) {
   const c = clients();
   if (!c) return error("Payment verification is temporarily unavailable. Please contact support with error ID PAY-CONFIG-04.", 503);
-  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return error("Sign in before updating your payment order.", 401);
   const { data, error: authError } = await c.auth.auth.getUser(token);
   if (authError || !data?.user) return error("Your session expired. Please sign in again.", 401);
@@ -37,8 +37,5 @@ export async function POST(request) {
     .eq("id", order.id).eq("user_id", data.user.id).eq("status", "pending")
     .select("id,status,submitted_at").maybeSingle();
   if (updateError || !updated) return error("Could not update this order. Refresh and try again.", 409);
-  return NextResponse.json({
-    order: updated,
-    message: "Payment check requested. The plan remains inactive until the payment is verified.",
-  }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ order: updated, message: "Payment check requested. The plan remains inactive until the payment is verified." }, { headers: { "Cache-Control": "no-store" } });
 }
