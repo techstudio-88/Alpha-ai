@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const service = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-const worker = (process.env.MEDIA_WORKER_URL || "https://alpha-ai-media-worker.onrender.com").replace(/\/$/, "");
+const worker = (process.env.MEDIA_WORKER_URL || process.env.WORKER_URL || "").replace(/\/$/, "");
 const secret = process.env.MEDIA_WORKER_SECRET || "";
 
 async function auth(req) {
@@ -154,6 +154,8 @@ export async function POST(req, { params }) {
       return Response.json({ ok: true, asset: saved });
     }
 
+    if (!worker || !secret) return Response.json({ error: "AI generation is temporarily unavailable because the media worker is not configured.", error_id: crypto.randomUUID() }, { status: 503 });
+
     // Server-side enforcement of title regeneration quota (Free: 3 max)
     const featureKey = body.feature === "cover_rotation" ? "cover_rotation" : "title_regeneration";
     const requestId = crypto.randomUUID();
@@ -174,7 +176,7 @@ export async function POST(req, { params }) {
     }
     if (!text) text = String(clip.ai_spec?.summary || "").trim();
     if (!text) return Response.json({ error: "No transcript context is available for this clip." }, { status: 409 });
-    if (!secret) return Response.json({ error: "AI worker is not configured." }, { status: 503 });
+
 
     const prompt =
       "Create repurposing assets for this real short-form clip. Return ONLY valid JSON with keys hook,title,caption,hashtags,youtube_description,instagram_caption,tiktok_caption,linkedin_caption,thumbnail_prompt. Do not invent facts. YouTube title must be under 100 characters. Instagram caption must be under 2200 characters. 5-10 hashtags. Clip title: " +
@@ -182,13 +184,25 @@ export async function POST(req, { params }) {
       "\nTranscript:\n" +
       text.slice(0, 12000);
 
-    const wr = await fetch(worker + "/assistant", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-worker-secret": secret },
-      body: JSON.stringify({ prompt, context: "Alpha.ai clip repurposing request" }),
-    });
-    const wo = await wr.json().catch(() => ({}));
-    if (!wr.ok) throw new Error(wo.error || "AI repurposing failed.");
+    let wr=null,wo={};
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        wr=await fetch(worker+"/assistant",{
+          method:"POST",
+          headers:{"content-type":"application/json","x-worker-secret":secret},
+          body:JSON.stringify({prompt,context:"Alpha.ai clip repurposing request"}),
+          signal:AbortSignal.timeout(45000)
+        });
+        wo=await wr.json().catch(()=>({}));
+        if(wr.ok)break;
+        if(attempt===0&&[408,429,500,502,503,504].includes(wr.status))continue;
+        throw new Error(wo.error||"AI repurposing failed.");
+      }catch(error){
+        if(attempt===0&&(error?.name==="AbortError"||error?.name==="TimeoutError"||error instanceof TypeError))continue;
+        throw error;
+      }
+    }
+    if(!wr?.ok)throw new Error(wo.error||"AI repurposing failed after retry.");
 
     const raw = String(wo.text || "").match(/\{[\s\S]*\}/)?.[0];
     if (!raw) throw new Error("AI returned no structured repurposing package.");

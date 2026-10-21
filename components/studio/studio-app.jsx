@@ -19,9 +19,10 @@ import {PricingCards} from './marketing';
 
 const ProjectChat=dynamic(()=>import('./project-chat'),{loading:()=> <ScreenSkeleton/>});
 const EditorScreen=dynamic(()=>import('./editor-screen'),{loading:()=> <ScreenSkeleton/>});
+const AssistantScreen=dynamic(()=>import('./assistant-screen'),{loading:()=> <ScreenSkeleton/>});
 
 export const NAV=[['home','Home',Home],['projects','Projects',Folder],['studio','Studio',WandSparkles],['clips','Clips',Clapperboard],['publish','Publish',CalendarDays],['stuff','Stuff',Archive],['insights','Insights',TrendingUp],['brand','Brand kit',Palette],['settings','Settings',Settings]];
-const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio',assistant:'studio'};
+const aliases={dashboard:'home',calendar:'publish',analytics:'insights',brandkit:'brand',chat:'studio'};
 
 export default function StudioApp() {
   const params=useSearchParams(),router=useRouter(),demo=params.get('demo')==='1';
@@ -144,7 +145,7 @@ function StudioWorkspace() {
   else if(view==='studio'||view==='chat'||(view==='assistant'&&projectId))screen=<ProjectChat key={projectId||'new'}/>;
   else if(view==='clips')screen=<ClipsScreen/>;
   else if(view==='editor')screen=<EditorScreen/>;
-  else if(view==='assistant')screen=<ProjectChat key={projectId||'new'}/>;
+  else if(view==='assistant')screen=<AssistantScreen/>;
   else if(view==='publish')screen=<PublishScreen/>;
   else if(view==='seo')screen=<SeoScreen clipId={clipId} projectId={projectId}/>;
   else if(view==='stuff')screen=<StuffScreen/>;
