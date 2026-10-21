@@ -118,11 +118,8 @@ function CheckoutContent() {
                   <p className="text-sm font-medium mt-4">Amount</p><div className="mt-1 flex items-center justify-between gap-2"><strong>{money(order.amount)}</strong><button aria-label="Copy amount" onClick={() => copyText(String(order.amount))} className="rounded-md border p-2"><Copy size={14}/></button></div>
                   <p className="text-xs text-muted mt-3">Use Google Pay, PhonePe, Paytm, BHIM, or another UPI app. App availability depends on your device and installed apps.</p>
                 </div>
-                <form onSubmit={submitUtr} className="mt-5 grid gap-3">
-                  <label htmlFor="utr" className="text-sm font-medium">After paying, enter your UPI transaction reference / UTR</label>
-                  <input id="utr" value={utr} onChange={(e) => setUtr(e.target.value)} minLength={8} maxLength={35} pattern="[A-Za-z0-9-]{8,35}" required placeholder="Enter transaction reference" className="w-full rounded-lg border px-3 py-3" autoComplete="off" />
-                  <button disabled={submitting} type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold">{submitting ? "Submitting…" : "Submit payment reference for verification"}</button>
-                </form>
+                <button onClick={confirmPaymentIntent} disabled={submitting} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold">{submitting ? "Updating order…" : "I’ve completed the UPI payment"}</button>
+                <p className="mt-2 text-xs text-muted">No transaction ID needed. This only requests a payment check; your plan stays inactive until payment is verified.</p>
               </>}
               {order.status === "submitted" && <p className="mt-4 text-sm">Your order is awaiting payment verification. Your subscription is not active yet; it will activate only after payment is verified.</p>}
             </div>
