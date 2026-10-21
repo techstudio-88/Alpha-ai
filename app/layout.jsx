@@ -1,3 +1,5 @@
+import "./design-tokens.css";
+import "./theme-global.css";
 import "./studio.css";
 import {GeistSans} from 'geist/font/sans';
 import {GeistMono} from 'geist/font/mono';
