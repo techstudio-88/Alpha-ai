@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./design-tokens.css";
 @import "./motion.css";
+@import "./post-login-motion.css";
 @import "./editor.css";
 @import "./alpha-chat.css";
 @import "./landing-premium.css";
