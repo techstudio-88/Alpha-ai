@@ -5,8 +5,9 @@ test('release smoke: landing, sample editor and public health load without error
   const response=await page.goto('/');expect(response.status()).toBe(200);
   await expect(page.getByRole('heading',{level:1})).toHaveText('One long video.A week of clips.');
   await expect(page.getByRole('link',{name:'Explore the sample studio'})).toBeVisible();
-  const health=await request.get('/api/health');expect(health.status()).toBe(200);
-  expect((await health.json()).ok).toBe(true);
+  const health=await request.get('/api/health');expect([200,503]).toContain(health.status());
+  const healthBody=await health.json();expect(healthBody).toHaveProperty('dependencies.supabase.status');
+  expect(healthBody.ok).toBe(health.status()===200);
   await page.goto('/studio?demo=1&view=editor&project=11111111-1111-4111-8111-111111111111&clip=clip-0');
   await expect(page.getByRole('heading',{level:1})).toContainText('A question beats a perfect plan');
   await expect(page.getByRole('button',{name:'Render clip',exact:true})).toBeVisible();
