@@ -117,8 +117,13 @@ export async function renderEditedClip(input,out,start,end,opts={}){
   const size=aspect==="16:9"?[1920,1080]:aspect==="1:1"?[1080,1080]:[1080,1920];
   const sw=Math.round(size[0]*Math.max(1,zoom)/2)*2,sh=Math.round(size[1]*Math.max(1,zoom)/2)*2;
   const captionSource=opts.assPath||opts.srtPath; const captionFilter=captionSource?`,subtitles='${String(captionSource).replaceAll("\\","/").replaceAll(":","\\:").replaceAll("'","\\'")}'`:"";
+  const wm=opts.watermark&&typeof opts.watermark==="object"?opts.watermark:null;
+  const wmText=String(wm?.text||"").replace(/[\\\\:'%\\[\\],;]/g," ").trim().slice(0,80);
+  const wmPos=({ "top-left":"x=36:y=36", "top-right":"x=w-tw-36:y=36", "bottom-left":"x=36:y=h-th-36", "center":"x=(w-tw)/2:y=(h-th)/2", "bottom-right":"x=w-tw-36:y=h-th-36" })[wm?.position]||"x=w-tw-36:y=h-th-36";
+  const wmOpacity=Math.max(.1,Math.min(1,Number(wm?.opacity)||.75));
+  const watermarkFilter=wmText?`,drawtext=text='${wmText}':fontcolor=white@${wmOpacity}:fontsize=42:box=1:boxcolor=black@0.35:boxborderw=12:${wmPos}`:"";
   const effect=opts.effect==="cinematic"?",eq=contrast=1.08:saturation=1.12:brightness=0.01":opts.effect==="warm"?",eq=contrast=1.04:saturation=1.08:brightness=.02,hue=h=4":opts.effect==="cool"?",eq=contrast=1.02:saturation=.95:brightness=0,hue=h=-8":opts.effect==="mono"?",hue=s=0,eq=contrast=1.05":opts.effect==="vibrant"?",eq=contrast=1.06:saturation=1.28:brightness=.01":"";const transition=opts.transition==="fade"?",fade=t=in:st=0:d=0.18,fade=t=out:st="+Math.max(0,requested/speed-.18).toFixed(3)+":d=0.18":opts.transition==="dip"?",fade=t=in:st=0:d=0.10,fade=t=out:st="+Math.max(0,requested/speed-.10).toFixed(3)+":d=0.10":"";const transitionZoom=opts.transition==="zoom"?",eq=contrast=1.03:saturation=1.05":"";
-  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}`;
+  const dynamicReframe=Array.isArray(opts.reframeKeyframes)&&opts.reframeKeyframes.length&&aspect!=="16:9"; const cropX=dynamicReframe?"max(0,min(iw-"+size[0]+",("+reframeExpr(opts.reframeKeyframes,"x")+")*iw-"+size[0]/2+"))":"(iw-"+size[0]+")*.5"; const cropY=dynamicReframe?"max(0,min(ih-"+size[1]+",("+reframeExpr(opts.reframeKeyframes,"y")+")*ih-"+size[1]/2+"))":"(ih-"+size[1]+")*.5"; const vf=`scale=${sw}:${sh}:force_original_aspect_ratio=increase,crop=${size[0]}:${size[1]}:x='${cropX}':y='${cropY}',setsar=1,setpts=(PTS-STARTPTS)/${speed}${effect}${transition}${transitionZoom}${captionFilter}${watermarkFilter}`;
   const af=speed===1?["-c:a","aac","-b:a","128k"]:["-af","atempo="+speed,"-c:a","aac","-b:a","128k"];
   const args=["-y","-ss",String(Math.max(0,Number(start))),"-t",String(requested),"-i",input];
   if(opts.cutRanges?.length){
@@ -623,7 +628,7 @@ async function processJob(p){await restoreWorkerGeminiCooldowns();const dir=fs.m
     const nextVersion=Math.max(1,Number(latestVersion?.version||0)+1);
     editData.render_job_id=p.jobId;
     await setStage(p,"clip_render","running",0);await patchJob(p.jobId,{progress:80});
-    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges});
+    await renderEditedClip(input,rendered,start,end,{aspect:p.aspect,speed:p.speed,zoom:p.zoom,effect:p.effect,transition:p.transition,srtPath,assPath,reframeKeyframes,cutRanges:p.cutRanges,watermark:p.watermark});
     await setStage(p,"clip_render","completed",100);await setStage(p,"export","running",0);await patchJob(p.jobId,{progress:92});
     const storagePath=p.workspaceId+"/"+p.projectId+"/clips/"+clip.id+"/v"+nextVersion+".mp4";
     await upload(rendered,storagePath,"video/mp4");
