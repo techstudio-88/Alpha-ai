@@ -22,7 +22,6 @@ function CheckoutContent() {
   const amount = billing === "yearly" ? plan.annual : plan.monthly;
   const [session, setSession] = useState(null);
   const [order, setOrder] = useState(null);
-  const [utr, setUtr] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -51,25 +50,23 @@ function CheckoutContent() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not create your order.");
       setOrder(body.order);
-      setUtr("");
     } catch (e) { setError(e.message || "Could not create your order. Please try again."); }
     finally { setLoading(false); }
   }
 
-  async function submitUtr(e) {
-    e.preventDefault();
+  async function confirmPaymentIntent() {
     if (!session?.access_token || !order?.id) return;
     setSubmitting(true); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/payments/upi/submit-reference", {
+      const response = await fetch("/api/payments/upi/confirm-intent", {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
-        body: JSON.stringify({ orderId: order.id, utr: utr.trim() }),
+        body: JSON.stringify({ orderId: order.id }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Could not submit payment reference.");
+      if (!response.ok) throw new Error(body.error || "Could not update your order.");
       setOrder((current) => ({ ...current, status: "submitted" }));
-      setNotice("Payment reference submitted. Your order is pending verification; your plan will activate only after payment is confirmed.");
-    } catch (e) { setError(e.message || "Could not submit payment reference."); }
+      setNotice("Thanks. Your order is queued for payment verification. Your plan will activate after the payment is confirmed in our payment records.");
+    } catch (e) { setError(e.message || "Could not update your order."); }
     finally { setSubmitting(false); }
   }
 
@@ -127,12 +124,12 @@ function CheckoutContent() {
                   <button disabled={submitting} type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold">{submitting ? "Submitting…" : "Submit payment reference for verification"}</button>
                 </form>
               </>}
-              {order.status === "submitted" && <p className="mt-4 text-sm">Your reference has been submitted. Your subscription is not active yet; it will be activated only after the payment is verified.</p>}
+              {order.status === "submitted" && <p className="mt-4 text-sm">Your order is awaiting payment verification. Your subscription is not active yet; it will activate only after payment is verified.</p>}
             </div>
           )}
           {error && <p role="alert" className="mt-4 rounded-lg border border-red-400/40 p-3 text-sm">{error}</p>}
           {notice && <p role="status" className="mt-4 rounded-lg border p-3 text-sm">{notice}</p>}
-          <div className="mt-6 flex items-start gap-2 rounded-xl border p-4 text-sm text-muted"><ShieldCheck size={18} className="shrink-0 mt-0.5" /><p>QR and UPI intent start a payment only. Alpha.ai will not activate a paid plan from a screenshot or an unverified UTR. Payments are checked before access is granted.</p></div>
+          <div className="mt-6 flex items-start gap-2 rounded-xl border p-4 text-sm text-muted"><ShieldCheck size={18} className="shrink-0 mt-0.5" /><p>QR and UPI intent start a payment only. Tapping the confirmation button does not prove payment. Alpha.ai activates paid access only after payment is verified.</p></div>
         </section>
         <aside className="panel p-6 md:p-8 h-fit">
           <h2 className="text-lg font-semibold">Order summary</h2>
