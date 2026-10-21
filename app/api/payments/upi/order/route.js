@@ -65,6 +65,6 @@ export async function POST(request) {
     tr: reference,
   });
   return NextResponse.json({
-    order: { id, reference, plan, billingInterval: interval, amount: amountPaise / 100, amountPaise, status: "pending", upiUri: "upi://pay?" + params.toString() },
+    order: { id, reference, plan, billingInterval: interval, amount: amountPaise / 100, amountPaise, status: "pending", vpa: VPA, payeeName: PAYEE_NAME, upiUri: "upi://pay?" + params.toString() },
   }, { headers: { "Cache-Control": "no-store" } });
 }
