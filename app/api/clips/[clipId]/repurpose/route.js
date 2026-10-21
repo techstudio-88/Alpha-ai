@@ -184,13 +184,25 @@ export async function POST(req, { params }) {
       "\nTranscript:\n" +
       text.slice(0, 12000);
 
-    const wr = await fetch(worker + "/assistant", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-worker-secret": secret },
-      body: JSON.stringify({ prompt, context: "Alpha.ai clip repurposing request" }),
-    });
-    const wo = await wr.json().catch(() => ({}));
-    if (!wr.ok) throw new Error(wo.error || "AI repurposing failed.");
+    let wr=null,wo={};
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        wr=await fetch(worker+"/assistant",{
+          method:"POST",
+          headers:{"content-type":"application/json","x-worker-secret":secret},
+          body:JSON.stringify({prompt,context:"Alpha.ai clip repurposing request"}),
+          signal:AbortSignal.timeout(45000)
+        });
+        wo=await wr.json().catch(()=>({}));
+        if(wr.ok)break;
+        if(attempt===0&&[408,429,500,502,503,504].includes(wr.status))continue;
+        throw new Error(wo.error||"AI repurposing failed.");
+      }catch(error){
+        if(attempt===0&&(error?.name==="AbortError"||error?.name==="TimeoutError"||error instanceof TypeError))continue;
+        throw error;
+      }
+    }
+    if(!wr?.ok)throw new Error(wo.error||"AI repurposing failed after retry.");
 
     const raw = String(wo.text || "").match(/\{[\s\S]*\}/)?.[0];
     if (!raw) throw new Error("AI returned no structured repurposing package.");
