@@ -13,9 +13,9 @@ export async function POST(request){
     const {data:{user},error}=await admin.auth.getUser(token);
     if(error||!user)return NextResponse.json({error:"Authentication expired."},{status:401});
     const deleted=await admin.auth.admin.deleteUser(user.id);
-    if(deleted.error)return NextResponse.json({error:deleted.error.message},{status:500});
+    if(deleted.error)return NextResponse.json({error:"Account deletion could not be completed. Contact support with the error ID.",errorId:crypto.randomUUID()},{status:500});
     return NextResponse.json({ok:true});
   }catch(error){
-    return NextResponse.json({error:error?.message||"Could not delete account."},{status:500});
+    return NextResponse.json({error:"Could not delete account. Try again or contact support.",errorId:crypto.randomUUID()},{status:500});
   }
 }
