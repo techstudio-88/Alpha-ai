@@ -154,7 +154,9 @@ export async function POST(req, { params }) {
       return Response.json({ ok: true, asset: saved });
     }
 
-    if (!worker || !secret) return Response.json({ error: "AI generation is temporarily unavailable because the media worker is not configured.", error_id: crypto.randomUUID() }, { status: 503 });\n\n    // Server-side enforcement of title regeneration quota (Free: 3 max)
+    if (!worker || !secret) return Response.json({ error: "AI generation is temporarily unavailable because the media worker is not configured.", error_id: crypto.randomUUID() }, { status: 503 });
+
+    // Server-side enforcement of title regeneration quota (Free: 3 max)
     const featureKey = body.feature === "cover_rotation" ? "cover_rotation" : "title_regeneration";
     const requestId = crypto.randomUUID();
     usageReservation = await reserveWorkspaceFeatureUsage(svc, project.workspace_id, user.id, featureKey, requestId);
