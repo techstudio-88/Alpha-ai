@@ -36,7 +36,7 @@ function CheckoutContent() {
     return () => { active = false; data?.subscription?.unsubscribe(); };
   }, []);
 
-  const upiUri = order?.upiUri || "";
+  const upiUri = order?.upiUri || "";\n  const payeeVpa = order?.vpa || VPA;
   const qrUrl = useMemo(() => upiUri ? "https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&format=png&data=" + encodeURIComponent(upiUri) : "", [upiUri]);
 
   async function createOrder() {
@@ -116,7 +116,7 @@ function CheckoutContent() {
                   <button onClick={() => copyText(upiUri)} className="inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium"><Copy size={15} /> {copied ? "Copied" : "Copy UPI payment link"}</button>
                 </div>
                 <div className="mt-5 rounded-lg border p-4">
-                  <p className="text-sm font-medium">Payee UPI ID</p><div className="mt-2 flex items-center justify-between gap-2"><code className="text-sm">{VPA}</code><button aria-label="Copy UPI ID" onClick={() => copyText(VPA)} className="rounded-md border p-2"><Copy size={14}/></button></div>
+                  <p className="text-sm font-medium">Payee UPI ID</p><div className="mt-2 flex items-center justify-between gap-2"><code className="text-sm">{payeeVpa}</code><button aria-label="Copy UPI ID" onClick={() => copyText(payeeVpa)} className="rounded-md border p-2"><Copy size={14}/></button></div>
                   <p className="text-sm font-medium mt-4">Amount</p><div className="mt-1 flex items-center justify-between gap-2"><strong>{money(order.amount)}</strong><button aria-label="Copy amount" onClick={() => copyText(String(order.amount))} className="rounded-md border p-2"><Copy size={14}/></button></div>
                   <p className="text-xs text-muted mt-3">Use Google Pay, PhonePe, Paytm, BHIM, or another UPI app. App availability depends on your device and installed apps.</p>
                 </div>
