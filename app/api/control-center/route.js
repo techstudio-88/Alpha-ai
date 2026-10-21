@@ -122,8 +122,9 @@ export async function POST(request){
   }
   if(action==="retry_job"){
    const id=String(body.jobId||"");const{data:job}=await admin.from("processing_jobs").select("*").eq("id",id).maybeSingle();if(!job)return Response.json({error:"Job not found."},{status:404});
-   const payload={...(job.payload||{}),retryCount:Number(job.payload?.retryCount||0)+1};const{error}=await admin.from("processing_jobs").update({status:"queued",progress:0,error:null,current_stage:null,heartbeat_at:null,payload,updated_at:new Date().toISOString()}).eq("id",id);if(error)throw error;
-   await writeAudit(admin,user,"processing_job_retried",{job_id:id},job.workspace_id,job.project_id);return Response.json({ok:true});
+   if(!["failed","cancelled","dead_letter"].includes(job.status))return Response.json({error:"Only failed, cancelled, or dead-lettered jobs can be requeued."},{status:409});
+   const payload={...(job.payload||{}),retryCount:Number(job.payload?.retryCount||0)+1};const{data:changed,error}=await admin.from("processing_jobs").update({status:"queued",progress:0,error:null,error_id:null,failure_type:null,current_stage:null,heartbeat_at:null,lease_until:null,lease_token:null,next_retry_at:null,dead_lettered_at:null,attempt_count:0,payload,updated_at:new Date().toISOString()}).eq("id",id).eq("status",job.status).select("id").maybeSingle();if(error)throw error;if(!changed)return Response.json({error:"The job changed before it could be requeued. Refresh and retry."},{status:409});
+   await writeAudit(admin,user,"processing_job_retried",{job_id:id,previous_status:job.status},job.workspace_id,job.project_id);return Response.json({ok:true});
   }
   if(action==="cancel_job"){
    const id=String(body.jobId||"");const{data:job}=await admin.from("processing_jobs").select("id,workspace_id,project_id,status").eq("id",id).maybeSingle();if(!job)return Response.json({error:"Job not found."},{status:404});
