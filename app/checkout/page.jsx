@@ -8,8 +8,8 @@ import { ArrowLeft, CheckCircle2, Copy, ExternalLink, LockKeyhole, RefreshCw, Sh
 import { supabase } from "../../lib/supabase";
 
 const PLANS = {
-  creator: { key: "creator", dbPlan: "pro", name: "Creator", monthly: 499, annual: 4790, minutes: "120 source minutes/month (planned)", features: ["One creator workspace", "Saved caption styles", "Priority processing"] },
-  studio: { key: "studio", dbPlan: "studio", name: "Studio", monthly: 1499, annual: 14390, minutes: "600 source minutes/month (planned)", features: ["Team workspaces", "Shared brand presets", "Team support"] },
+  creator: { key: "creator", dbPlan: "pro", name: "Creator", monthly: 499, annual: 4999, minutes: "120 source minutes/month (planned)", features: ["One creator workspace", "Saved caption styles", "Priority processing"] },
+  studio: { key: "studio", dbPlan: "studio", name: "Studio", monthly: 1499, annual: 14999, minutes: "600 source minutes/month (planned)", features: ["Team workspaces", "Shared brand presets", "Team support"] },
 };
 const VPA = "8859985492@axl";
 const money = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
